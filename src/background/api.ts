@@ -1,4 +1,5 @@
 import type { Container, ContainerColor, ContainerId, Cookie } from '../core';
+import type { StrictModeStatus } from '../engine/strict-mode';
 import type { ContainerInfo, Facet, OpenOptions } from './facet';
 
 /**
@@ -21,6 +22,17 @@ export interface FacetApi {
   listTabs(): Promise<Array<{ tabId: number; containerId: ContainerId; active: boolean }>>;
   /** Opens `url` in a new tab of the container (by ID or name); its first request is already isolated. */
   openInContainer(url: string, containerId: ContainerId, options?: OpenOptions): Promise<number>;
+  /**
+   * Call before an extension page navigates a container tab to `url` itself (open.html): removes the origin's service
+   * workers, so none of the real profile answers the first request.
+   */
+  prepareNavigation(url: string): Promise<void>;
+  /** Strict mode: setting, consent, whether the interface must warn or ask. */
+  getStrictMode(): Promise<StrictModeStatus>;
+  /** The user agreed in the consent dialog: remove every service worker of the profile and refuse new ones. */
+  grantStrictMode(): Promise<StrictModeStatus>;
+  /** "Not now" in the consent dialog: the warning stays, the dialog no longer opens by itself. */
+  dismissStrictModePrompt(): Promise<StrictModeStatus>;
   /** Diagnostics. */
   getJar(containerId: ContainerId): Promise<Cookie[]>;
   getSessionRules(): Promise<unknown[]>;
@@ -40,6 +52,10 @@ export const API_METHODS = [
   'getTabContainer',
   'listTabs',
   'openInContainer',
+  'prepareNavigation',
+  'getStrictMode',
+  'grantStrictMode',
+  'dismissStrictModePrompt',
   'getJar',
   'getSessionRules',
   'getManagedSites',
@@ -59,6 +75,10 @@ export function createApi(facet: Facet, getSessionRules: () => Promise<unknown[]
     getTabContainer: async (tabId) => (await facet.ready, facet.getTabContainer(tabId)),
     listTabs: async () => (await facet.ready, facet.listTabs()),
     openInContainer: (url, containerId, options) => facet.openInContainer(url, containerId, options),
+    prepareNavigation: async (url) => (await facet.ready, facet.prepareNavigation(String(url))),
+    getStrictMode: async () => (await facet.ready, facet.strict.status()),
+    grantStrictMode: async () => (await facet.ready, facet.strict.grant()),
+    dismissStrictModePrompt: async () => (await facet.ready, facet.strict.dismissPrompt()),
     getJar: async (id) => (await facet.ready, facet.getJar(id)),
     getSessionRules,
     getManagedSites: async () => (await facet.ready, facet.swPolicy.sites()),

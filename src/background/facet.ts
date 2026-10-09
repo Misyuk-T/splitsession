@@ -1,12 +1,22 @@
 import { browser, type Browser } from 'wxt/browser';
 import {
   beaconSiteOf,
+  bytesToHex,
   compileGroupRules,
+  compileNoTabRule,
+  compileNoTabWorkerScriptRule,
+  createPageKeyCache,
+  ctrMarkerRef,
+  hexToBytes,
   hostnameOf,
   isSecureUrl,
+  normalizeSettings,
+  PAGE_KEY_SECRET_BYTES,
   scriptVisibleCookies,
+  SETTINGS_KEY,
   siteOf,
   type CompiledRules,
+  type Settings,
   type Container,
   type ContainerColor,
   type ContainerId,
@@ -28,6 +38,7 @@ import { ensureContentScripts, type ScriptingApi } from '../engine/content-scrip
 import { SessionRuleManager, type DnrSessionApi } from '../engine/dnr/session-rules';
 import { ContainerError, ContainerStore } from '../engine/storage/container-store';
 import { TabRegistry } from '../engine/storage/tab-registry';
+import { StrictMode } from '../engine/strict-mode';
 import { ServiceWorkerPolicy, type BrowsingDataApi, type DnrDynamicApi } from '../engine/sw-policy';
 import { FacetEvents } from './events';
 import { createLogger, type Logger } from './log';
@@ -36,6 +47,14 @@ export const PURGE_ALARM = 'facet-purge';
 /** `about:blank#facet-<nonce>`: how the shim marks the blank child it opens before navigating it. */
 export const CHILD_NONCE = /#facet-([a-z0-9]{6,32})$/;
 const CTR_MARKER = /(?:^|&)ctr=([^&]*)/;
+/** Session-rule key of the strict-mode rule for requests outside tabs (container IDs are [a-z0-9]{10}). */
+export const NO_TAB_KEY = '@no-tab';
+/** `storage.local` key of the per-install secret behind page keys (hex). */
+export const PAGE_KEY_SECRET_KEY = 'pageKeySecret';
+/** How long the `#ctr=` check waits for the navigation's request (to learn its initiator). */
+const CTR_INITIATOR_WAIT_MS = 2_000;
+/** Frame sites remembered per tab for per-site beacon answers. */
+const MAX_FRAME_SITES_PER_TAB = 64;
 const AWAIT_CHILD_TIMEOUT_MS = 1_000;
 const READY_CHILD_TTL_MS = 2_000;
 const SETTLE_WAIT_MS = 60;
@@ -44,6 +63,8 @@ const ASSIGNMENT_LAG_MS = 1_000;
 
 type WebRequestDetails = {
   requestHeaders?: Array<{ name: string; value?: string }>;
+  /** Origin that started the request; absent for browser-initiated navigations (address bar, tabs.update, CDP). */
+  initiator?: string;
   requestId: string;
   url: string;
   method: string;
@@ -68,6 +89,13 @@ export interface OpenOptions {
   openerTabId?: number;
 }
 
+/** Options only background code can pass (functions do not travel through the message API). */
+export interface InternalOpenOptions extends OpenOptions {
+  pinned?: boolean;
+  /** Called once the new tab is in the container and has not navigated yet. */
+  onAssigned?: (tabId: number) => void;
+}
+
 interface SendRecord {
   tabId: number;
   sentAt: number;
@@ -81,6 +109,12 @@ interface ChildWaiter {
   resolve: (tabId: number | null) => void;
 }
 
+interface MainFrameStart {
+  url: string;
+  initiator: string | undefined;
+  at: number;
+}
+
 interface ReadyChild {
   parent: number | undefined;
   child: number;
@@ -89,6 +123,18 @@ interface ReadyChild {
 }
 
 const isHttpUrl = (url: string | undefined): url is string => !!url && /^https?:\/\//i.test(url);
+const withoutFragment = (url: string): string => {
+  const hash = url.indexOf('#');
+  return hash === -1 ? url : url.slice(0, hash);
+};
+const siteOfFrameUrl = (url: string | undefined): string | null => {
+  if (!isHttpUrl(url)) return null;
+  try {
+    return beaconSiteOf(hostnameOf(new URL(url).hostname));
+  } catch {
+    return null;
+  }
+};
 const siteOfHttp = (url: string | undefined): string | null => {
   if (!isHttpUrl(url)) return null;
   try {
@@ -106,6 +152,7 @@ const toChange = (cookie: Cookie, outcome: UpsertOutcome): CookieChange => ({
   hostOnly: cookie.hostOnly,
   secure: cookie.secure,
   partitioned: cookie.partitioned,
+  sameSite: cookie.sameSite,
 });
 const cookieHeaderOf = (headers: WebRequestDetails['requestHeaders']): string | null =>
   headers?.find((h) => h.name.toLowerCase() === 'cookie')?.value ?? null;
@@ -120,6 +167,7 @@ export class Facet {
   readonly tabs: TabRegistry;
   readonly rules: SessionRuleManager;
   readonly swPolicy: ServiceWorkerPolicy;
+  readonly strict: StrictMode;
   readonly detector: StaleNavigationDetector;
   readonly log: Logger;
   /** Assignment and container changes, for the Stage C modules (tab groups, badges, domain rules). */
@@ -140,6 +188,20 @@ export class Facet {
   private readonly readyChildren: ReadyChild[] = [];
   /** Re-navigations waiting for their stale request to finish, by requestId. */
   private readonly deferredRenavs = new Map<string, { renav: Renavigation; timer: ReturnType<typeof setTimeout> }>();
+  /** Settings the engine needs: what pages may see, strict mode. Read from storage at start, then pushed by Extras. */
+  private settings: Settings = normalizeSettings(undefined);
+  private settingsWork: Promise<void> = Promise.resolve();
+  /** Page key of (container, site): HMAC with the per-install secret, set during rehydration. */
+  private pageKeyOf: (containerId: ContainerId, site: string) => string = () => {
+    throw new Error('page keys used before start');
+  };
+  /** Per container tab: sites of the frames it requested since its last top-level navigation (beacon answers). */
+  private readonly frameSites = new Map<number, Set<string>>();
+  /** Per tab: recent main-frame requests and their initiators (`#ctr=` is honoured for browser-initiated ones only). */
+  private readonly mainFrameStarts = new Map<number, MainFrameStart[]>();
+  private readonly mainFrameWaiters = new Set<() => void>();
+  /** One `#ctr=` decision per navigation, shared with the domain-rule engine. */
+  private readonly ctrDecisions = new Map<string, { at: number; decision: Promise<ContainerId | null> }>();
 
   constructor(private readonly b: typeof browser = browser) {
     this.log = createLogger();
@@ -156,8 +218,13 @@ export class Facet {
       local,
       b.declarativeNetRequest as unknown as DnrDynamicApi,
       b.browsingData as unknown as BrowsingDataApi,
-      { log: this.log },
+      {
+        log: this.log,
+        onSitesChanged: () => void (this.settings.strictMode && this.rules.invalidate(NO_TAB_KEY)),
+        onGuardChanged: () => void this.rules.invalidate(NO_TAB_KEY),
+      },
     );
+    this.strict = new StrictMode(local, this.swPolicy, () => this.containers.list().length);
     this.detector = new StaleNavigationDetector({ containerOf: (tabId) => this.tabs.containerOf(tabId) });
   }
 
@@ -167,17 +234,27 @@ export class Facet {
   }
 
   private async rehydrate(): Promise<void> {
+    const local = this.b.storage.local;
+    const stored = await local.get([SETTINGS_KEY, PAGE_KEY_SECRET_KEY]);
+    this.settings = normalizeSettings(stored[SETTINGS_KEY]);
+    let secret = typeof stored[PAGE_KEY_SECRET_KEY] === 'string' ? hexToBytes(stored[PAGE_KEY_SECRET_KEY]) : null;
+    if (!secret || secret.length !== PAGE_KEY_SECRET_BYTES) {
+      secret = crypto.getRandomValues(new Uint8Array(PAGE_KEY_SECRET_BYTES));
+      await local.set({ [PAGE_KEY_SECRET_KEY]: bytesToHex(secret) });
+    }
+    this.pageKeyOf = createPageKeyCache(secret);
     await Promise.all([this.containers.load(), this.tabs.load()]);
+    // Managed sites and the strict state first: the no-tab rule compiled below depends on both.
+    await this.swPolicy.load(await this.strict.load(this.settings.strictMode)).catch((error) => this.log('error', 'service-worker policy failed to load', String(error)));
     const liveTabs = new Set((await this.b.tabs.query({})).map((t) => t.id).filter((id): id is number => id !== undefined));
     const now = Date.now();
     for (const [tabId, rec] of this.tabs.entries()) {
       if (!liveTabs.has(tabId) || !this.containers.get(rec.containerId)) void this.tabs.delete(tabId);
       else if (rec.activeSince === null) void this.tabs.update(tabId, { activeSince: now });
     }
-    const ok = await this.rules.reset(this.tabs.containerIds());
+    const ok = await this.rules.reset([...this.tabs.containerIds(), NO_TAB_KEY]);
     if (!ok) this.log('error', 'could not reinstall session rules after start');
     await Promise.allSettled([
-      this.swPolicy.load(),
       ensureContentScripts(this.b.scripting as unknown as ScriptingApi).then((r) => this.log('info', `content scripts ${r}`)),
       this.b.alarms.create(PURGE_ALARM, { periodInMinutes: 1 }),
     ]);
@@ -187,6 +264,13 @@ export class Facet {
   // ---------------------------------------------------------------- rule compilation
 
   private compileContainer(containerId: ContainerId, allocator: RuleIdAllocator, regexBudget: number): CompiledRules | null {
+    if (containerId === NO_TAB_KEY) {
+      const addRules: DnrRule[] = [];
+      const cookies = this.settings.strictMode ? compileNoTabRule(allocator.next(), this.swPolicy.sites()) : null;
+      if (cookies) addRules.push(cookies);
+      if (this.swPolicy.guarded) addRules.push(compileNoTabWorkerScriptRule(allocator.next()));
+      return addRules.length > 0 ? { addRules, ruleIds: addRules.map((r) => r.id), regexRuleCount: 0 } : null;
+    }
     const container = this.containers.get(containerId);
     const tabIds = this.tabs.tabsOf(containerId);
     if (!container || tabIds.length === 0) return null;
@@ -204,16 +288,26 @@ export class Facet {
     const addRules: DnrRule[] = [];
     const ruleIds: number[] = [];
     let regexRuleCount = 0;
+    const pageKeyOf = (site: string) => this.pageKeyOf(containerId, site);
     for (const [site, group] of groups) {
+      const frameSites = new Set<string>();
+      for (const tabId of group) {
+        const own = siteOfFrameUrl(this.tabs.get(tabId)?.url);
+        if (own) frameSites.add(own);
+        for (const s of this.frameSites.get(tabId) ?? []) frameSites.add(s);
+      }
       const compiled = compileGroupRules(
         {
           tabIds: group.sort((a, b) => a - b),
           containerId,
-          containerName: container.name,
+          // Pages see the name only when the user allows it (setting "Show container name to pages").
+          containerName: this.settings.showNameToPages ? container.name : undefined,
           jar,
           topLevelSite: site,
           now,
           regexBudget: Math.max(0, regexBudget - regexRuleCount),
+          pageKeyOf,
+          frameSites,
         },
         allocator,
       );
@@ -232,7 +326,37 @@ export class Facet {
 
   async createContainer(input: { name: string; color?: ContainerColor }): Promise<Container> {
     await this.ready;
-    return this.containers.create(input);
+    const created = await this.containers.create(input);
+    await this.strict.containerCreated();
+    return created;
+  }
+
+  /**
+   * Engine settings, pushed by Extras whenever they change. A name shown to pages lives in the beacon rules, strict
+   * mode in the no-tab rule and the global guard.
+   */
+  applySettings(next: Settings): Promise<void> {
+    // Serialised: a caller awaiting this also waits for an application already under way.
+    this.settingsWork = this.settingsWork.then(async () => {
+      await this.ready;
+      const previous = this.settings;
+      this.settings = { ...next };
+      if (previous.showNameToPages !== next.showNameToPages) await this.rules.invalidate(...this.tabs.containerIds());
+      if (previous.strictMode !== next.strictMode) {
+        await this.strict.setEnabled(next.strictMode);
+        await this.rules.invalidate(NO_TAB_KEY);
+      }
+    });
+    return this.settingsWork;
+  }
+
+  /**
+   * Facet is about to navigate a container tab to `url` itself: the origin's service workers are removed first, so
+   * none of the real profile can answer the first request (its fetches would carry no tab ID, outside the rules).
+   */
+  async prepareNavigation(url: string | undefined): Promise<void> {
+    const origin = networkOrigin(url);
+    if (origin) await this.swPolicy.prepare(origin);
   }
 
   async updateContainer(id: ContainerId, patch: { name?: string; color?: ContainerColor }): Promise<Container> {
@@ -260,7 +384,7 @@ export class Facet {
   async ensureContainer(ref: string): Promise<Container> {
     await this.ready;
     if (typeof ref !== 'string' || ref.trim() === '') throw new ContainerError('container reference must be a non-empty string');
-    return this.containers.resolve(ref) ?? this.containers.create({ name: ref });
+    return this.containers.resolve(ref) ?? this.createContainer({ name: ref });
   }
 
   // ---------------------------------------------------------------- tabs
@@ -285,7 +409,10 @@ export class Facet {
       this.detector.forgetTab(tabId);
       await this.assign(tabId, containerId);
     }
-    if (options.reload) await this.b.tabs.reload(tabId);
+    if (options.reload) {
+      if (containerId !== null) await this.prepareNavigation((await this.b.tabs.get(tabId).catch(() => null))?.url);
+      await this.b.tabs.reload(tabId);
+    }
   }
 
   /** Returns the time the rules became active. Throws (and leaves the tab unassigned) if they could not be installed. */
@@ -329,7 +456,7 @@ export class Facet {
   }
 
   /** New tab at about:blank (no network), into the container, then navigated: the first request is already isolated. */
-  async openInContainer(url: string, ref: ContainerId, options: OpenOptions = {}): Promise<number> {
+  async openInContainer(url: string, ref: ContainerId, options: InternalOpenOptions = {}): Promise<number> {
     await this.ready;
     if (!isHttpUrl(url)) throw new ContainerError('only http(s) URLs can be opened in a container');
     const container = this.containers.resolve(ref);
@@ -339,6 +466,7 @@ export class Facet {
       active: options.active ?? true,
       ...(options.windowId !== undefined ? { windowId: options.windowId } : {}),
       ...(options.index !== undefined ? { index: options.index } : {}),
+      ...(options.pinned ? { pinned: true } : {}),
     });
     if (tab.id === undefined) throw new ContainerError('tab creation failed');
     try {
@@ -347,7 +475,36 @@ export class Facet {
       await this.b.tabs.remove(tab.id).catch(() => {});
       throw error;
     }
+    options.onAssigned?.(tab.id);
     if (options.openerTabId !== undefined) await this.b.tabs.update(tab.id, { openerTabId: options.openerTabId }).catch(() => {});
+    await this.prepareNavigation(url);
+    await this.b.tabs.update(tab.id, { url });
+    return tab.id;
+  }
+
+  /**
+   * Moves a tab to `containerId` (null: a plain tab) by opening `url` in a FRESH tab at the same place and returning
+   * its ID; the caller closes `tabId` afterwards. The old document may be scripted by another context (its opener, a
+   * popup parent, a frame that kept a reference), and a document that stays alive keeps that link: the opener of a
+   * tab that a domain rule moves into a container would read the container's cookies and storage through its
+   * `WindowProxy`. The new tab is created with `tabs.create` (no `window.opener`; `openerTabId` is not passed). Done
+   * for every such move, whether Facet can see an opener or not (a popup's opener is not always visible). Nothing is
+   * created when the tab is gone or the container rules cannot be installed.
+   */
+  async replaceTab(tabId: number, containerId: ContainerId | null, url: string, onCreated?: (newTabId: number) => void): Promise<number> {
+    await this.ready;
+    if (!isHttpUrl(url)) throw new ContainerError('only http(s) URLs can be opened in a container');
+    const old = await this.b.tabs.get(tabId);
+    const place = {
+      active: old.active,
+      windowId: old.windowId,
+      index: old.index,
+      ...(old.pinned ? { pinned: true } : {}),
+    };
+    if (containerId !== null) return this.openInContainer(url, containerId, { ...place, ...(onCreated ? { onAssigned: onCreated } : {}) });
+    const tab = await this.b.tabs.create({ url: 'about:blank', ...place });
+    if (tab.id === undefined) throw new ContainerError('tab creation failed');
+    onCreated?.(tab.id);
     await this.b.tabs.update(tab.id, { url });
     return tab.id;
   }
@@ -357,6 +514,44 @@ export class Facet {
   }
 
   // ---------------------------------------------------------------- webRequest
+
+  /**
+   * `webRequest.onBeforeRequest` for frames: remembers who started each main-frame navigation (for `#ctr=`), and the
+   * sites a container tab loads frames from, so their beacon answers (page keys) are installed before the frames'
+   * content scripts ask.
+   */
+  handleBeforeRequest(details: WebRequestDetails): void {
+    if (details.tabId < 0) return;
+    if (details.type === 'main_frame') {
+      const list = (this.mainFrameStarts.get(details.tabId) ?? []).filter((s) => details.timeStamp - s.at < 10_000);
+      list.push({ url: withoutFragment(details.url), initiator: details.initiator, at: details.timeStamp });
+      this.mainFrameStarts.set(details.tabId, list.slice(-8));
+      for (const wake of [...this.mainFrameWaiters]) wake();
+    }
+    const site = siteOfFrameUrl(details.url);
+    if (!site) return;
+    void this.ready.then(() => {
+      const rec = this.tabs.get(details.tabId);
+      if (!rec) return;
+      void this.addFrameSite(details.tabId, rec.containerId, site, details.type === 'main_frame');
+    });
+  }
+
+  /**
+   * Adds a frame site to a container tab; resolves once the container's beacon answers cover it. `force`: a frame
+   * reported the answer missing, recompile even if the site looks covered.
+   */
+  private addFrameSite(tabId: number, containerId: ContainerId, site: string, topLevel = false, force = false): Promise<boolean> {
+    // Already covered by the installed rules (some tab of the container is on that site)?
+    const known = this.tabs.tabsOf(containerId).some((t) => this.frameSites.get(t)?.has(site) || siteOfFrameUrl(this.tabs.get(t)?.url) === site);
+    // A new top-level navigation starts the tab's list afresh (sites dropped here leave the rules at the next recompile).
+    const set = topLevel ? new Set<string>() : (this.frameSites.get(tabId) ?? new Set<string>());
+    this.frameSites.set(tabId, set);
+    set.add(site);
+    if (set.size > MAX_FRAME_SITES_PER_TAB) set.delete(set.values().next().value!);
+    if (known && !force && this.rules.isInstalled(containerId)) return this.rules.sync();
+    return this.rules.invalidate(containerId);
+  }
 
   handleSendHeaders(details: WebRequestDetails): void {
     if (details.tabId < 0) return;
@@ -488,6 +683,7 @@ export class Facet {
     const latest = this.detector.latestSend(r.tabId);
     if (latest && latest.requestId !== r.requestId) return;
     if (!this.tabs.get(r.tabId)) return;
+    await this.prepareNavigation(r.url);
     await this.b.tabs.update(r.tabId, { url: r.url }).catch(() => {});
   }
 
@@ -594,6 +790,8 @@ export class Facet {
   handleTabRemoved(tabId: number): void {
     this.childNonces.delete(tabId);
     this.recentResponses.delete(tabId);
+    this.frameSites.delete(tabId);
+    this.mainFrameStarts.delete(tabId);
     void this.ready.then(() => this.unassign(tabId));
   }
 
@@ -608,55 +806,104 @@ export class Facet {
     });
   }
 
-  handleBeforeNavigate(details: { tabId: number; frameId: number; url: string }): void {
+  handleBeforeNavigate(details: { tabId: number; frameId: number; url: string; timeStamp?: number }): void {
     if (details.tabId < 0) return;
     void this.ready.then(async () => {
-      if (details.frameId === 0 && (await this.handleCtrMarker(details.tabId, details.url))) return;
+      if (details.frameId === 0 && ctrMarkerRef(details.url) !== null) {
+        const containerId = await this.ctrDecision(details);
+        if (containerId !== null) {
+          await this.applyCtrMarker(details.tabId, details.url, containerId);
+          return;
+        }
+      }
       if (!this.tabs.get(details.tabId)) return;
       const origin = networkOrigin(details.url);
       if (origin) void this.swPolicy.noteContainerOrigin(origin);
     });
   }
 
-  handleFragmentUpdated(details: { tabId: number; frameId: number; url: string }): void {
-    if (details.tabId < 0 || details.frameId !== 0) return;
-    void this.ready.then(() => this.handleCtrMarker(details.tabId, details.url));
+  /**
+   * `https://site/#ctr=<name or id>`: which EXISTING container the navigation asks for, or null when it must be
+   * ignored. Honoured only for a tab without a container, on a navigation the browser or an extension started
+   * (address bar, bookmark, an agent over CDP: no `initiator` in `webRequest`; `tabs.update` from an extension:
+   * `initiator` is that extension's `chrome-extension://` origin). A page cannot
+   * use it, neither by setting `location.hash` (same-document, no request at all) nor by navigating itself or a
+   * child to a marked URL (it would be the initiator). Unknown names are ignored too (creating containers stays with
+   * `open.html`, which pages cannot reach). One decision per navigation, shared with the domain-rule engine.
+   */
+  ctrDecision(details: { tabId: number; frameId: number; url: string; timeStamp?: number }): Promise<ContainerId | null> {
+    const ref = details.frameId === 0 && isHttpUrl(details.url) ? ctrMarkerRef(details.url) : null;
+    if (ref === null || details.tabId < 0) return Promise.resolve(null);
+    const now = Date.now();
+    for (const [key, entry] of this.ctrDecisions) if (now - entry.at > 10_000) this.ctrDecisions.delete(key);
+    // Per navigation (both onBeforeNavigate listeners see the same event), never reused by a later navigation.
+    const key = `${details.tabId} ${details.timeStamp ?? now} ${details.url}`;
+    const cached = this.ctrDecisions.get(key);
+    if (cached) return cached.decision;
+    const decision = (async (): Promise<ContainerId | null> => {
+      await this.ready;
+      if (this.tabs.get(details.tabId)) {
+        this.log('warn', `#ctr marker ignored: tab ${details.tabId} is already in a container`);
+        return null;
+      }
+      const container = this.containers.resolve(ref);
+      if (!container) {
+        this.log('warn', `#ctr marker names no container: ${ref}`);
+        return null;
+      }
+      const start = await this.mainFrameStart(details.tabId, details.url, details.timeStamp ?? now);
+      if (!start) {
+        this.log('warn', `#ctr marker ignored: no request seen for the navigation in tab ${details.tabId}`);
+        return null;
+      }
+      // No initiator: the browser itself (address bar, bookmark, CDP). An extension origin: an extension's
+      // tabs.update (agents such as Claude in Chrome, Facet's own pages); pages cannot borrow that origin.
+      if (start.initiator !== undefined && !start.initiator.startsWith('chrome-extension://')) {
+        this.log('warn', `#ctr marker ignored: the navigation was started by ${start.initiator}, not by the browser`);
+        return null;
+      }
+      return container.id;
+    })();
+    this.ctrDecisions.set(key, { at: now, decision });
+    return decision;
   }
 
-  /**
-   * `https://site/#ctr=<name or id>`: assign the tab to that EXISTING container, drop the marker, navigate again.
-   * Unknown names are ignored (the marker can come from any web page's link; creating containers stays with
-   * `open.html`, which pages cannot reach).
-   */
-  private async handleCtrMarker(tabId: number, url: string): Promise<boolean> {
-    if (!isHttpUrl(url)) return false;
+  /** The main-frame request of a navigation (same URL without fragment, started at or after `since`). */
+  private async mainFrameStart(tabId: number, url: string, since: number): Promise<MainFrameStart | null> {
+    const target = withoutFragment(url);
+    const find = () => (this.mainFrameStarts.get(tabId) ?? []).filter((s) => s.url === target && s.at >= since - 50).at(-1) ?? null;
+    const found = find();
+    if (found) return found;
+    return new Promise((resolve) => {
+      const done = (value: MainFrameStart | null) => {
+        clearTimeout(timer);
+        this.mainFrameWaiters.delete(wake);
+        resolve(value);
+      };
+      const wake = () => {
+        const hit = find();
+        if (hit) done(hit);
+      };
+      const timer = setTimeout(() => done(find()), CTR_INITIATOR_WAIT_MS);
+      this.mainFrameWaiters.add(wake);
+    });
+  }
+
+  /** Assign the tab to the marker's container, drop the marker, navigate again (workers of the origin removed first). */
+  private async applyCtrMarker(tabId: number, url: string, containerId: ContainerId): Promise<void> {
     const hashAt = url.indexOf('#');
-    if (hashAt === -1) return false;
     const fragment = url.slice(hashAt + 1);
-    const match = CTR_MARKER.exec(fragment);
-    if (!match) return false;
-    let ref: string;
-    try {
-      ref = decodeURIComponent(match[1]!);
-    } catch {
-      return false;
-    }
     const rest = fragment.replace(CTR_MARKER, '').replace(/^&/, '');
     const clean = url.slice(0, hashAt) + (rest ? `#${rest}` : '');
-    const container = this.containers.resolve(ref);
-    if (!container) {
-      this.log('warn', `#ctr marker names no container: ${ref}`);
-      return false;
-    }
     try {
       this.detector.suppress(tabId);
-      await this.assign(tabId, container.id);
+      await this.assign(tabId, containerId);
+      await this.prepareNavigation(clean);
       await this.b.tabs.update(tabId, { url: clean });
-      this.log('info', `#ctr marker put tab ${tabId} into ${container.id}`);
+      this.log('info', `#ctr marker put tab ${tabId} into ${containerId}`);
     } catch (error) {
       this.log('error', '#ctr marker failed', String(error));
     }
-    return true;
   }
 
   handleCommitted(details: { tabId: number; frameId: number; url: string }): void {
@@ -695,8 +942,9 @@ export class Facet {
    * match the `storage.local` backup), then reload it so it gets fresh content scripts.
    */
   async handleInstalled(reason: string): Promise<void> {
-    if (reason !== 'update') return;
     await this.ready;
+    await this.strict.installed(reason).catch((error) => this.log('error', 'strict mode after install failed', String(error)));
+    if (reason !== 'update') return;
     const backup = await this.tabs.loadBackup();
     if (backup.size === 0 || this.tabs.entries().length > 0) return;
     const restored: number[] = [];
@@ -719,6 +967,7 @@ export class Facet {
         await this.tabs.update(tabId, { activeSince: now });
         this.events.emit({ type: 'tab-assigned', tabId, containerId: this.tabs.containerOf(tabId)! });
       }
+      await this.prepareNavigation((await this.b.tabs.get(tabId).catch(() => null))?.url);
       await this.b.tabs.reload(tabId).catch(() => {});
     }
     this.log('info', `restored ${restored.length} container tabs after an update`);
@@ -727,6 +976,7 @@ export class Facet {
   /** Browser start: tab IDs from the last session mean nothing now. */
   handleStartup(): void {
     void this.tabs.clearBackup();
+    void this.ready.then(() => this.strict.startup());
   }
 
   async handleAlarm(name: string): Promise<void> {
@@ -768,7 +1018,17 @@ export class Facet {
         const nonce = String(message.nonce ?? '');
         if (!/^[a-z0-9]{6,32}$/.test(nonce)) return { ok: false };
         const child = await this.awaitChild(tabId, nonce);
-        return child === null ? { ok: false } : { ok: true, tabId: child };
+        if (child === null) return { ok: false };
+        // The shim navigates the child once we answer: no service worker of the target may answer that request.
+        if (typeof message.url === 'string') await this.prepareNavigation(message.url);
+        return { ok: true, tabId: child };
+      }
+      case 'facet/need-site': {
+        // The beacon of a frame got the generic answer: its site has no beacon rule yet. Add it; the beacon polls.
+        const site = siteOfFrameUrl(senderOrigin(sender) ?? undefined);
+        if (!rec || !site) return { ok: false };
+        this.log('info', `beacon answer for ${site} asked by a frame of tab ${tabId}`);
+        return { ok: await this.addFrameSite(tabId, rec.containerId, site, false, true) };
       }
       case 'facet/open-tab': {
         if (!rec) return { ok: false };

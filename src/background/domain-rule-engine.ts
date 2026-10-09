@@ -12,10 +12,17 @@ export interface RuleEngineDeps {
   rules(): readonly DomainRule[];
   /** Container of a tab, or null for a plain tab. */
   containerOf(tabId: number): ContainerId | null;
-  /** The container a `#ctr=` marker in `url` names, if it exists (the engine itself handles the marker). */
-  markerContainer(url: string): ContainerId | undefined;
-  /** Puts the tab in the container; the rules are active when this resolves. */
-  assign(tabId: number, containerId: ContainerId): Promise<void>;
+  /**
+   * The container a `#ctr=` marker of this navigation puts the tab in, or null when Facet ignores the marker (no such
+   * container, tab already in one, navigation started by a page). The engine handles honoured markers itself.
+   */
+  markerContainer(details: NavigationDetails): Promise<ContainerId | null>;
+  /**
+   * Moves the tab into the container by opening `url` in a FRESH tab at the same place (no `window.opener`, no
+   * document another context could script) and closing the old one. `onCreated` runs with the new tab's ID once it is
+   * in the container and before it navigates. Resolves with the new tab's ID.
+   */
+  replaceTab(tabId: number, containerId: ContainerId, url: string, onCreated: (newTabId: number) => void): Promise<number>;
   navigate(tabId: number, url: string): Promise<void>;
   chooseUrl(url: string, tabId: number): string;
   log(level: 'info' | 'warn' | 'error', message: string, data?: unknown): void;
@@ -27,15 +34,18 @@ export interface NavigationDetails {
   frameId: number;
   url: string;
   documentLifecycle?: string;
+  timeStamp?: number;
 }
 
 /**
  * Domain rules (Firefox "Always open in" / "Ask"): when the main frame of a tab starts a navigation to a site that has
- * a rule, move the tab into the right container (assign, then navigate again) or send it to the choose page.
+ * a rule, move the tab into the right container (the address is opened in a fresh tab of the container and the old
+ * tab is closed, like Firefox's Multi-Account Containers: a tab that stays alive keeps its `window.opener`, and the
+ * opener could then read the container's cookies and storage) or send it to the choose page.
  *
- * Loop safety: a move assigns the tab first, so the repeated navigation finds the tab in the right container (decision
- * "none"); every deliberate placement exempts the next navigation (see `Exemptions`); and a per-tab action limit
- * stops anything else. The first request, the one that triggered the rule, has already left as the real profile
+ * Loop safety: the new tab is placed in the container before it navigates, so its navigation finds it in the right
+ * container (decision "none"); every deliberate placement exempts the next navigation (see `Exemptions`); and a
+ * per-tab action limit, whose history the new tab inherits, stops anything else. The first request, the one that triggered the rule, has already left as the real profile
  * (docs/limits.md).
  */
 export class DomainRuleEngine {
@@ -67,11 +77,14 @@ export class DomainRuleEngine {
     const site = ruleKeyOf(url);
     if (site === null) return 'skipped';
 
-    // An explicit `#ctr=` marker wins over any rule, now and for the navigation Facet repeats without it.
+    // An explicit `#ctr=` marker Facet honours wins over any rule, now and for the navigation Facet repeats without
+    // it. A marker Facet ignores is just part of the URL.
     if (hasCtrMarker(url)) {
-      const container = this.deps.markerContainer(url);
-      if (container !== undefined) this.exemptions.markPlacement(tabId, container);
-      return 'skipped';
+      const container = await this.deps.markerContainer(details);
+      if (container !== null) {
+        this.exemptions.markPlacement(tabId, container);
+        return 'skipped';
+      }
     }
 
     const current = this.deps.containerOf(tabId);
@@ -101,10 +114,13 @@ export class DomainRuleEngine {
     }
 
     this.deps.log('info', `domain rule: ${site} -> ${decision.containerId} in tab ${tabId}`);
-    await this.deps.assign(tabId, decision.containerId);
-    // The repeated navigation is the placement's own: it must not be judged again.
-    this.exemptions.markSite(tabId, decision.containerId, site);
-    await this.deps.navigate(tabId, url);
+    const history = this.actions.get(tabId) ?? [];
+    await this.deps.replaceTab(tabId, decision.containerId, url, (newTabId) => {
+      // The repeated navigation is the placement's own: it must not be judged again. The new tab carries the old
+      // one's action history, or a chain of client-side redirects between ruled sites would never meet the limit.
+      this.exemptions.markSite(newTabId, decision.containerId, site);
+      this.actions.set(newTabId, [...history]);
+    });
     return 'moved';
   }
 

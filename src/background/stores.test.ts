@@ -10,17 +10,31 @@ describe('SettingsStore', () => {
   it('starts with the defaults, validates, persists and notifies', async () => {
     const area = new MemoryStorageArea();
     const store = new SettingsStore(area);
-    expect(await store.load()).toEqual({ tabGroups: true, titlePrefix: true });
+    expect(await store.load()).toEqual({ tabGroups: true, titlePrefix: true, strictMode: true, showNameToPages: false });
     const seen: string[] = [];
     store.onChange((next, prev) => seen.push(`${prev.tabGroups}->${next.tabGroups}`));
-    expect(await store.update({ tabGroups: false })).toEqual({ tabGroups: false, titlePrefix: true });
+    expect(await store.update({ tabGroups: false })).toEqual({ tabGroups: false, titlePrefix: true, strictMode: true, showNameToPages: false });
     expect(seen).toEqual(['true->false']);
-    expect(area.data.get('settings')).toEqual({ tabGroups: false, titlePrefix: true });
+    expect(area.data.get('settings')).toEqual({ tabGroups: false, titlePrefix: true, strictMode: true, showNameToPages: false, explicit: ['tabGroups'] });
     await expect(store.update({ tabGroups: 'no' })).rejects.toThrow();
     expect(store.get().tabGroups).toBe(false); // a rejected patch changes nothing
 
     const reloaded = new SettingsStore(area);
-    expect(await reloaded.load()).toEqual({ tabGroups: false, titlePrefix: true });
+    expect(await reloaded.load()).toEqual({ tabGroups: false, titlePrefix: true, strictMode: true, showNameToPages: false });
+  });
+
+  it('turning the name on is remembered as a choice; an install of the previous format gets the new default once', async () => {
+    const area = new MemoryStorageArea();
+    // Previous format: every value stored on any change, the name shown by default.
+    await area.set({ settings: { tabGroups: false, titlePrefix: true, strictMode: true, showNameToPages: true } });
+    const store = new SettingsStore(area);
+    expect(await store.load()).toEqual({ tabGroups: false, titlePrefix: true, strictMode: true, showNameToPages: false });
+    expect(area.data.get('settings')).toEqual({ tabGroups: false, titlePrefix: true, strictMode: true, showNameToPages: false, explicit: ['tabGroups'] });
+
+    await store.update({ showNameToPages: true });
+    const reloaded = new SettingsStore(area);
+    expect(await reloaded.load()).toMatchObject({ tabGroups: false, showNameToPages: true });
+    expect((area.data.get('settings') as { explicit: string[] }).explicit).toEqual(['tabGroups', 'showNameToPages']);
   });
 
   it('a throwing listener does not break the update', async () => {

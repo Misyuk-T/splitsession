@@ -26,6 +26,8 @@ export interface Facet {
   /** New tab without a container. */
   plain(url: string): Promise<Page>;
   tabIdOf(page: Page): Promise<number>;
+  /** Closes `page` with the test (a tab the test did not open itself, e.g. one Facet created). */
+  adopt(page: Page): void;
   /** Requests the stand received; `clearLog` first to scope them. */
   serverLog(): Promise<LogEntry[]>;
   clearLog(): Promise<void>;
@@ -101,6 +103,9 @@ export const test = base.extend<{ facet: Facet }, { extContext: BrowserContext }
         opened.push(page);
         await page.goto(url);
         return page;
+      },
+      adopt(page) {
+        opened.push(page);
       },
       async tabIdOf(page) {
         const marker = `facet-tab-${Math.random().toString(36).slice(2)}`;
@@ -200,7 +205,9 @@ export const test = base.extend<{ facet: Facet }, { extContext: BrowserContext }
     await context.clearCookies(); // real profile starts empty for every test
     // Rules and settings outlive a test in the shared browser: start from the defaults.
     for (const rule of await api<Array<{ domain: string }>>('listDomainRules')) await api('removeDomainRule', rule.domain);
-    await api('updateSettings', { tabGroups: true, titlePrefix: true });
+    await api('updateSettings', { tabGroups: true, titlePrefix: true, strictMode: true, showNameToPages: true });
+    // Steady state of a user who said yes to strict mode (tests of the other states change it themselves).
+    if (!(await api<{ active: boolean }>('getStrictMode')).active) await api('grantStrictMode');
     await use(facet);
     if (testInfo.status !== testInfo.expectedStatus) {
       const log = await Promise.race([api('getLog'), new Promise((r) => setTimeout(() => r('worker unreachable'), 2_000))]).catch(String);
@@ -236,3 +243,18 @@ export const pageJson = <T = any>(page: Page, url: string, init?: RequestInit): 
 
 export const pageText = (page: Page, url: string): Promise<string> =>
   page.evaluate(async (u) => (await fetch(u)).text(), url);
+
+/**
+ * Runs `action` (a navigation that a domain rule or the choose page answers with a FRESH tab) and returns the page that
+ * replaced `page`: `page` is closed, the new one has loaded the address in the container.
+ */
+export async function followReplacement(facet: Facet, page: Page, action: () => Promise<unknown>): Promise<Page> {
+  const created = facet.ctx.waitForEvent('page', { timeout: 15_000 });
+  await action().catch(() => {}); // the old page closes under the navigation
+  const next = await created;
+  facet.adopt(next);
+  await expect.poll(() => page.isClosed(), { timeout: 10_000 }).toBe(true);
+  await expect.poll(() => next.url(), { timeout: 10_000 }).toMatch(/^http:/);
+  await next.waitForLoadState('domcontentloaded').catch(() => {});
+  return next;
+}

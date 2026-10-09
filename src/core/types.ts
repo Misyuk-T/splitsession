@@ -56,13 +56,13 @@ export interface Cookie {
  * Body the beacon rules answer with (served as a `data:` URL by declarativeNetRequest).
  * Everything the MAIN-world shim needs before the first script of the page runs.
  *
- * A page can fetch the beacon URL itself, so the generic per-group answer carries identity only (`c`, `n`) and the
- * cookie snapshot `k` is answered per registrable domain of the requesting frame (`initiatorDomains`).
+ * A page can fetch the beacon URL itself, so the answer is per registrable domain of the requesting frame
+ * (`initiatorDomains`) and never holds the container ID: `c` is an opaque key that differs per site.
  */
 export interface BeaconPayload {
-  /** Container of the tab asking. */
-  c: ContainerId;
-  /** Container display name (page marker `data-ctr`). */
+  /** Page key of the container on the requesting frame's site (`page-key.ts`): namespaces page storage. */
+  c: string;
+  /** Container display name (page marker `data-ctr`, title prefix); only when the user lets pages see it. */
   n?: string;
   /** Non-HttpOnly, unexpired cookies of the requesting frame's site: the initial `document.cookie` state. */
   k?: Cookie[];
@@ -72,17 +72,29 @@ export interface BeaconPayload {
   o?: 1;
 }
 
+/** A container tab, but no answer for this frame's site yet: ask the background (`facet/need-site`) and poll. */
+export interface PendingBeaconAnswer {
+  p: 1;
+  n?: string;
+}
+
 /** Answer in a tab WITHOUT a container on an origin Facet has seen inside containers ("managed"). */
 export interface ManagedBeaconAnswer {
   m: 1;
 }
 
-/** Anything the beacon XHR can yield: container payload, managed marker, or `{}` (plain tab, static default rule). */
-export type BeaconAnswer = BeaconPayload | ManagedBeaconAnswer | Record<string, never>;
+/** Strict mode (consented): any other frame. The shim refuses service-worker registration and does nothing else. */
+export interface GuardBeaconAnswer {
+  g: 1;
+}
+
+/** Anything the beacon XHR can yield. `{}` = plain tab (static default rule). */
+export type BeaconAnswer = BeaconPayload | PendingBeaconAnswer | ManagedBeaconAnswer | GuardBeaconAnswer | Record<string, never>;
 
 /** Storage-key / database-name / cache-name / channel-name prefix of container-namespaced page state. */
 export const NAMESPACE_PREFIX = '__facet:';
-export const namespacePrefix = (containerId: ContainerId): string => `${NAMESPACE_PREFIX}${containerId}:`;
+/** Prefix of one container's state on one site: `__facet:<page key>:` (never the container ID, see `page-key.ts`). */
+export const namespacePrefix = (pageKey: string): string => `${NAMESPACE_PREFIX}${pageKey}:`;
 
 // ---- Content script (ISOLATED) -> background. The background derives tab, frame origin and container from
 // `sender`, never from the message, so a page driving the bridge can only act within its own container. ----
@@ -120,6 +132,13 @@ export interface SettleMessage {
 export interface AwaitChildMessage {
   type: 'facet/await-child';
   nonce: string;
+  /** Where the child will go: its origin's service workers are removed before the reply. */
+  url?: string;
+}
+
+/** The beacon got `{p: 1}`: add the sender frame's site to the container's beacon rules (the beacon then polls). */
+export interface NeedSiteMessage {
+  type: 'facet/need-site';
 }
 
 /** Open a URL in a new tab of the sender's container (noopener / target=_blank / modified clicks). */
@@ -139,6 +158,7 @@ export type ContentMessage =
   | CookieSnapshotMessage
   | SettleMessage
   | AwaitChildMessage
+  | NeedSiteMessage
   | OpenTabMessage
   | PingMessage;
 

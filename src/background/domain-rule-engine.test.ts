@@ -6,17 +6,24 @@ import { ExemptionManager } from './exemption-manager';
 
 function setup(rules: DomainRule[]) {
   const tabs = new Map<number, string | null>();
+  let nextTabId = 100;
   const events: string[] = [];
   const exemptions = new ExemptionManager(new MemoryStorageArea());
   let clock = 1_000;
   const engine = new DomainRuleEngine(exemptions, {
     rules: () => rules,
     containerOf: (tabId) => tabs.get(tabId) ?? null,
-    markerContainer: (url) => (url.includes('#ctr=work') ? 'work' : undefined),
-    assign: async (tabId, containerId) => {
-      events.push(`assign ${tabId} ${containerId}`);
-      tabs.set(tabId, containerId);
-      exemptions.markPlacement(tabId, containerId); // what Facet's tab-assigned event does
+    markerContainer: async ({ tabId, url }) => (url.includes('#ctr=work') && tabs.get(tabId) == null ? 'work' : null),
+    // What Facet does: a fresh tab, placed in the container (tab-assigned marks the placement), then the callback,
+    // then the navigation; the old tab is closed.
+    replaceTab: async (tabId, containerId, url, onCreated) => {
+      const fresh = nextTabId++;
+      events.push(`replace ${tabId} -> ${fresh} ${containerId} ${url}`);
+      tabs.delete(tabId);
+      tabs.set(fresh, containerId);
+      exemptions.markPlacement(fresh, containerId);
+      onCreated(fresh);
+      return fresh;
     },
     navigate: async (tabId, url) => void events.push(`navigate ${tabId} ${url}`),
     chooseUrl: (url, tabId) => `choose?url=${url}&tab=${tabId}`,
@@ -34,16 +41,47 @@ describe('DomainRuleEngine', () => {
   it('moves a plain tab into the rule\'s container and repeats the navigation there', async () => {
     const { nav, events, tabs } = setup([always]);
     expect(await nav(1, 'https://gist.github.com/x')).toBe('moved');
-    expect(events).toEqual(['assign 1 work', 'navigate 1 https://gist.github.com/x']);
-    expect(tabs.get(1)).toBe('work');
+    // A fresh tab (no window.opener), not the old document navigated again.
+    expect(events).toEqual(['replace 1 -> 100 work https://gist.github.com/x']);
+    expect(tabs.get(100)).toBe('work');
+    expect(tabs.has(1)).toBe(false);
+  });
+
+  it('never re-navigates the old tab into the container: every move is a fresh tab, even from another container', async () => {
+    const { nav, events, tabs } = setup([always]);
+    tabs.set(1, 'home');
+    await nav(1, 'https://github.com/');
+    expect(events.some((e) => e.startsWith('navigate'))).toBe(false);
+    expect(events).toEqual(['replace 1 -> 100 work https://github.com/']);
+    expect(tabs.get(100)).toBe('work');
+  });
+
+  it('the fresh tab inherits the exemption and the action history, so the loop guard still holds across replacements', async () => {
+    const { nav, events, tabs } = setup([always, { domain: 'gitlab.com', action: 'always', containerId: 'home' }]);
+    // The new tab's own navigation is not judged...
+    await nav(1, 'https://github.com/a');
+    events.length = 0;
+    expect(await nav(100, 'https://github.com/a')).toBe('skipped');
+    expect(events).toEqual([]);
+    // ...but a chain of client-side redirects between ruled sites ends: each hop is a new tab with the history so far.
+    let tab = 100;
+    const hops: string[] = [];
+    for (let i = 0; i < 8; i++) {
+      tabs.set(tab, i % 2 === 0 ? 'work' : 'home');
+      const result = await nav(tab, i % 2 === 0 ? 'https://gitlab.com/' : 'https://github.com/');
+      hops.push(result);
+      if (result === 'moved') tab = [...tabs.keys()].at(-1)!;
+    }
+    expect(hops.filter((h) => h === 'moved').length).toBeLessThanOrEqual(3); // 1 above + at most 3 = the limit of 4
+    expect(hops.at(-1)).toBe('skipped');
   });
 
   it('does not loop: the repeated navigation, and further ones on the site, are left alone', async () => {
     const { nav, events } = setup([always]);
-    await nav(1, 'https://github.com/a');
+    await nav(1, 'https://github.com/a'); // moved into a fresh tab, 100
     events.length = 0;
-    expect(await nav(1, 'https://github.com/a')).toBe('skipped');
-    expect(await nav(1, 'https://github.com/b')).toBe('skipped');
+    expect(await nav(100, 'https://github.com/a')).toBe('skipped');
+    expect(await nav(100, 'https://github.com/b')).toBe('skipped');
     expect(events).toEqual([]);
   });
 
@@ -58,7 +96,7 @@ describe('DomainRuleEngine', () => {
     const { nav, events, tabs } = setup([always]);
     tabs.set(1, 'home');
     expect(await nav(1, 'https://github.com/')).toBe('moved');
-    expect(events[0]).toBe('assign 1 work');
+    expect(events[0]).toBe('replace 1 -> 100 work https://github.com/');
   });
 
   it('"ask" sends the tab to the choose page, with its address and tab id', async () => {
@@ -87,16 +125,21 @@ describe('DomainRuleEngine', () => {
     expect(await nav(1, 'https://github.com/')).toBe('moved');
   });
 
-  it('an explicit #ctr marker is left to the engine and exempts the repeated navigation', async () => {
+  it('an explicit #ctr marker Facet honours is left to the engine and exempts the repeated navigation', async () => {
     const { nav, events, tabs } = setup([always, ask]);
-    tabs.set(1, 'home');
     expect(await nav(1, 'https://www.reddit.com/#ctr=work')).toBe('skipped');
     expect(events).toEqual([]);
     tabs.set(1, 'work'); // Facet assigned it and navigates to the clean URL
     expect(await nav(1, 'https://www.reddit.com/')).toBe('skipped');
     expect(events).toEqual([]);
-    // A marker naming no container does nothing special.
-    expect(await nav(2, 'https://www.reddit.com/#ctr=ghost')).toBe('skipped');
+  });
+
+  it('a #ctr marker Facet ignores (unknown name, tab already in a container, started by a page) is judged like any URL', async () => {
+    const { nav, events, tabs } = setup([always, ask]);
+    expect(await nav(2, 'https://www.reddit.com/#ctr=ghost')).toBe('asked');
+    tabs.set(3, 'home');
+    expect(await nav(3, 'https://github.com/#ctr=work')).toBe('moved');
+    expect(events.find((e) => e.startsWith('replace'))).toMatch(/^replace 3 -> \d+ work /);
   });
 
   it('a child of a container page is not judged while it is being assigned, nor shortly after', async () => {

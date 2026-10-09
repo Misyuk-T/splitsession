@@ -138,6 +138,29 @@ const server = createServer(async (req, res) => {
           </script>`,
         ),
       );
+    case '/swnet.js':
+      // Network-first service worker: answers every fetch (navigations included) with its own fetch(), whose
+      // requests belong to no tab (tabId -1).
+      return send(
+        res,
+        200,
+        `self.addEventListener('install', () => self.skipWaiting()); self.addEventListener('activate', (e) => e.waitUntil(clients.claim())); self.addEventListener('fetch', (e) => e.respondWith(fetch(e.request)));`,
+        { 'content-type': 'text/javascript' },
+      );
+    case '/swnet-page':
+      return send(
+        res,
+        200,
+        page(
+          'swnet',
+          `<pre id="sw">pending</pre><script>
+            navigator.serviceWorker.register('/swnet.js').then(() => navigator.serviceWorker.ready).then(
+              () => (document.getElementById('sw').textContent = 'active'),
+              (e) => (document.getElementById('sw').textContent = 'rejected: ' + e.name),
+            );
+          </script>`,
+        ),
+      );
     case '/shared.js':
       return send(res, 200, `onconnect = (e) => { const p = e.ports[0]; fetch('/echo?from=shared').then(r => r.text()).then(t => p.postMessage(t)); };`, {
         'content-type': 'text/javascript',
@@ -211,6 +234,16 @@ const server = createServer(async (req, res) => {
         200,
         page('form', `<form id="f" action="/whoami" method="get" target="_blank"><input name="via" value="form"><button id="submit">go</button></form>`),
       );
+    case '/link': {
+      // A link (optionally with a target) and a POST form to an arbitrary address (cross-site navigations from this page).
+      const to = url.searchParams.get('to') ?? '/';
+      const target = url.searchParams.get('target');
+      return send(
+        res,
+        200,
+        page('link', `<a id="go" href="${esc(to)}"${target ? ` target="${esc(target)}"` : ''}>go</a><form id="post" method="post" action="${esc(to)}"><input name="x" value="1"><button id="post-go">post</button></form>`),
+      );
+    }
     case '/links':
       return send(
         res,

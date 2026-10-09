@@ -133,6 +133,7 @@
 .fx-notice--warn { background: var(--fx-warn-soft); border: 1px solid var(--fx-warn-border); color: var(--fx-warn-text); }
 .fx-notice--error { background: var(--fx-danger-soft); border: 1px solid var(--fx-danger); color: var(--fx-danger); }
 .fx-notice--info { background: var(--fx-accent-soft); border: 1px solid transparent; }
+.fx-strict-warning { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; }
 
 .fx-status { min-height: 20px; font-size: var(--fx-text-secondary); color: var(--fx-muted); }
 .fx-status--error { color: var(--fx-danger); }

@@ -15,8 +15,17 @@ export const MODE_ATTR = 'data-mode';
 export const CONTAINER_ATTR = 'data-c';
 /** Set by the beacon when the shim of this realm is already installed (window reused by a same-origin navigation). */
 export const SKIP_ATTR = 'data-skip';
+/**
+ * Asks a shim to patch same-origin windows whose own shim may not run (scripts disabled), dispatched on a document by
+ * the beacon of such a frame (src/content/seal.isolated.ts). `detail` is either `<index>|<mode>|<key>` (from a frame
+ * to its same-origin parent: patch your child `index` if your mode and key are these) or `ADOPT_SWEEP` (patch every
+ * unpatched same-origin window of your frame tree). A page that fires it can only cause what the shim does anyway.
+ */
+export const ADOPT_EVENT = 'facet:adopt';
+export const ADOPT_SWEEP = 'sweep';
 
-export type ShimMode = 'container' | 'managed';
+/** container: namespaced state; managed: plain tab on a container site; guard: strict mode, any other frame. */
+export type ShimMode = 'container' | 'managed' | 'guard';
 
 /** Cookie as exposed to `cookieStore` (CookieListItem). */
 export interface CookieItem {
@@ -35,7 +44,7 @@ export type BridgeRequest =
   | { op: 'cookie-set'; v: string; id: number }
   | { op: 'cookie-list' }
   | { op: 'open-tab'; url: string; active: boolean }
-  | { op: 'await-child'; nonce: string }
+  | { op: 'await-child'; nonce: string; url?: string }
   | { op: 'settle'; id: number; url: string; method: string };
 
 export type BridgePush =

@@ -38,6 +38,11 @@ describe('parseCookieHeader / violates', () => {
     expect(violates(send(), [{ ...sidChange, partitioned: true }])).toBe(false);
   });
 
+  it('ignores SameSite=Strict cookies: cross-site top-level navigations go without them by design', () => {
+    expect(violates(send(), [{ ...sidChange, sameSite: 'strict' }])).toBe(false);
+    expect(violates(send(), [{ ...sidChange, sameSite: 'lax' }])).toBe(true);
+  });
+
   it('flags a deleted cookie that is still sent', () => {
     expect(violates(send({ cookie: 'sid=old' }), [{ ...sidChange, value: null }])).toBe(true);
     expect(violates(send({ cookie: 'x=1' }), [{ ...sidChange, value: null }])).toBe(false);

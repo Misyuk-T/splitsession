@@ -147,7 +147,8 @@ test.describe('page JS state', () => {
     expect(await plain.evaluate(() => (window as any).__bc)).toEqual([]);
   });
 
-  test('SharedWorker is gone and service workers are refused in containers; unmanaged plain tabs keep both', async ({ facet }) => {
+  test('SharedWorker is gone and service workers are refused in containers; without strict mode, unmanaged plain tabs keep both', async ({ facet }) => {
+    await facet.api('updateSettings', { strictMode: false }); // strict mode would refuse workers everywhere
     const A = await facet.container('A');
     const page = await facet.openIn(A.name, at('a.localhost', '/sw-page'));
     await expect(page.locator('#sw')).toHaveText('rejected: SecurityError');
@@ -195,7 +196,9 @@ test.describe('page JS state', () => {
       return r.text();
     });
     const payload = JSON.parse(leaked);
-    expect(payload.c).toBe(A.id);
+    expect(payload.c).toMatch(/^[a-z2-7]{16}$/); // an opaque per-site key, never the container ID
+    expect(leaked).not.toContain(A.id);
+    expect(payload.n).toBe(A.name); // "Show container name to pages" is on by default
     expect(leaked).toContain('mine');
     expect(leaked).not.toContain('cdnsecret'); // other site of the same container
     expect(leaked).not.toContain('sid'); // HttpOnly

@@ -37,6 +37,11 @@ export interface CookieChange {
   secure: boolean;
   /** Partitioned (CHIPS) cookies depend on the top-level site: not used as expectations. */
   partitioned?: boolean;
+  /**
+   * `strict` cookies are not used as expectations: a cross-site (or browser-initiated) top-level navigation
+   * legitimately goes without them (the rules split cookies by SameSite).
+   */
+  sameSite?: 'strict' | 'lax' | 'none' | 'unspecified';
 }
 
 export interface ChangeWindow {
@@ -100,7 +105,7 @@ export function violates(send: Pick<MainFrameSend, 'url' | 'cookie'>, changes: r
   const pairs = parseCookieHeader(send.cookie);
   for (const change of changes) {
     const applies = change.hostOnly ? host === change.domain : domainMatches(host, change.domain);
-    if (!applies || change.partitioned || (change.secure && !secureRequest)) continue;
+    if (!applies || change.partitioned || change.sameSite === 'strict' || (change.secure && !secureRequest)) continue;
     if (change.value !== null) {
       if (!pairs.some(([n, v]) => n === change.name && v === change.value)) return true;
     } else if (pairs.some(([n]) => n === change.name)) {

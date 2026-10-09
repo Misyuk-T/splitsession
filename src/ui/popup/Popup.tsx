@@ -6,6 +6,8 @@ import { facetApi } from '../../engine/api-client';
 import { Button, Dot } from '../components/Button';
 import { ContainerForm } from '../components/ContainerForm';
 import { ConfirmDialog } from '../components/Dialog';
+import { StrictConsentDialog, StrictWarning } from '../components/StrictMode';
+import type { StrictModeStatus } from '../../engine/strict-mode';
 import { describeError, hostOf, isWebUrl, tabsLabel } from '../format';
 import { Logo } from '../components/Logo';
 import { MenuButton, type MenuItem } from '../components/Menu';
@@ -40,6 +42,10 @@ export function Popup() {
   const [busy, setBusy] = useState(false);
   const [status, setStatus] = useState<Status | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [strict, setStrict] = useState<StrictModeStatus | null>(null);
+  const [consentOpen, setConsentOpen] = useState(false);
+  const [consentBusy, setConsentBusy] = useState(false);
+  const [consentError, setConsentError] = useState<string | null>(null);
   const statusTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const say = (text: string, error = false) => {
@@ -50,10 +56,18 @@ export function Popup() {
 
   const refresh = useCallback(async () => {
     try {
-      const [list, active, prefs] = await Promise.all([facetApi.listContainers(), currentTab(), facetApi.getSettings()]);
+      const [list, active, prefs, strictStatus] = await Promise.all([
+        facetApi.listContainers(),
+        currentTab(),
+        facetApi.getSettings(),
+        facetApi.getStrictMode(),
+      ]);
       setContainers(list);
       setTab(active);
       setSettings(prefs);
+      setStrict(strictStatus);
+      // First container, install or update: the background asks the interface to open the consent dialog once.
+      if (strictStatus.prompt) setConsentOpen(true);
       setTabContainer(active ? await facetApi.getTabContainer(active.id) : null);
       setLoadError(null);
     } catch (error) {
@@ -127,6 +141,26 @@ export function Popup() {
 
   const editing = mode.kind === 'edit' ? containers.find((c) => c.id === mode.id) : undefined;
 
+  const acceptStrict = async () => {
+    if (consentBusy) return;
+    setConsentBusy(true);
+    setConsentError(null);
+    try {
+      setStrict(await facetApi.grantStrictMode());
+      setConsentOpen(false);
+      say('Strict mode is on: service workers removed.');
+    } catch (error) {
+      setConsentError(`Could not remove service workers: ${describeError(error)}`);
+    } finally {
+      setConsentBusy(false);
+    }
+  };
+  const later = () => {
+    setConsentOpen(false);
+    setConsentError(null);
+    void facetApi.dismissStrictModePrompt().then(setStrict, () => {});
+  };
+
   return (
     <main class="popup">
       <header class="popup__head">
@@ -137,6 +171,8 @@ export function Popup() {
           Settings
         </Button>
       </header>
+
+      {strict?.needsConsent && <StrictWarning onReview={() => setConsentOpen(true)} />}
 
       <section class="popup__current" aria-labelledby="current-title">
         <h2 id="current-title" class="popup__label">This tab</h2>
@@ -260,6 +296,10 @@ export function Popup() {
           </Button>
         )}
       </footer>
+
+      {consentOpen && strict?.enabled && !strict.active && (
+        <StrictConsentDialog busy={consentBusy} error={consentError} onAccept={() => void acceptStrict()} onLater={later} />
+      )}
 
       {deleting && (
         <ConfirmDialog

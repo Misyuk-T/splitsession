@@ -105,10 +105,11 @@ test.describe('network cookies', () => {
     expect(await facet.realCookies(at('sub.a.localhost'))).toEqual([]);
   });
 
-  test('a cross-origin iframe gets the container cookies of its own host', async ({ facet }) => {
+  test('a cross-site iframe gets the container’s SameSite=None cookies of its own host, not its Lax ones', async ({ facet }) => {
     const A = await facet.container('A');
     const B = await facet.container('B');
-    const setFor = (v: string) => at('cdn.localhost', `/set?c=${encodeURIComponent(`cdnid=${v}; Path=/`)}`);
+    const setFor = (v: string) =>
+      at('cdn.localhost', `/set?c=${encodeURIComponent(`cdnid=${v}; Path=/; SameSite=None; Secure`)}&c=${encodeURIComponent(`cdnlax=${v}; Path=/`)}`);
     const pa = await facet.openIn(A.name, setFor('A'));
     const pb = await facet.openIn(B.name, setFor('B'));
     await go(pa, at('a.localhost', '/frame-host'));

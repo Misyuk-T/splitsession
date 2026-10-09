@@ -43,6 +43,8 @@ try {
   await api('setDomainRule', { domain: 'github.com', action: 'always', containerId: work.id });
   await api('setDomainRule', { domain: 'reddit.com', action: 'ask' });
   await api('setDomainRule', { domain: 'threads.com', action: 'always', containerId: personal.id });
+  // The usual state: the user said yes to strict mode when the first container appeared (no dialog, no warning).
+  await api('grantStrictMode');
   await new Promise((r) => setTimeout(r, 800));
 
   const shoot = async (name, path, viewport, { scheme, fullPage = false, before } = {}) => {

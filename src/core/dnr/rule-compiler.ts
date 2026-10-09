@@ -11,18 +11,27 @@ import { isPotentiallyTrustworthyHost, isSameOrSubdomain, labelCount, registrabl
  *  1. catch-all (priority 1): drop request `Cookie` and response `Set-Cookie`, so the real profile's cookies never
  *     reach the container and container cookies never leak into the real profile;
  *  2. per cookie host `h` (longer host = higher priority):
- *     - WIDE  (`requestDomains: [h]`, 10 + 2*labels): the Domain cookies that match `h`. `requestDomains` also
- *       matches subdomains, which is exactly right for Domain cookies;
- *     - EXACT (`regexFilter` anchored on the exact host, 11 + 2*labels): everything `h` gets, host-only cookies
- *       included. Only emitted when `h` holds host-only cookies, so those never reach `x.h` (RFC 6265 host-only);
+ *     - WIDE  (`requestDomains: [h]`): the Domain cookies that match `h`. `requestDomains` also matches subdomains,
+ *       which is exactly right for Domain cookies;
+ *     - EXACT (`regexFilter` anchored on the exact host): everything `h` gets, host-only cookies included. Only
+ *       emitted when `h` holds host-only cookies, so those never reach `x.h` (RFC 6265 host-only);
+ *     each split by SameSite with DNR `domainType` (Chrome compares the request with its initiator; a request without
+ *     initiator, i.e. typed into the address bar or started by an extension, counts as third-party):
+ *     - `firstParty`: every cookie;
+ *     - `thirdParty`: `SameSite=None` cookies only (cross-site fetch, XHR, images, frames, forms...);
+ *     - `thirdParty` + `main_frame` + GET, one step higher: `None`, `Lax` and unspecified (Lax-by-default) cookies,
+ *       the cookies of a top-level cross-site navigation. `Strict` cookies never travel cross-site.
+ *     A host whose cookies are all `SameSite=None` gets one rule without `domainType` instead of the split.
  *  3. for hosts holding `Secure` cookies (and hosts below such a host, which would otherwise be shadowed) the same
- *     pair for plain `http://` (200 + 2*labels / 201 + 2*labels) carrying only the non-Secure cookies, so Secure
- *     cookies never travel in clear text. Skipped on localhost-like hosts, where Chrome sends Secure cookies over
- *     http too. The WIDE http rule cannot cover `ws://` (a `urlFilter` cannot say "http or ws"); EXACT can;
- *  4. the beacon: the content script's synchronous XHR to `ctr.localhost/whoami` is redirected to a `data:` URL.
- *     A generic rule (priority 1000) answers `{c, n}`; one rule per registrable domain with non-HttpOnly cookies
- *     (`initiatorDomains: [site]`, 1000 + labels) adds the `document.cookie` snapshot of that site only. A page can
- *     fetch the beacon URL itself, so a snapshot must never hold cookies of another site.
+ *     rules for plain `http://` (a band above) carrying only the non-Secure cookies, so Secure cookies never travel in
+ *     clear text. Skipped on localhost-like hosts, where Chrome sends Secure cookies over http too. The WIDE http rule
+ *     cannot cover `ws://` (a `urlFilter` cannot say "http or ws"); EXACT can;
+ *  4. the beacon: the content script's synchronous XHR to `ctr.localhost/whoami` is redirected to a `data:` URL. A
+ *     page can read that URL too, so it never carries the container ID: one rule per registrable domain
+ *     (`initiatorDomains: [site]`) answers `{c: <page key of this site>}`, the site's `document.cookie` snapshot and
+ *     (only when the user lets pages see it) the container name. The page key is opaque and differs per site (see
+ *     `page-key.ts`). A generic rule answers frames of sites without their own rule with `{p: 1}` ("in a container,
+ *     ask again"): the content script then asks the background to add the site and polls.
  *
  * Path matching is ignored, as planned. EXACT rules use `regexFilter` while the caller's regex budget lasts
  * (Chrome allows 1000 regex rules); beyond it they fall back to one left-anchored `urlFilter` rule per scheme.
@@ -37,10 +46,14 @@ export const REGEX_RULE_BUDGET = 900;
 
 export const CATCH_ALL_PRIORITY = 1;
 export const HOST_PRIORITY_BASE = 10;
-export const INSECURE_PRIORITY_BASE = 200;
-/** Global (no tabIds) answers: static default `{}` and the dynamic "managed origin" `{m:1}`. */
+/** Above the highest secure-band priority (10 + 4*63 + 3 = 265). */
+export const INSECURE_PRIORITY_BASE = 300;
+/** Global (no tabIds) answers: static default `{}`, strict-mode guard `{g:1}`, "managed origin" `{m:1}`. */
 export const DEFAULT_BEACON_PRIORITY = 900;
+export const STRICT_GUARD_PRIORITY = 920;
 export const MANAGED_BEACON_PRIORITY = 950;
+/** `tabs.TAB_ID_NONE`: in a session rule's `tabIds` it matches requests that belong to no tab (service workers...). */
+export const TAB_ID_NONE = -1;
 export const BEACON_PRIORITY = 1000;
 /** Hosts cannot have more than 127 labels; capping keeps the priority bands apart. */
 const MAX_PRIORITY_LABELS = 63;
@@ -88,6 +101,9 @@ export interface DnrRule {
     /** Always present on per-container rules; absent only on the global beacon answers. */
     tabIds?: number[];
     resourceTypes: DnrResourceType[];
+    /** Chrome compares the request URL with its initiator; no initiator (browser-initiated) counts as third-party. */
+    domainType?: 'firstParty' | 'thirdParty';
+    requestMethods?: string[];
     requestDomains?: string[];
     initiatorDomains?: string[];
     urlFilter?: string;
@@ -95,7 +111,8 @@ export interface DnrRule {
   };
   action:
     | { type: 'modifyHeaders'; requestHeaders?: DnrHeaderOperation[]; responseHeaders?: DnrHeaderOperation[] }
-    | { type: 'redirect'; redirect: { url: string } };
+    | { type: 'redirect'; redirect: { url: string } }
+    | { type: 'block' };
 }
 
 /** Hands out rule IDs; the engine implements it on top of its ID pool. */
@@ -112,7 +129,7 @@ export interface CompileGroupInput {
   /** Tabs sharing this jar view. Must be non-empty, non-negative integers. */
   tabIds: readonly number[];
   containerId: ContainerId;
-  /** Display name, echoed in the beacon so the page marker can show it. */
+  /** Display name, echoed in the beacon (page marker, title prefix). Pass it only when pages may see it. */
   containerName?: string;
   jar: CookieJar;
   /** Top-level site of the group (`siteOf`), used to include the right partitioned (CHIPS) cookies. */
@@ -120,6 +137,10 @@ export interface CompileGroupInput {
   now?: number;
   /** How many regexFilter rules this compile may emit; EXACT rules beyond it use urlFilter rules. Default: no cap. */
   regexBudget?: number;
+  /** Opaque page-visible key of this container on `site` (registrable domain). Never the container ID. */
+  pageKeyOf(site: string): string;
+  /** Sites (registrable domains) whose frames get a beacon answer even without cookies: the sites the tabs are on. */
+  frameSites?: Iterable<string>;
 }
 
 export interface CompiledRules {
@@ -130,24 +151,24 @@ export interface CompiledRules {
   regexRuleCount: number;
 }
 
-export interface CompileTabInput {
+export interface CompileTabInput extends Omit<CompileGroupInput, 'tabIds'> {
   tabId: number;
-  containerId: ContainerId;
-  containerName?: string;
-  jar: CookieJar;
-  topLevelSite?: string | null;
-  now?: number;
-  regexBudget?: number;
 }
 
 /** @deprecated name kept for Stage A callers; same shape as `CompiledRules`. */
 export type CompiledTabRules = CompiledRules;
 
 const labels = (host: string): number => Math.min(labelCount(host), MAX_PRIORITY_LABELS);
-export const hostRulePriority = (host: string): number => HOST_PRIORITY_BASE + 2 * labels(host);
-export const exactHostRulePriority = (host: string): number => HOST_PRIORITY_BASE + 2 * labels(host) + 1;
-export const insecureHostRulePriority = (host: string): number => INSECURE_PRIORITY_BASE + 2 * labels(host);
-export const insecureExactHostRulePriority = (host: string): number => INSECURE_PRIORITY_BASE + 2 * labels(host) + 1;
+/**
+ * Four steps per label: WIDE, WIDE cross-site navigation, EXACT, EXACT cross-site navigation. A deeper host's lowest
+ * rule still beats every rule of its parent.
+ */
+export const hostRulePriority = (host: string): number => HOST_PRIORITY_BASE + 4 * labels(host);
+export const exactHostRulePriority = (host: string): number => HOST_PRIORITY_BASE + 4 * labels(host) + 2;
+export const insecureHostRulePriority = (host: string): number => INSECURE_PRIORITY_BASE + 4 * labels(host);
+export const insecureExactHostRulePriority = (host: string): number => INSECURE_PRIORITY_BASE + 4 * labels(host) + 2;
+/** Offset of the `thirdParty` + `main_frame` + GET rule above its host rule. */
+export const CROSS_SITE_NAVIGATION_STEP = 1;
 export const beaconSitePriority = (site: string): number => BEACON_PRIORITY + labels(site);
 
 /** Key used to group cookies into beacon snapshots: the registrable domain, or the host itself when it has none. */
@@ -181,7 +202,7 @@ export function compileTabRules(input: CompileTabInput, allocator: RuleIdAllocat
 }
 
 export function compileGroupRules(input: CompileGroupInput, allocator: RuleIdAllocator): CompiledRules {
-  const { tabIds, containerId, containerName, jar, topLevelSite = null, now = Date.now() } = input;
+  const { tabIds, containerName, jar, topLevelSite = null, now = Date.now(), pageKeyOf } = input;
   if (tabIds.length === 0) throw new RangeError('compileGroupRules: empty tab group');
   for (const tabId of tabIds) {
     if (!Number.isInteger(tabId) || tabId < 0) {
@@ -208,19 +229,41 @@ export function compileGroupRules(input: CompileGroupInput, allocator: RuleIdAll
         : [{ header: 'cookie', operation: 'remove' }],
     responseHeaders: stripSetCookie(),
   });
-  const emitExact = (host: string, schemes: SchemeSet, priority: number, cookies: Cookie[]): void => {
-    if (regexLeft > 0) {
-      regexLeft--;
-      emit({
-        priority,
-        condition: { ...base(), requestDomains: [host], regexFilter: exactHostRegex(host, schemes) },
-        action: cookieAction(cookies),
-      });
+
+  type Fragment = Partial<DnrRule['condition']>;
+  /** How many rules one matcher fragment turns into for these cookies (see the SameSite split). */
+  const splitSize = (cookies: Cookie[]): number => {
+    const none = cookies.filter((c) => c.sameSite === 'none').length;
+    if (none === cookies.length) return 1;
+    const lax = cookies.filter((c) => c.sameSite !== 'strict').length;
+    return lax === none ? 2 : 3;
+  };
+  /** Cookie rules for one matcher fragment, split by SameSite (see the file comment). */
+  const emitCookieRules = (fragment: Fragment, priority: number, cookies: Cookie[]): void => {
+    const none = cookies.filter((c) => c.sameSite === 'none');
+    if (none.length === cookies.length) {
+      emit({ priority, condition: { ...base(), ...fragment }, action: cookieAction(cookies) });
       return;
     }
-    for (const urlFilter of exactHostUrlFilters(host, schemes)) {
-      emit({ priority, condition: { ...base(), requestDomains: [host], urlFilter }, action: cookieAction(cookies) });
+    emit({ priority, condition: { ...base(), ...fragment, domainType: 'firstParty' }, action: cookieAction(cookies) });
+    emit({ priority, condition: { ...base(), ...fragment, domainType: 'thirdParty' }, action: cookieAction(none) });
+    const lax = cookies.filter((c) => c.sameSite !== 'strict');
+    if (lax.length === none.length) return; // the thirdParty rule already says it
+    emit({
+      priority: priority + CROSS_SITE_NAVIGATION_STEP,
+      condition: { ...base(), ...fragment, domainType: 'thirdParty', resourceTypes: ['main_frame'], requestMethods: ['get'] },
+      action: cookieAction(lax),
+    });
+  };
+  const emitExact = (host: string, schemes: SchemeSet, priority: number, cookies: Cookie[]): void => {
+    const needed = splitSize(cookies);
+    if (regexLeft >= needed) {
+      regexLeft -= needed;
+      emitCookieRules({ requestDomains: [host], regexFilter: exactHostRegex(host, schemes) }, priority, cookies);
+      return;
     }
+    regexLeft = 0; // keep the fallback decision stable for the rest of this compile
+    for (const urlFilter of exactHostUrlFilters(host, schemes)) emitCookieRules({ requestDomains: [host], urlFilter }, priority, cookies);
   };
 
   emit({
@@ -262,9 +305,7 @@ export function compileGroupRules(input: CompileGroupInput, allocator: RuleIdAll
   for (const { host, full, wide, hasHostOnly } of plans) {
     // With no Domain cookie matching `host`, no ancestor has one either, so subdomains correctly fall through to
     // the catch-all (or to an ancestor rule that is equally empty of matching cookies).
-    if (wide.length > 0) {
-      emit({ priority: hostRulePriority(host), condition: { ...base(), requestDomains: [host] }, action: cookieAction(wide) });
-    }
+    if (wide.length > 0) emitCookieRules({ requestDomains: [host] }, hostRulePriority(host), wide);
     if (hasHostOnly) emitExact(host, 'any', exactHostRulePriority(host), full);
   }
 
@@ -279,24 +320,20 @@ export function compileGroupRules(input: CompileGroupInput, allocator: RuleIdAll
   }
   for (const host of insecureHosts) {
     const plan = plans.find((p) => p.host === host)!;
-    if (plan.wide.length > 0) {
-      emit({
-        priority: insecureHostRulePriority(host),
-        condition: { ...base(), requestDomains: [host], urlFilter: '|http://' },
-        action: cookieAction(plan.widePlain),
-      });
-    }
+    // `emitCookieRules` covers every request category (one rule without domainType, or the split), also with an empty
+    // list: a missing http rule would let the secure-band rule (Secure cookies included) answer plain http.
+    if (plan.wide.length > 0) emitCookieRules({ requestDomains: [host], urlFilter: '|http://' }, insecureHostRulePriority(host), plan.widePlain);
     if (plan.hasHostOnly) emitExact(host, 'insecure', insecureExactHostRulePriority(host), plan.plain);
   }
 
-  // Beacon: identity for every frame of the group, cookie snapshots per site.
-  const identity: BeaconPayload = containerName === undefined ? { c: containerId } : { c: containerId, n: containerName };
+  // Beacon: a generic "ask again" answer, and one answer per site with that site's page key and cookie snapshot.
+  const named = containerName === undefined ? {} : { n: containerName };
   emit({
     priority: BEACON_PRIORITY,
     condition: { ...base(), urlFilter: BEACON_URL_FILTER },
-    action: { type: 'redirect', redirect: { url: beaconDataUrl(identity) } },
+    action: { type: 'redirect', redirect: { url: beaconDataUrl({ p: 1, ...named }) } },
   });
-  for (const [site, payload] of buildSiteBeaconPayloads(identity, jar, topLevelSite, now)) {
+  for (const [site, payload] of buildSiteBeaconPayloads(jar, topLevelSite, now, { pageKeyOf, containerName, frameSites: input.frameSites })) {
     emit({
       priority: beaconSitePriority(site),
       condition: { ...base(), urlFilter: BEACON_URL_FILTER, initiatorDomains: [site] },
@@ -306,6 +343,7 @@ export function compileGroupRules(input: CompileGroupInput, allocator: RuleIdAll
 
   return { addRules, ruleIds: addRules.map((rule) => rule.id), regexRuleCount };
 }
+
 
 /** Non-HttpOnly, unexpired cookies a page of this group could see through `document.cookie` (on some host). */
 export function scriptVisibleCookies(jar: CookieJar, topLevelSite: string | null, now: number): Cookie[] {
@@ -327,17 +365,22 @@ export function groupCookiesBySite(cookies: readonly Cookie[]): Map<string, Cook
 }
 
 /**
- * One payload per site: identity plus that site's script-visible cookies. The content script answers
- * `document.cookie` for its own host from it with the core jar. Oversized snapshots become `o: 1`.
+ * One payload per site: the site's page key, the container name when pages may see it, and that site's
+ * script-visible cookies (the content script answers `document.cookie` for its own host from them with the core jar).
+ * Sites in `frameSites` without cookies get an empty snapshot. Oversized snapshots become `o: 1`.
  */
 export function buildSiteBeaconPayloads(
-  identity: BeaconPayload,
   jar: CookieJar,
   topLevelSite: string | null,
   now: number,
+  options: { pageKeyOf(site: string): string; containerName?: string; frameSites?: Iterable<string> },
 ): Map<string, BeaconPayload> {
+  const bySite = groupCookiesBySite(scriptVisibleCookies(jar, topLevelSite, now));
+  for (const site of options.frameSites ?? []) if (!bySite.has(site)) bySite.set(site, []);
   const result = new Map<string, BeaconPayload>();
-  for (const [site, cookies] of groupCookiesBySite(scriptVisibleCookies(jar, topLevelSite, now))) {
+  for (const site of [...bySite.keys()].sort()) {
+    const cookies = bySite.get(site)!;
+    const identity: BeaconPayload = options.containerName === undefined ? { c: options.pageKeyOf(site) } : { c: options.pageKeyOf(site), n: options.containerName };
     const tooBig = JSON.stringify(cookies).length > BEACON_COOKIE_BYTE_LIMIT;
     result.set(site, tooBig ? { ...identity, o: 1 } : { ...identity, k: cookies, s: topLevelSite });
   }
@@ -359,6 +402,65 @@ export function compileManagedBeaconRule(id: number, managedSites: readonly stri
     priority: MANAGED_BEACON_PRIORITY,
     condition: { resourceTypes: ['xmlhttprequest'], urlFilter: BEACON_URL_FILTER, initiatorDomains: [...managedSites] },
     action: { type: 'redirect', redirect: { url: beaconDataUrl({ m: 1 }) } },
+  };
+}
+
+/** Strict mode, after the user agreed: every frame of every tab is told to refuse service-worker registration. */
+export function compileStrictGuardRule(id: number): DnrRule {
+  return {
+    id,
+    priority: STRICT_GUARD_PRIORITY,
+    condition: { resourceTypes: ['xmlhttprequest'], urlFilter: BEACON_URL_FILTER },
+    action: { type: 'redirect', redirect: { url: beaconDataUrl({ g: 1 }) } },
+  };
+}
+
+/**
+ * Session rule for requests that belong to NO tab (`tabIds: [TAB_ID_NONE]`: service workers, shared workers, other
+ * extensions, browser-initiated requests) to sites containers use AND that a page of such a site started
+ * (`initiatorDomains`): both their `Cookie` and their `Set-Cookie` are dropped. A worker of the real profile that
+ * answers a container tab's navigation with its own fetch has the worker's site as initiator, so it can neither carry
+ * the real profile's session into the container (the request goes without cookies) nor write into the real
+ * profile's cookie store. Requests with NO initiator (the browser's own: a background session refresh such as Google's
+ * device-bound session credentials, favicon and update fetches, a navigation typed in the omnibox) do not match
+ * `initiatorDomains`, so they keep the real profile's cookies: stripping them could sign the real profile out.
+ * Cost: requests of the real profile that a managed site's worker or shared worker starts go without cookies too.
+ * Strict mode only.
+ */
+export function compileNoTabRule(id: number, managedSites: readonly string[]): DnrRule | null {
+  if (managedSites.length === 0) return null;
+  return {
+    id,
+    priority: CATCH_ALL_PRIORITY,
+    condition: {
+      tabIds: [TAB_ID_NONE],
+      requestDomains: [...managedSites],
+      initiatorDomains: [...managedSites],
+      resourceTypes: [...ALL_RESOURCE_TYPES],
+    },
+    action: {
+      type: 'modifyHeaders',
+      requestHeaders: [{ header: 'cookie', operation: 'remove' }],
+      responseHeaders: [{ header: 'set-cookie', operation: 'remove' }],
+    },
+  };
+}
+
+/**
+ * Strict mode, after the user agreed: a session rule that blocks every script request belonging to no tab. A service
+ * worker's script (and its update checks and `importScripts`) is fetched like that (measured, Chromium 156: type
+ * `script`, tab ID -1; a shared worker's main script is `xmlhttprequest`), so no service worker can be installed in the
+ * profile even by a realm the shim never patched. Cost: `importScripts` and static module imports of shared workers.
+ * Deliberately NOT limited by `initiatorDomains` (unlike the cookie rule above): it touches no cookies, so a
+ * browser-initiated request cannot lose a session to it, and a service worker must be refused on sites no container
+ * has visited yet as well.
+ */
+export function compileNoTabWorkerScriptRule(id: number): DnrRule {
+  return {
+    id,
+    priority: CATCH_ALL_PRIORITY,
+    condition: { tabIds: [TAB_ID_NONE], resourceTypes: ['script'] },
+    action: { type: 'block' },
   };
 }
 

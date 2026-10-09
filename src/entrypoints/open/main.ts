@@ -33,6 +33,8 @@ async function run(): Promise<void> {
     const container = await callApi('ensureContainer', ref);
     status.textContent = `Opening in container “${container.name}”…`;
     await callApi('assignTab', tab.id, container.id);
+    // No service worker of the target's origin may answer the first request (it would go out as the real profile).
+    await callApi('prepareNavigation', url.href);
   } catch (error) {
     return fail(`Could not open in container: ${error instanceof Error ? error.message : String(error)}`);
   }

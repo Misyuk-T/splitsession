@@ -1,4 +1,4 @@
-import { at, expect, ext, go, test } from './fixtures';
+import { at, expect, ext, followReplacement, go, test } from './fixtures';
 
 interface Rule {
   domain: string;
@@ -14,9 +14,10 @@ test.describe('domain rules', () => {
     await facet.api('setDomainRule', { domain: 'http://sub.a.localhost/anything', action: 'always', containerId: W.id });
     expect(await facet.api<Rule[]>('listDomainRules')).toEqual([{ domain: 'a.localhost', action: 'always', containerId: W.id }]);
 
-    const page = await facet.plain(at('b.localhost', '/whoami'));
-    expect(await facet.api('getTabContainer', await facet.tabIdOf(page))).toBeNull();
-    await go(page, at('a.localhost', '/whoami?via=rule'));
+    const original = await facet.plain(at('b.localhost', '/whoami'));
+    expect(await facet.api('getTabContainer', await facet.tabIdOf(original))).toBeNull();
+    // The tab is replaced by a fresh one in the container (no window.opener can survive); the old one is closed.
+    const page = await followReplacement(facet, original, () => go(original, at('a.localhost', '/whoami?via=rule')));
     await expect(page.locator('#user')).toHaveText('ruled'); // the container's login: the final request carried the container's cookie
     expect(await facet.api('getTabContainer', await facet.tabIdOf(page))).toBe(W.id);
     expect(await facet.realCookies(at('a.localhost'))).toEqual([]);
@@ -44,8 +45,8 @@ test.describe('domain rules', () => {
     // A navigation to ANOTHER site's rule... the exemption covers sites, not the tab. Take b.localhost into P and go to a.localhost.
     const roaming = await facet.openIn(P.name, at('b.localhost', '/whoami'));
     expect(await facet.api('getTabContainer', await facet.tabIdOf(roaming))).toBe(P.id);
-    await go(roaming, at('a.localhost', '/whoami?roam=1'));
-    await expect.poll(async () => facet.api('getTabContainer', await facet.tabIdOf(roaming))).toBe(W.id);
+    const moved = await followReplacement(facet, roaming, () => go(roaming, at('a.localhost', '/whoami?roam=1')));
+    expect(await facet.api('getTabContainer', await facet.tabIdOf(moved))).toBe(W.id);
   });
 
   test('an explicit #ctr marker wins over a rule for the site', async ({ facet }) => {
@@ -94,23 +95,24 @@ test.describe('domain rules', () => {
     await expect(login.locator('#user')).toHaveText('asked');
     await facet.api('setDomainRule', { domain: 'a.localhost', action: 'ask' });
 
-    const page = await facet.plain(at('b.localhost', '/whoami'));
+    const asking = await facet.plain(at('b.localhost', '/whoami'));
     const target = at('a.localhost', '/whoami?ask=1');
-    await go(page, target);
-    await expect.poll(() => page.url()).toContain(ext('choose.html'));
-    await expect(page.getByTestId('choose-url')).toHaveText(target);
-    expect(await facet.api('getTabContainer', await facet.tabIdOf(page))).toBeNull();
+    await go(asking, target);
+    await expect.poll(() => asking.url()).toContain(ext('choose.html'));
+    await expect(asking.getByTestId('choose-url')).toHaveText(target);
+    expect(await facet.api('getTabContainer', await facet.tabIdOf(asking))).toBeNull();
 
-    await page.getByRole('switch', { name: /Remember my choice/ }).click();
-    await page.getByTestId('choose-container').filter({ hasText: W.name }).click();
-    await expect.poll(() => page.url()).toBe(target);
+    await asking.getByRole('switch', { name: /Remember my choice/ }).click();
+    // Changing container opens the address in a fresh tab (no window.opener) and closes the choose tab.
+    const page = await followReplacement(facet, asking, () => asking.getByTestId('choose-container').filter({ hasText: W.name }).click());
+    expect(page.url()).toBe(target);
     await expect(page.locator('#user')).toHaveText('asked');
     expect(await facet.api('getTabContainer', await facet.tabIdOf(page))).toBe(W.id);
     expect(await facet.api<Rule[]>('listDomainRules')).toEqual([{ domain: 'a.localhost', action: 'always', containerId: W.id }]);
 
     // Remembered: the next plain tab goes straight into Work, no question.
-    const next = await facet.plain(at('b.localhost', '/whoami'));
-    await go(next, at('a.localhost', '/whoami?ask=2'));
+    const plainNext = await facet.plain(at('b.localhost', '/whoami'));
+    const next = await followReplacement(facet, plainNext, () => go(plainNext, at('a.localhost', '/whoami?ask=2')));
     await expect(next.locator('#user')).toHaveText('asked');
     expect(next.url()).not.toContain('choose.html');
     expect(await facet.api('getTabContainer', await facet.tabIdOf(next))).toBe(W.id);

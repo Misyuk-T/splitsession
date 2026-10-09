@@ -1,5 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any -- this file patches untyped corners of the DOM on purpose */
 import {
+  ADOPT_EVENT,
+  ADOPT_SWEEP,
   BRIDGE_TAG,
   CONTAINER_ATTR,
   MODE_ATTR,
@@ -24,7 +26,13 @@ import { containerNamespace, realNamespace, visibleNames, type Namespace } from 
  *   container before its first request. fetch/XHR wait for cookie writes and Set-Cookie to reach the rules.
  * - managed mode (tab without a container on a site containers use): container-namespaced state is hidden and service
  *   worker registration is rejected; nothing else changes.
+ * - guard mode (strict mode, after the user agreed; any other frame of any tab): service worker registration is
+ *   rejected, nothing else is patched.
  * - no bridge: plain tab, nothing is patched.
+ *
+ * In every mode, every same-origin window the page can reach (frames, popups) is patched with the same patches before
+ * the page can use it, including windows whose own scripts are disabled (`FrameGuard` below): an unpatched realm would
+ * hand the page the real profile's cookies, storage and service-worker registration.
  *
  * Patches replace properties on prototypes (never `delete`), keep names/arity, and report native source text.
  */
@@ -39,9 +47,20 @@ const reflectApply = Reflect.apply as (target: any, thisArg: any, args: ArrayLik
 const nativeFnToString = Function.prototype.toString;
 const jsonParse = JSON.parse;
 const jsonStringify = JSON.stringify;
+// Captured before any page script: the page can redefine `length` on its window (it is [Replaceable]).
+const nativeWindowLength = getOwnPropertyDescriptor(window, 'length')?.get;
+const nativeAddListener = EventTarget.prototype.addEventListener;
+const NativeMutationObserver = MutationObserver;
+const nativeObserve = MutationObserver.prototype.observe;
+const NativeWeakRef = WeakRef;
+/** Bounds for walking a frame tree (pages with more frames than this are not a realistic target). */
+const MAX_TREE_WINDOWS = 300;
+const MAX_TREE_DEPTH = 12;
 
 interface Shared {
   mode: ShimMode;
+  /** The page key of container mode (the bridge's `data-c`), empty otherwise. */
+  key: string;
   ns: Namespace;
   masks: WeakMap<object, string>;
   request(req: BridgeRequest): any;
@@ -55,6 +74,41 @@ interface Shared {
   storageViews: WeakMap<object, { real: Storage; ns: Namespace }>;
   realToView: WeakMap<object, object>;
   redispatched: WeakSet<Event>;
+  frames: FrameGuard;
+}
+
+/**
+ * Keeps every same-origin window reachable from realms patched with one `Shared` patched as well. A realm whose own
+ * scripts are disabled never runs the shim, yet a same-origin page can use its `document.cookie`, `localStorage` or
+ * `ServiceWorkerContainer.prototype.register` (on its own objects or on ours). Such a realm is patched from here, which
+ * works whatever its sandbox flags. Ways a new realm becomes reachable, and what catches each:
+ *  - DOM insertion of a frame by script: the insertion methods sweep right after inserting (synchronously);
+ *  - parser-inserted frames: a MutationObserver sweeps at the microtask checkpoint, before the next script runs;
+ *  - `frames`, `self`, `length` getters sweep; `contentWindow`, `contentDocument`, `getSVGDocument()`, `defaultView`,
+ *    `opener`, `MessageEvent.source`, `UIEvent.view` and `window.open` adopt what they return;
+ *  - a frame navigating to a new document: its beacon (ISOLATED, before any script) asks its same-origin parent to
+ *    patch the new realm at once, and if the frame's own shim then does not run (scripts disabled), asks every
+ *    same-origin window to sweep the whole frame tree (src/content/seal.isolated.ts).
+ * The adopted realm gets this `Shared` (its bridge and namespace): it is same-origin, i.e. the same site in the same
+ * tab or in a popup that inherited the tab's container, so the view is exactly the adopter's own.
+ */
+interface FrameGuard {
+  /** Patches `win` if it is a same-origin window that nobody has patched; true when it is same-origin. */
+  adopt(win: any): boolean;
+  /**
+   * `adopt` for a window proxy no sweep has looked at yet. Cheap for the hot getters (`contentWindow` of a
+   * cross-origin frame costs one caught exception once): a seen window that later navigates to a document of its own
+   * origin has its own shim, or its seal asks for a full sweep.
+   */
+  reach(win: any): void;
+  /** Adopts the new child windows of every realm patched with this Shared. Cheap: run after every DOM insertion. */
+  sweep(): void;
+  /** Adopts every unpatched same-origin window in `from`'s frame tree and in popups this Shared opened. */
+  sweepTree(from: any): void;
+  /** A realm was patched with this Shared. */
+  addRealm(win: any): void;
+  /** A popup was opened by a realm of this Shared. */
+  addOpened(win: any): void;
 }
 
 export function runShim(): void {
@@ -65,10 +119,16 @@ export function runShim(): void {
   bridge.remove();
   if (bridge.hasAttribute(SKIP_ATTR)) return;
   const mode = bridge.getAttribute(MODE_ATTR);
-  if (mode !== 'container' && mode !== 'managed') return;
+  if (mode !== 'container' && mode !== 'managed' && mode !== 'guard') return;
   const containerId = bridge.getAttribute(CONTAINER_ATTR) ?? '';
   if (mode === 'container' && !/^[a-z0-9]{1,32}$/.test(containerId)) return;
-  installInto(window as any, createShared(bridge, mode, containerId));
+  const shared = createShared(bridge, mode, containerId);
+  // Already patched: the same-origin parent adopted this realm when the beacon asked (src/content/seal.isolated.ts),
+  // or the window was reused. Its patches stay; this bridge is not needed.
+  if (!installInto(window as any, shared)) return;
+  // Same-origin windows that exist already and have no shim of their own (scripts disabled), e.g. a sandboxed
+  // sibling frame: patch them before this frame's scripts can reach them.
+  shared.frames.sweepTree(window);
 }
 
 function createShared(bridge: Element, mode: ShimMode, containerId: string): Shared {
@@ -123,8 +183,9 @@ function createShared(bridge: Element, mode: ShimMode, containerId: string): Sha
   });
   const bounded = (p: Promise<void>, ms: number) => NativePromise.race([p, new NativePromise<void>((r) => setTimer(r, ms))]);
 
-  return {
+  const shared: Shared = {
     mode,
+    key: mode === 'container' ? containerId : '',
     ns: mode === 'container' ? containerNamespace(containerId) : realNamespace(),
     masks: new WeakMap(),
     request,
@@ -142,7 +203,144 @@ function createShared(bridge: Element, mode: ShimMode, containerId: string): Sha
     storageViews: new WeakMap(),
     realToView: new WeakMap(),
     redispatched: new WeakSet(),
+    frames: null as unknown as FrameGuard,
   };
+  shared.frames = createFrameGuard(shared);
+  return shared;
+}
+
+function createFrameGuard(shared: Shared): FrameGuard {
+  /** Window proxies a sweep has looked at; a later navigation of one of them is covered by its seal or its shim. */
+  const seen = new WeakSet<object>();
+  /** Realms patched with this Shared (their window proxies). */
+  let realms: Array<WeakRef<any>> = [];
+  const realmSet = new WeakSet<object>();
+  let opened: Array<WeakRef<any>> = [];
+  const observed = new WeakSet<object>();
+  let observer: MutationObserver | null = null;
+  let busy = false;
+
+  const lengthOf = (win: any): number => {
+    try {
+      return nativeWindowLength ? (reflectApply(nativeWindowLength, win, []) as number) : win.length;
+    } catch {
+      try {
+        return win.length;
+      } catch {
+        return 0;
+      }
+    }
+  };
+  /** `document` is [LegacyUnforgeable]: the page cannot redefine it. Null for cross-origin windows. */
+  const documentOf = (win: any): any => {
+    try {
+      return win.document ?? null;
+    } catch {
+      return null;
+    }
+  };
+  const observe = (doc: any): void => {
+    if (!doc || observed.has(doc)) return;
+    observed.add(doc);
+    observer ??= new NativeMutationObserver(() => guard.sweep());
+    try {
+      reflectApply(nativeObserve, observer, [doc, { childList: true, subtree: true }]);
+    } catch {
+      // not a node of a live document
+    }
+  };
+  const live = (list: Array<WeakRef<any>>) => list.filter((ref) => ref.deref() !== undefined);
+
+  const guard: FrameGuard = {
+    adopt(win) {
+      if (!win) return false;
+      const doc = documentOf(win);
+      if (!doc) return false;
+      installInto(win, shared);
+      // A realm of ours may have a new document (same-origin navigation reusing the window): watch that one too.
+      if (realmSet.has(win)) observe(doc);
+      return true;
+    },
+    reach(win) {
+      if (!win || typeof win !== 'object' || seen.has(win)) return;
+      seen.add(win);
+      guard.adopt(win);
+    },
+    sweep() {
+      if (busy) return;
+      busy = true;
+      try {
+        // Realms adopted during the loop are appended and visited too.
+        for (let k = 0; k < realms.length; k++) {
+          const realm = realms[k]!.deref();
+          if (!realm) continue;
+          const n = lengthOf(realm);
+          for (let i = 0; i < n; i++) {
+            let child: any;
+            try {
+              child = realm[i];
+            } catch {
+              continue;
+            }
+            guard.reach(child);
+          }
+        }
+        if (realms.length > 32) realms = live(realms);
+      } finally {
+        busy = false;
+      }
+    },
+    sweepTree(from) {
+      if (busy) return;
+      busy = true;
+      try {
+        const visited = new Set<any>();
+        const visit = (win: any, depth: number): void => {
+          if (!win || visited.has(win) || visited.size >= MAX_TREE_WINDOWS || depth > MAX_TREE_DEPTH) return;
+          visited.add(win);
+          seen.add(win);
+          guard.adopt(win);
+          const n = lengthOf(win);
+          for (let i = 0; i < n; i++) {
+            try {
+              visit(win[i], depth + 1);
+            } catch {
+              // removed meanwhile
+            }
+          }
+        };
+        let top: any = null;
+        try {
+          top = from.top;
+        } catch {
+          top = from;
+        }
+        visit(top, 0);
+        opened = live(opened);
+        for (const ref of opened) {
+          const win = ref.deref();
+          try {
+            if (win && !win.closed) visit(win.top, 0);
+          } catch {
+            // closed meanwhile
+          }
+        }
+      } finally {
+        busy = false;
+      }
+    },
+    addRealm(win) {
+      if (realmSet.has(win)) return;
+      realmSet.add(win);
+      seen.add(win);
+      realms.push(new NativeWeakRef(win));
+      observe(documentOf(win));
+    },
+    addOpened(win) {
+      if (win) opened.push(new NativeWeakRef(win));
+    },
+  };
+  return guard;
 }
 
 // ------------------------------------------------------------------------------------------------ patch helpers
@@ -224,27 +422,34 @@ function makeHelpers(shared: Shared) {
 
 // ------------------------------------------------------------------------------------------------ install
 
-function installInto(W: any, shared: Shared): void {
+function installInto(W: any, shared: Shared): boolean {
   try {
-    if (getOwnPropertyDescriptor(W, MARK)) return;
+    if (getOwnPropertyDescriptor(W, MARK)) return false;
     defineProperty(W, MARK, { value: true });
   } catch {
-    return; // cross-origin
+    return false; // cross-origin
   }
+  shared.frames.addRealm(W);
   const h = makeHelpers(shared);
   patchToString(W, shared);
+  if (shared.mode === 'guard') {
+    patchServiceWorker(W, h);
+    patchChildWindows(W, shared, h);
+    return true;
+  }
   patchStorage(W, shared, h);
   patchIndexedDb(W, shared, h);
   patchCaches(W, shared, h);
   patchServiceWorker(W, h);
   const adopt = patchChildWindows(W, shared, h);
-  if (shared.mode !== 'container') return;
+  if (shared.mode !== 'container') return true;
   patchCookies(W, shared, h);
   patchBroadcastChannel(W, shared, h);
   h.setValue(W, 'SharedWorker', undefined);
   patchOpeners(W, shared, h, adopt);
   patchNetworkBarrier(W, shared, h);
   recoverFromServiceWorker(W);
+  return true;
 }
 
 type Helpers = ReturnType<typeof makeHelpers>;
@@ -577,7 +782,7 @@ function patchServiceWorker(W: any, h: Helpers): void {
   const SWC = W.ServiceWorkerContainer?.prototype;
   if (!SWC) return;
   h.replaceMethod(SWC, 'register', function () {
-    return W.Promise.reject(new W.DOMException('Service workers are disabled on this site by Facet (containers).', 'SecurityError'));
+    return W.Promise.reject(new W.DOMException('Service workers are disabled by Facet (containers).', 'SecurityError'));
   });
 }
 
@@ -600,19 +805,17 @@ function recoverFromServiceWorker(W: any): void {
   }
 }
 
-// ---- same-origin child windows (about:blank iframes and popups) get the same patches before the page uses them
+// ---- same-origin child windows get the same patches before the page uses them (see FrameGuard)
 
 function patchChildWindows(W: any, shared: Shared, h: Helpers): (win: any) => void {
-  const adopt = (child: any) => {
-    if (!child || child === W) return;
-    try {
-      void child.document; // throws for cross-origin
-      installInto(child, shared);
-    } catch {
-      // cross-origin: it has its own content scripts
-    }
+  const frames = shared.frames;
+  const adopt = (win: any): void => {
+    if (win && win !== W) frames.reach(win);
   };
-  for (const Ctor of [W.HTMLIFrameElement, W.HTMLFrameElement, W.HTMLObjectElement]) {
+  const sweep = () => frames.sweep();
+
+  // Element accessors that hand out a child window or document.
+  for (const Ctor of [W.HTMLIFrameElement, W.HTMLFrameElement, W.HTMLObjectElement, W.HTMLEmbedElement]) {
     const proto = Ctor?.prototype;
     if (!proto) continue;
     h.replaceAccessor(proto, 'contentWindow', {
@@ -629,15 +832,127 @@ function patchChildWindows(W: any, shared: Shared, h: Helpers): (win: any) => vo
         return doc;
       },
     });
+    h.replaceMethod(proto, 'getSVGDocument', function (original, args) {
+      const doc = reflectApply(original, this, args);
+      if (doc) adopt(doc.defaultView);
+      return doc;
+    });
   }
+  h.replaceAccessor(W.Document?.prototype, 'defaultView', {
+    get(original) {
+      const win = reflectApply(original, this, []);
+      adopt(win);
+      return win;
+    },
+  });
+  for (const [Ctor, key] of [
+    [W.MessageEvent, 'source'],
+    [W.UIEvent, 'view'],
+  ] as const) {
+    h.replaceAccessor(Ctor?.prototype, key, {
+      get(original) {
+        const value = reflectApply(original, this, []);
+        adopt(value);
+        return value;
+      },
+    });
+  }
+
+  // Window getters that lead to child windows (`frames[0]`, `self[0]`): sweep first. Indexed access on `window`
+  // itself (`window[0]`) cannot be intercepted; the insertion hooks and the observer below have patched it by then.
+  for (const key of ['frames', 'self', 'length']) {
+    h.replaceAccessor(W, key, {
+      get(original) {
+        sweep();
+        return reflectApply(original, this, []);
+      },
+    });
+  }
+  h.replaceAccessor(W, 'opener', {
+    get(original) {
+      const win = reflectApply(original, this, []);
+      adopt(win);
+      return win;
+    },
+  });
+
+  // DOM insertion by script creates a frame's window synchronously: sweep right after every insertion method.
+  const afterInsert = (proto: any, keys: string[]) => {
+    if (!proto) return;
+    for (const key of keys) {
+      if (!getOwnPropertyDescriptor(proto, key)) continue; // never wrap an inherited method twice
+      h.replaceMethod(proto, key, function (original, args) {
+        try {
+          return reflectApply(original, this, args);
+        } finally {
+          sweep();
+        }
+      });
+    }
+  };
+  const afterSet = (proto: any, keys: string[]) => {
+    if (!proto) return;
+    for (const key of keys) {
+      if (!getOwnPropertyDescriptor(proto, key)) continue;
+      h.replaceAccessor(proto, key, {
+        set(original, value) {
+          try {
+            reflectApply(original, this, [value]);
+          } finally {
+            sweep();
+          }
+        },
+      });
+    }
+  };
+  const childNode = ['before', 'after', 'replaceWith'];
+  const parentNode = ['append', 'prepend', 'replaceChildren'];
+  afterInsert(W.Node?.prototype, ['appendChild', 'insertBefore', 'replaceChild']);
+  afterInsert(W.Element?.prototype, [...childNode, ...parentNode, 'insertAdjacentElement', 'insertAdjacentHTML', 'setHTMLUnsafe', 'setHTML', 'moveBefore']);
+  afterInsert(W.CharacterData?.prototype, childNode);
+  afterInsert(W.DocumentType?.prototype, childNode);
+  afterInsert(W.Document?.prototype, [...parentNode, 'write', 'writeln', 'close', 'execCommand', 'moveBefore']);
+  afterInsert(W.DocumentFragment?.prototype, [...parentNode, 'moveBefore']); // ShadowRoot inherits these
+  afterInsert(W.ShadowRoot?.prototype, ['setHTMLUnsafe', 'setHTML']);
+  afterInsert(W.Range?.prototype, ['insertNode', 'surroundContents']);
+  afterSet(W.Element?.prototype, ['innerHTML', 'outerHTML']);
+  afterSet(W.ShadowRoot?.prototype, ['innerHTML']);
+  afterSet(W.Document?.prototype, ['body']);
+
+  // Requests from beacons of frames whose shim may not run (src/content/seal.isolated.ts).
+  reflectApply(nativeAddListener, W, [
+    ADOPT_EVENT,
+    (event: Event) => {
+      const detail = (event as CustomEvent).detail;
+      if (detail === ADOPT_SWEEP) return frames.sweepTree(W);
+      if (typeof detail !== 'string') return;
+      const [index, mode, key] = detail.split('|');
+      if (mode !== shared.mode || key !== shared.key) return; // its own view would differ: its own shim decides
+      const i = Number(index);
+      if (!Number.isInteger(i) || i < 0) return;
+      let child: any = null;
+      try {
+        child = W[i];
+      } catch {
+        return;
+      }
+      if (child && child !== W) frames.adopt(child);
+    },
+    true,
+  ]);
+
   if (shared.mode !== 'container') {
     h.replaceMethod(W, 'open', function (original, args) {
       const win = reflectApply(original, this, args);
+      frames.addOpened(win);
       adopt(win);
       return win;
     });
   }
-  return adopt;
+  return (win: any) => {
+    frames.addOpened(win);
+    adopt(win);
+  };
 }
 
 // ---- window.open and links that open new tabs
@@ -684,10 +999,12 @@ function patchOpeners(W: any, shared: Shared, h: Helpers, adopt: (win: any) => v
   const openViaBlank = (thisArg: any, url: string, target: string, features: string) => {
     const nonce = randomNonce();
     const win = reflectApply(nativeOpen, thisArg, [`about:blank#facet-${nonce}`, target, features]);
-    // Not adopted: it leaves about:blank within CHILD_WAIT_MS and gets its own scripts there.
     if (!win) return win;
+    // Chrome runs the popup's own scripts in this about:blank synchronously (measured); if it ever does not, the
+    // opener's patches stand in until the popup leaves about:blank.
+    adopt(win);
     pendingChildren.set(nonce, { win, url, timer: setTimeout(() => go(nonce), CHILD_WAIT_MS) });
-    shared.request({ op: 'await-child', nonce });
+    shared.request({ op: 'await-child', nonce, url });
     return win;
   };
 

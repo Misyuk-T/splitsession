@@ -3,6 +3,7 @@ export * from './site';
 export * from './jar/set-cookie-parser';
 export * from './jar/cookie-jar';
 export * from './dnr/rule-compiler';
+export * from './page-key';
 export * from './settings';
 export * from './names';
 export * from './indicators';

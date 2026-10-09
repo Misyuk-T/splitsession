@@ -1,9 +1,9 @@
-import { NAMESPACE_PREFIX, namespacePrefix, type ContainerId } from '../core/types';
+import { NAMESPACE_PREFIX, namespacePrefix } from '../core/types';
 
 /**
  * Name mapping for origin-scoped page state (Web Storage keys, IndexedDB names, Cache Storage names, BroadcastChannel
  * names) shared by the real profile and every container on the same origin.
- *  - container mode: every name lives under `__facet:<id>:`;
+ *  - container mode: every name lives under `__facet:<page key>:` (per container and site, never the container ID);
  *  - managed mode (no container, origin used by containers): names under `__facet:` are hidden, and a page that
  *    asks for one explicitly is sent to a quarantine namespace, never into a container's data.
  */
@@ -18,8 +18,8 @@ export interface Namespace {
 
 const QUARANTINE = `${NAMESPACE_PREFIX}_real:`;
 
-export function containerNamespace(containerId: ContainerId): Namespace {
-  const prefix = namespacePrefix(containerId);
+export function containerNamespace(pageKey: string): Namespace {
+  const prefix = namespacePrefix(pageKey);
   return {
     toRaw: (name) => prefix + name,
     owns: (raw) => raw.startsWith(prefix),

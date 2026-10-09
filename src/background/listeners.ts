@@ -16,6 +16,8 @@ const on = (event: unknown, listener: AnyListener, ...rest: unknown[]) => (event
  */
 export function registerListeners(facet: Facet, api: FullApi, b: typeof browser = browser): void {
   const wr = b.webRequest;
+  // Initiators of main-frame navigations (#ctr=) and frame sites of container tabs (per-site beacon answers).
+  on(wr.onBeforeRequest, (d) => facet.handleBeforeRequest(d), FRAMES);
   on(wr.onSendHeaders, (d) => facet.handleSendHeaders(d), FRAMES, ['requestHeaders', 'extraHeaders']);
   // extraHeaders: Set-Cookie is only visible with it, and it shows the header even though DNR strips it.
   on(wr.onHeadersReceived, (d) => void facet.handleResponse(d), ALL_URLS, ['responseHeaders', 'extraHeaders']);
@@ -32,7 +34,6 @@ export function registerListeners(facet: Facet, api: FullApi, b: typeof browser 
   on(nav.onCreatedNavigationTarget, (d) => facet.handleCreatedNavigationTarget(d));
   on(nav.onBeforeNavigate, (d) => facet.handleBeforeNavigate(d));
   on(nav.onCommitted, (d) => facet.handleCommitted(d));
-  on(nav.onReferenceFragmentUpdated, (d) => facet.handleFragmentUpdated(d));
 
   on(b.alarms.onAlarm, (alarm) => void facet.handleAlarm(alarm.name));
   on(b.runtime.onSuspend, () => facet.handleSuspend());

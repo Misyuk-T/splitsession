@@ -24,7 +24,8 @@ Chrome profiles isolate everything, but they are separate windows with separate 
 - **Popup**: shows which container the current tab is in, reopens it in another container (or none), opens a new tab in a container, manages the list.
 - **Domain rules** (like Firefox's "Always open in"): per site, "always open in container X" or "ask me". The ask page can remember your choice.
 - **Tab groups**: containers are shown as Chrome tab groups with the container's name and colour (optional; a group is only a view, dragging a tab out of it never changes its container).
-- **Indicators**: a toolbar badge with the container's initials on its colour, the page title prefixed with `[name]`, `data-ctr="name"` on the page's `<html>`.
+- **Indicators**: a toolbar badge with the container's initials on its colour, the page title prefixed with `[name]`, `data-ctr="name"` on the page's `<html>` (the last two only while "Show the container name to pages" is on; it is off by default, AI agents need it on).
+- **Strict mode** (default on, asks first): removes every service worker of the profile and stops sites from installing new ones, so none can answer a container tab with your regular logins.
 - **Export and import** of containers and rules as JSON. Cookies are left out unless you tick a clearly marked box.
 - **For AI agents**: `open.html?container=…&url=…`, a `#ctr=name` marker, a plain-text `state.html`. See [docs/agents.md](docs/agents.md).
 - Light and dark theme. Every control is custom and keyboard accessible: no browser `<select>`, `alert` or validation bubbles.
@@ -50,12 +51,12 @@ Facet asks for access to all sites: rewriting request headers per tab needs it. 
 ## How isolation works
 
 1. A container is a property of a **tab** (`tabId -> container`), not of a site. Everything that tab requests, on any host, belongs to its container.
-2. Each container has its own **cookie jar**. For the tabs of a container, `declarativeNetRequest` session rules replace the `Cookie` request header with the jar's cookies and strip `Set-Cookie` from responses, so the real profile's cookies are neither sent nor changed.
+2. Each container has its own **cookie jar**. For the tabs of a container, `declarativeNetRequest` session rules replace the `Cookie` request header with the jar's cookies and strip `Set-Cookie` from responses, so the real profile's cookies are neither sent nor changed. The rules follow `SameSite`: a cross-site request gets only `SameSite=None` cookies, a cross-site top-level GET also `Lax` ones, never `Strict` ones.
 3. `Set-Cookie` headers are read in `webRequest` (before the rules remove them) and stored in the container's jar; the rules are recompiled before the next request. A navigation that raced the update is detected by the `Cookie` header it actually carried and repeated once.
-4. A script that runs **before the page's own scripts** (a synchronous "beacon" answered by a DNR rule tells it the container without any network traffic) namespaces `document.cookie`, `cookieStore`, `localStorage`, `sessionStorage`, IndexedDB, Cache Storage and `BroadcastChannel` per container.
+4. A script that runs **before the page's own scripts** (a synchronous "beacon" answered by a DNR rule tells it the container without any network traffic) namespaces `document.cookie`, `cookieStore`, `localStorage`, `sessionStorage`, IndexedDB, Cache Storage and `BroadcastChannel` per container. Pages can read the beacon too, so it never carries the container's ID, only an opaque key that differs per site.
 5. Pages a container tab opens (`window.open`, `target=_blank`, Ctrl-click) are created blank, put into the same container, and only then navigated, so even the first request of an OAuth popup is isolated.
 6. `open.html?container=…&url=…` puts a tab into a container before its first request; that is how the popup, domain rules and agents open pages.
-7. Service workers and shared workers would make requests outside every tab's rules, so they are switched off for sites used inside containers.
+7. Service workers and shared workers make requests outside every tab's rules, so they are switched off in containers. Strict mode (with your OK) removes every service worker of the profile and refuses new ones everywhere; without it, they are removed and refused on sites used in containers, and Facet removes a site's workers before it navigates a container tab there itself.
 8. The real profile is never touched. A tab without a container is an ordinary Chrome tab.
 
 The design is in [docs/PLAN.md](docs/PLAN.md) (Ukrainian), the decisions taken while building it in [docs/decisions.md](docs/decisions.md).
@@ -64,9 +65,10 @@ The design is in [docs/PLAN.md](docs/PLAN.md) (Ukrainian), the decisions taken w
 
 | | |
 | --- | --- |
-| Isolated | Network cookies of the whole tab (top frame, iframes, fetch/XHR, WebSocket handshakes, dedicated workers); `document.cookie`, `cookieStore`, `localStorage`, `sessionStorage`, IndexedDB, Cache Storage, `BroadcastChannel`; popups and links opened from a container tab; several accounts of one site at once; restarts of the extension's service worker |
-| Switched off in containers | `SharedWorker`; service workers (also removed on every site a container has visited) |
-| Not isolated | The **first request** of a tab Facet did not open itself (context-menu "open in new tab", `#ctr=`, a domain rule that moves a tab), HTTP cache, HTTP auth, client certificates, fingerprint, saved passwords, history, state inside dedicated workers, `Path` and `SameSite` of cookies |
+| Isolated | Network cookies of the whole tab (top frame, iframes, fetch/XHR, WebSocket handshakes, dedicated workers), with `SameSite` honoured for cross-site requests; `document.cookie`, `cookieStore`, `localStorage`, `sessionStorage`, IndexedDB, Cache Storage, `BroadcastChannel`, also in same-origin frames, `<object>` documents and sandboxed frames whose scripts are disabled; popups and links opened from a container tab; several accounts of one site at once; restarts of the extension's service worker |
+| Switched off in containers | `SharedWorker`; service workers. Strict mode (after your OK): service workers removed and refused in the whole profile, their scripts blocked at the network level, and requests outside tabs to container sites sent without cookies |
+| Not isolated | The **first request** of a tab Facet did not open itself (context-menu "open in new tab", `#ctr=`, a domain rule that moves a tab); without strict mode, a site's service worker of the real profile may answer a container tab's first visit through a plain link; **a site that deliberately polls its own same-origin iframe while it navigates can read the real profile's cookies and that origin's storage of other containers in the instant before Facet's scripts run in the new document** (no extension API closes this; it links accounts on that site only); `SameSite=None` cookies on cross-site requests made with `credentials: 'omit'`; HTTP cache, HTTP auth, client certificates, fingerprint, saved passwords, history, state inside dedicated workers, `Path` of cookies |
+| Seen by pages | An opaque per-site key (never the container ID); the container name only while "Show the container name to pages" is on (off by default; AI agents need it on) |
 | After a browser restart | Tab assignments are lost: restored tabs come back as ordinary tabs |
 
 The complete, honest list, with the mechanism behind each item, is [docs/limits.md](docs/limits.md).
@@ -75,11 +77,11 @@ The complete, honest list, with the mechanism behind each item, is [docs/limits.
 
 ```text
 chrome-extension://hapfikidacgfgnnajkgnaednpgnhmffk/open.html?container=Work&url=https%3A%2F%2Fexample.com%2F   (navigate a tab here: it opens in container "Work", created if new)
-https://example.com/#ctr=Work                                                                                       (marker form, container must exist)
+https://example.com/#ctr=Work                                                                                       (marker form: container must exist, tab must have none, navigation started by the browser or an extension)
 chrome-extension://hapfikidacgfgnnajkgnaednpgnhmffk/state.html                                                       (plain text: containers, container tabs, ready-to-copy addresses)
 ```
 
-Container tabs have a `[Work] ` title prefix (so `tabs_context` shows which account is which) and `data-ctr="Work"` on `<html>`. Details for Claude in Chrome and Playwright: [docs/agents.md](docs/agents.md).
+First switch on **"Show the container name to pages (for AI agents)"** in Facet's settings (off by default, because any page can read the name). Then container tabs have a `[Work] ` title prefix (so `tabs_context` shows which account is which) and `data-ctr="Work"` on `<html>`. Details for Claude in Chrome and Playwright: [docs/agents.md](docs/agents.md).
 
 ## Compatibility
 

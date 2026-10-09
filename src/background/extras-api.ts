@@ -21,10 +21,12 @@ export interface ExtrasApi {
   /** A blank new tab in the container (type an address into the omnibox and it is already isolated). */
   newTabInContainer(containerId: ContainerId): Promise<number>;
   /**
-   * The choose page's answer: optionally remember it as a domain rule, then put the tab in the container (null: take
-   * it out). The page navigates to `url` afterwards; that navigation is exempt from rules.
+   * The choose page's answer: optionally remember it as a domain rule, then open `url` in the container (null: no
+   * container). When that changes the tab's container, `url` is opened in a FRESH tab at the same place and this one
+   * is closed shortly after (`replaced: true`; no `window.opener` survives the move). Otherwise the tab is placed as
+   * it is and the page navigates to `url` itself (`replaced: false`); that navigation is exempt from rules.
    */
-  applyChoice(input: { tabId: number; url: string; containerId: ContainerId | null; remember: boolean }): Promise<void>;
+  applyChoice(input: { tabId: number; url: string; containerId: ContainerId | null; remember: boolean }): Promise<{ replaced: boolean }>;
 }
 
 export const EXTRAS_METHODS = [
@@ -59,11 +61,20 @@ export function createExtrasApi(facet: Facet, extras: Extras, b: typeof browser 
   return {
     assignTab: async (tabId, containerId, options) => {
       await place(tabId, containerId);
-      if (options?.reload) await b.tabs.reload(tabId);
+      if (options?.reload) {
+        // "Reopen in": the reload is Facet's navigation, so no service worker of the page's origin may answer it.
+        if (containerId !== null) await facet.prepareNavigation((await b.tabs.get(tabId).catch(() => undefined))?.url);
+        await b.tabs.reload(tabId);
+      }
     },
 
     getSettings: async () => (await ready(), extras.settings.get()),
-    updateSettings: async (patch) => (await ready(), extras.settings.update(patch)),
+    updateSettings: async (patch) => {
+      await ready();
+      const next = await extras.settings.update(patch);
+      await facet.applySettings(next); // already started by the change listener; this waits for it
+      return next;
+    },
 
     listDomainRules: async () => (await ready(), extras.rules.list()),
     setDomainRule: async (rule) => (await ready(), extras.rules.set(rule)),
@@ -104,9 +115,19 @@ export function createExtrasApi(facet: Facet, extras: Extras, b: typeof browser 
         if (containerId !== null) await extras.rules.set({ domain: key, action: 'always', containerId });
         else await extras.rules.remove(key);
       }
+      if (facet.getTabContainer(tabId) !== containerId) {
+        // The tab changes container (or leaves one): its document may have an opener that could script the new
+        // identity's page. Open the address in a fresh tab instead and close this one once the reply is out.
+        await facet.replaceTab(tabId, containerId, String(url), (newTabId) => extras.exemptions.markSite(newTabId, containerId, key));
+        setTimeout(() => void b.tabs.remove(tabId).catch(() => {}), 150);
+        return { replaced: true };
+      }
       await place(tabId, containerId);
       // Even when the tab is already where it should be, the navigation that follows is the user's own decision.
       extras.exemptions.markSite(tabId, containerId, key);
+      // The choose page navigates to `url` next: no service worker of it may answer a container's request.
+      if (containerId !== null) await facet.prepareNavigation(String(url));
+      return { replaced: false };
     },
   };
 }

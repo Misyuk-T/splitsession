@@ -32,11 +32,11 @@ test.describe('options page', () => {
 
     await groups.click();
     await expect(groups).toHaveAttribute('aria-checked', 'false');
-    expect(await facet.api('getSettings')).toEqual({ tabGroups: false, titlePrefix: true });
+    expect(await facet.api('getSettings')).toMatchObject({ tabGroups: false, titlePrefix: true });
     await prefix.focus();
     await page.keyboard.press('Space'); // keyboard works
     await expect(prefix).toHaveAttribute('aria-checked', 'false');
-    expect(await facet.api('getSettings')).toEqual({ tabGroups: false, titlePrefix: false });
+    expect(await facet.api('getSettings')).toMatchObject({ tabGroups: false, titlePrefix: false });
 
     await page.reload();
     await expect(page.getByRole('switch', { name: /tab groups/ })).toHaveAttribute('aria-checked', 'false');

@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { MANAGED_BEACON_PRIORITY } from '../core';
+import { MANAGED_BEACON_PRIORITY, STRICT_GUARD_PRIORITY } from '../core';
 import { networkOrigin, setCookieHeaders } from './capture/headers';
 import { CONTENT_SCRIPTS, ensureContentScripts, type RegisteredScript, type ScriptingApi } from './content-scripts';
 import { MemoryStorageArea } from './storage/storage-area';
-import { MANAGED_BEACON_RULE_ID, MANAGED_SITES_KEY, ServiceWorkerPolicy } from './sw-policy';
+import { MANAGED_BEACON_RULE_ID, MANAGED_SITES_KEY, ServiceWorkerPolicy, STRICT_GUARD_RULE_ID } from './sw-policy';
 
 describe('setCookieHeaders', () => {
   it('collects every Set-Cookie (case-insensitive), decodes binary values, never splits on commas', () => {
@@ -73,19 +73,20 @@ describe('ServiceWorkerPolicy', () => {
     const dynamic: Array<{ removeRuleIds?: number[]; addRules?: unknown[] }> = [];
     const removals: string[] = [];
     let now = 1_000;
+    let changes = 0;
     const policy = new ServiceWorkerPolicy(
       area,
       { updateDynamicRules: async (o) => void dynamic.push(o) },
-      { remove: async ({ origins }) => void removals.push(...origins) },
-      { now: () => now, removalThrottleMs: 30_000 },
+      { remove: async ({ origins }) => void removals.push(...(origins ?? ['*'])) },
+      { now: () => now, removalThrottleMs: 30_000, prepareThrottleMs: 2_000, onSitesChanged: () => changes++ },
     );
-    return { area, dynamic, removals, policy, tick: (ms: number) => (now += ms) };
+    return { area, dynamic, removals, policy, tick: (ms: number) => (now += ms), changes: () => changes };
   };
 
   it('marks sites managed, removes their service workers (throttled) and publishes the {m:1} rule', async () => {
     const { area, dynamic, removals, policy, tick } = setup();
     await policy.load();
-    expect(dynamic.at(-1)).toEqual({ removeRuleIds: [MANAGED_BEACON_RULE_ID], addRules: [] });
+    expect(dynamic.at(-1)).toEqual({ removeRuleIds: [MANAGED_BEACON_RULE_ID, STRICT_GUARD_RULE_ID], addRules: [] });
     await policy.noteContainerOrigin('http://sub.a.localhost:3000');
     await policy.noteContainerOrigin('http://sub.a.localhost:3000');
     await policy.noteContainerOrigin('https://www.example.com');
@@ -101,5 +102,38 @@ describe('ServiceWorkerPolicy', () => {
     expect(area.data.get(MANAGED_SITES_KEY)).toEqual(['a.localhost', 'example.com']);
     expect(policy.isManaged('x.example.com')).toBe(true);
     expect(policy.isManaged('other.test')).toBe(false);
+  });
+
+  it('prepare() marks the site, publishes the rule and removes the origin\'s workers before resolving', async () => {
+    const { dynamic, removals, policy, tick, changes } = setup();
+    await policy.load();
+    await policy.prepare('http://b.localhost:3000/login?x=1');
+    expect(removals).toEqual(['http://b.localhost:3000']);
+    expect((dynamic.at(-1)!.addRules![0] as { condition: { initiatorDomains: string[] } }).condition.initiatorDomains).toEqual(['b.localhost']);
+    expect(changes()).toBe(1);
+    // Within the short throttle: no second removal. After it: again (the background throttle is longer).
+    await policy.prepare('http://b.localhost:3000/');
+    expect(removals).toHaveLength(1);
+    tick(2_500);
+    await policy.prepare('http://b.localhost:3000/');
+    expect(removals).toHaveLength(2);
+    await policy.prepare('about:blank');
+    expect(removals).toHaveLength(2);
+  });
+
+  it('strict mode: removeAll() clears every origin; the guard rule is global and survives site changes', async () => {
+    const { dynamic, removals, policy } = setup();
+    await policy.load(true);
+    const guard = dynamic.at(-1)!.addRules!.find((r) => (r as { id: number }).id === STRICT_GUARD_RULE_ID) as { priority: number; condition: object };
+    expect(guard.priority).toBe(STRICT_GUARD_PRIORITY);
+    expect(guard.condition).not.toHaveProperty('initiatorDomains');
+    await policy.removeAll();
+    expect(removals).toEqual(['*']);
+    await policy.noteContainerOrigin('http://a.localhost');
+    await policy.settle();
+    expect(dynamic.at(-1)!.addRules).toHaveLength(2);
+    await policy.setGuard(false);
+    expect(dynamic.at(-1)!.addRules).toHaveLength(1);
+    expect(policy.guarded).toBe(false);
   });
 });

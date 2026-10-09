@@ -1,5 +1,5 @@
 import { browser } from 'wxt/browser';
-import { ctrMarkerRef, type ContainerId } from '../core';
+import type { ContainerId } from '../core';
 import type { StorageAreaLike } from '../engine/storage/storage-area';
 import { BadgeIndicator, type ActionApi } from './badges';
 import { DomainRuleEngine } from './domain-rule-engine';
@@ -52,18 +52,24 @@ export class Extras {
     this.engine = new DomainRuleEngine(this.exemptions, {
       rules: () => this.rules.all(),
       containerOf: (tabId) => facet.getTabContainer(tabId),
-      markerContainer: (url) => {
-        const ref = ctrMarkerRef(url);
-        return ref === null ? undefined : facet.containers.resolve(ref)?.id;
+      markerContainer: (details) => facet.ctrDecision(details),
+      replaceTab: async (tabId, containerId, url, onCreated) => {
+        const newTabId = await facet.replaceTab(tabId, containerId, url, onCreated);
+        await b.tabs.remove(tabId).catch(() => {});
+        return newTabId;
       },
-      assign: (tabId, containerId) => facet.assignTab(tabId, containerId),
-      navigate: async (tabId, url) => void (await b.tabs.update(tabId, { url })),
+      navigate: async (tabId, url) => {
+        // A rule moving a tab: no service worker of the target may answer the repeated navigation.
+        if (facet.getTabContainer(tabId) !== null) await facet.prepareNavigation(url);
+        await b.tabs.update(tabId, { url });
+      },
       chooseUrl: (url, tabId) => `${b.runtime.getURL('/choose.html' as never)}?url=${encodeURIComponent(url)}&tab=${tabId}`,
       log: facet.log,
     });
 
     facet.events.on((event) => this.onFacetEvent(event));
     this.settings.onChange((next, previous) => {
+      void facet.applySettings(next).catch((error) => facet.log('error', 'applying settings failed', String(error)));
       if (next.tabGroups === previous.tabGroups) return;
       void (next.tabGroups ? this.groups.reconcileAll() : this.groups.releaseAll());
     });
@@ -123,7 +129,7 @@ export class Extras {
 
   // ---- called from extras-listeners.ts ----
 
-  async handleBeforeNavigate(details: { tabId: number; frameId: number; url: string; documentLifecycle?: string }): Promise<void> {
+  async handleBeforeNavigate(details: { tabId: number; frameId: number; url: string; documentLifecycle?: string; timeStamp?: number }): Promise<void> {
     if (details.frameId !== 0) return;
     await this.facet.ready;
     await this.ready;

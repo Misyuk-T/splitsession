@@ -51,8 +51,9 @@ export function Choose() {
       const tab = await browser.tabs.getCurrent();
       const tabId = tab?.id ?? params.tab;
       if (tabId === undefined || tabId === null) throw new Error('This page must be opened in a tab.');
-      await facetApi.applyChoice({ tabId, url, containerId, remember });
-      location.replace(url);
+      const { replaced } = await facetApi.applyChoice({ tabId, url, containerId, remember });
+      // Replaced: the address opened in a fresh tab (no opener link) and this tab is being closed.
+      if (!replaced) location.replace(url);
     } catch (e) {
       setError(describeError(e));
       setBusy(false);

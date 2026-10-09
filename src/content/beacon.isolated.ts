@@ -1,8 +1,9 @@
 import { browser } from 'wxt/browser';
-import { CookieJar } from '../core/jar/cookie-jar';
+import { CookieJar, serializeCookieHeader } from '../core/jar/cookie-jar';
 import { BEACON_URL } from '../core/dnr/rule-compiler';
 import { domainMatches, hostnameOf, isSecureUrl, siteOf } from '../core/site';
-import { startTitlePrefix } from './title-prefix';
+import { startPageName } from './title-prefix';
+import { sealFrame } from './seal.isolated';
 import type { BeaconAnswer, BeaconPayload, Cookie, CookieSnapshotReply, CookiesChangedMessage } from '../core/types';
 import {
   BRIDGE_TAG,
@@ -18,6 +19,8 @@ import {
 } from './bridge-protocol';
 
 const KEEPALIVE_MS = 25_000;
+/** How long a frame whose site has no beacon answer yet waits (blocking, at document_start) for the background. */
+const SITE_WAIT_MS = 1_000;
 /** Survives in the isolated world when a same-origin navigation reuses the window (initial about:blank). */
 const STATE_KEY = '__facetBeaconState';
 
@@ -29,30 +32,35 @@ const STATE_KEY = '__facetBeaconState';
 export function runBeacon(): void {
   const root = document.documentElement;
   if (!root) return;
-  const answer = askBeacon();
+  let answer = askBeacon();
   if (!answer) return;
+  if ('p' in answer && answer.p === 1) answer = waitForSiteAnswer(answer);
   const state = globalThis as unknown as Record<string, unknown>;
   const reused = state[STATE_KEY] === true;
   state[STATE_KEY] = true;
 
   const bridge = document.createElement(BRIDGE_TAG);
   if (reused) bridge.setAttribute(SKIP_ATTR, '1');
-  if ('c' in answer && typeof answer.c === 'string') {
+  if (('c' in answer && typeof answer.c === 'string') || ('p' in answer && answer.p === 1)) {
+    // No per-site answer even after asking (opaque origin, background unreachable): a throwaway key, so the frame is
+    // still isolated; whatever it stores is not seen again.
+    const key = 'c' in answer && typeof answer.c === 'string' ? answer.c : throwawayKey();
     bridge.setAttribute(MODE_ATTR, 'container');
-    bridge.setAttribute(CONTAINER_ATTR, answer.c);
-    startContainer(answer as BeaconPayload, bridge);
-    if (window === window.top) {
-      root.dataset.ctr = answer.n ?? answer.c;
-      startTitlePrefix(answer.n ?? answer.c);
-    }
+    bridge.setAttribute(CONTAINER_ATTR, key);
+    startContainer({ ...(answer as Partial<BeaconPayload>), c: key }, bridge);
+    // The name reaches pages only when the user allows it (the background leaves `n` out otherwise).
+    if (window === window.top && typeof answer.n === 'string') startPageName(root, answer.n);
   } else if ('m' in answer && answer.m === 1) {
     bridge.setAttribute(MODE_ATTR, 'managed');
+  } else if ('g' in answer && answer.g === 1) {
+    bridge.setAttribute(MODE_ATTR, 'guard');
   } else {
     return;
   }
   root.appendChild(bridge);
-  // The shim runs right after this script and detaches the node; if it did not, do not leave it to the page.
-  setTimeout(() => bridge.isConnected && bridge.remove(), 0);
+  // The shim runs after the ISOLATED scripts and detaches the node. A document whose scripts are disabled gets no
+  // shim: the seal has a same-origin realm patch this one (and never leaves the node to the page).
+  sealFrame(bridge, bridge.getAttribute(MODE_ATTR) ?? '', bridge.getAttribute(CONTAINER_ATTR) ?? '');
 }
 
 function askBeacon(): BeaconAnswer | null {
@@ -66,6 +74,33 @@ function askBeacon(): BeaconAnswer | null {
   } catch {
     return null; // no rule at all (extension starting up): plain tab
   }
+}
+
+/**
+ * The generic answer `{p: 1}`: this frame is in a container tab, but its site has no beacon rule yet (a frame the
+ * background has not seen being requested). Ask the background to add the site and poll the beacon until the
+ * per-site answer appears. The message is sent at once; the loop blocks only this frame's document_start.
+ */
+function waitForSiteAnswer(first: BeaconAnswer): BeaconAnswer {
+  if (!frameOrigin()) return first;
+  try {
+    void (browser.runtime.sendMessage({ type: 'facet/need-site' }) as Promise<unknown>).catch(() => undefined);
+  } catch {
+    return first;
+  }
+  const deadline = Date.now() + SITE_WAIT_MS;
+  while (Date.now() < deadline) {
+    const next = askBeacon();
+    if (!next) break;
+    if (!('p' in next)) return next;
+  }
+  return first;
+}
+
+function throwawayKey(): string {
+  const alphabet = 'abcdefghijklmnopqrstuvwxyz234567';
+  const bytes = crypto.getRandomValues(new Uint8Array(16));
+  return Array.from(bytes, (b) => alphabet[b & 31]).join('');
 }
 
 /** Frame origin; about:blank / srcdoc frames report their inherited origin through `self.origin`. */
@@ -91,6 +126,10 @@ function startContainer(answer: BeaconPayload, bridge: HTMLElement): void {
   // The beacon's group site is exact (full PSL in the background); our own estimate is the fallback.
   const tls = answer.s ?? topLevelSite();
   const docPath = () => (location.protocol === 'http:' || location.protocol === 'https:' ? location.pathname : '/');
+  // A frame of another site than the top document sees only SameSite=None cookies, like the requests it makes
+  // (the rules split cookies by SameSite) and like Chrome's third-party document.cookie.
+  const crossSite = origin !== null && tls !== null && siteOf(origin) !== tls;
+  const visible = (c: Cookie) => !c.httpOnly && (!crossSite || c.sameSite === 'none');
 
   let base: Cookie[] = answer.k ?? [];
   let jar = new CookieJar(base);
@@ -128,12 +167,12 @@ function startContainer(answer: BeaconPayload, bridge: HTMLElement): void {
   const handle = (req: BridgeRequest): unknown => {
     switch (req.op) {
       case 'cookie-get':
-        return { v: host ? jar.documentCookieString(host, { secure, topLevelSite: tls }) : '' };
+        return { v: host ? serializeCookieHeader(jar.cookiesForHost(host, { secure, topLevelSite: tls }).filter(visible)) : '' };
       case 'cookie-list': {
         if (!host) return { list: [] };
         const list: CookieItem[] = jar
           .cookiesForHost(host, { secure, topLevelSite: tls })
-          .filter((c) => !c.httpOnly)
+          .filter(visible)
           .map((c) => ({
             name: c.name,
             value: c.value,
@@ -169,7 +208,7 @@ function startContainer(answer: BeaconPayload, bridge: HTMLElement): void {
         void send({ type: 'facet/open-tab', url: req.url, active: req.active });
         return {};
       case 'await-child':
-        void send<{ ok: boolean }>({ type: 'facet/await-child', nonce: req.nonce }).then((r) =>
+        void send<{ ok: boolean }>({ type: 'facet/await-child', nonce: req.nonce, url: req.url }).then((r) =>
           push({ t: 'child', nonce: req.nonce, ok: r?.ok === true }),
         );
         return {};

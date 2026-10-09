@@ -43,8 +43,9 @@ function setup(options: { regexBudget?: number; hardLimit?: number } = {}) {
     const tabIds = tabs.get(key);
     if (!tabIds?.length) return null;
     const jar = new CookieJar();
-    jar.setFromHeader(`k=${key}`, { url: `http://${key}.localhost/` });
-    return compileGroupRules({ tabIds, containerId: key, jar, regexBudget }, allocator);
+    // SameSite=None: one rule per host (no SameSite split), so the counts below stay small.
+    jar.setFromHeader(`k=${key}; SameSite=None; Secure`, { url: `http://${key}.localhost/` });
+    return compileGroupRules({ tabIds, containerId: key, jar, regexBudget, pageKeyOf: (site) => `key-${site}` }, allocator);
   };
   const timer = manual();
   const manager = new SessionRuleManager(dnr, compile, { schedule: timer.schedule, ...options });
@@ -122,7 +123,7 @@ describe('SessionRuleManager', () => {
     // real scheduling here
     const m = new SessionRuleManager(dnr, (key, allocator, budget) => {
       const tabIds = tabs.get(key);
-      return tabIds ? compileGroupRules({ tabIds, containerId: key, jar: new CookieJar(), regexBudget: budget }, allocator) : null;
+      return tabIds ? compileGroupRules({ tabIds, containerId: key, jar: new CookieJar(), regexBudget: budget, pageKeyOf: (site) => `key-${site}` }, allocator) : null;
     });
     void manager;
     tabs.set('a', [1]);

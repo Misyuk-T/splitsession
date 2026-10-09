@@ -9,14 +9,18 @@ const MAX_WRITES = 25;
 const WRITE_WINDOW_MS = 3_000;
 
 /**
- * ISOLATED world, top frame of a container tab: shows `[name] ` in front of the page's title, so the tab strip and
- * tab lists (Claude in Chrome's `tabs_context`) tell the accounts apart. Survives titles that change under it: a
- * MutationObserver on `<title>` (and on `<head>`, for pages that create the element late) re-applies the prefix, and
- * a title that already carries it is left alone, so it is never doubled. Controlled by the `titlePrefix` setting in
- * `storage.local`, read here directly and followed live.
+ * ISOLATED world, top frame of a container tab, only when the user lets pages see the container name (the beacon
+ * carries it only then): `data-ctr="<name>"` on `<html>` and `[name] ` in front of the page's title, so the tab
+ * strip, tab lists (Claude in Chrome's `tabs_context`) and agents reading the page tell the accounts apart. The
+ * prefix survives titles that change under it: a MutationObserver on `<title>` (and on `<head>`, for pages that
+ * create the element late) re-applies it, and a title that already carries it is left alone, so it is never doubled.
+ * Controlled by the `titlePrefix` and `showNameToPages` settings in `storage.local`, read here directly and followed
+ * live (switching `showNameToPages` off removes both marks from open pages at once).
  */
-export function startTitlePrefix(initialName: string): void {
+export function startPageName(root: HTMLElement, initialName: string): void {
   let name = initialName;
+  let shown = true;
+  root.dataset.ctr = name;
   let enabled = false;
   let applied: string | null = null; // the prefix we last put in front of the title
   let titleElement: Element | null = null;
@@ -82,17 +86,25 @@ export function startTitlePrefix(initialName: string): void {
   if (document.documentElement) headObserver.observe(document.documentElement, { childList: true });
   attach();
 
+  const applySettings = (raw: unknown): void => {
+    const settings = normalizeSettings(raw);
+    shown = settings.showNameToPages;
+    if (shown) root.dataset.ctr = name;
+    else delete root.dataset.ctr;
+    setEnabled(shown && settings.titlePrefix);
+  };
   void browser.storage.local.get(SETTINGS_KEY).then(
-    (stored) => setEnabled(normalizeSettings(stored[SETTINGS_KEY]).titlePrefix),
+    (stored) => applySettings(stored[SETTINGS_KEY]),
     () => setEnabled(true),
   );
   browser.storage.onChanged.addListener((changes, area) => {
-    if (area === 'local' && changes[SETTINGS_KEY]) setEnabled(normalizeSettings(changes[SETTINGS_KEY].newValue).titlePrefix);
+    if (area === 'local' && changes[SETTINGS_KEY]) applySettings(changes[SETTINGS_KEY].newValue);
   });
   browser.runtime.onMessage.addListener((message: unknown) => {
     const m = message as { type?: string; name?: unknown };
     if (m?.type === RENAMED && typeof m.name === 'string') {
       name = m.name;
+      if (shown) root.dataset.ctr = name;
       if (enabled) sync();
     }
     return undefined;
