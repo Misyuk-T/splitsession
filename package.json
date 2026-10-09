@@ -14,11 +14,14 @@
     "dev": "wxt",
     "build": "wxt build",
     "zip": "wxt zip",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "tsc --noEmit && tsc --noEmit -p e2e",
     "test": "vitest run",
     "test:watch": "vitest",
     "keygen": "node scripts/keygen.mjs",
-    "postinstall": "wxt prepare"
+    "postinstall": "wxt prepare",
+    "e2e": "wxt build && playwright test -c e2e/playwright.config.ts",
+    "e2e:only": "playwright test -c e2e/playwright.config.ts",
+    "stand": "node test-server/server.mjs"
   },
   "pnpm": {
     "onlyBuiltDependencies": [
@@ -30,6 +33,7 @@
     "tldts": "^7.4.18"
   },
   "devDependencies": {
+    "@playwright/test": "1.64.0",
     "@preact/preset-vite": "^2.10.6",
     "@types/node": "^22.20.5",
     "typescript": "^7.0.2",

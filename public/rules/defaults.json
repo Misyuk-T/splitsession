@@ -1,0 +1,8 @@
+[
+  {
+    "id": 1,
+    "priority": 900,
+    "condition": { "urlFilter": "|http://ctr.localhost/whoami^", "resourceTypes": ["xmlhttprequest"] },
+    "action": { "type": "redirect", "redirect": { "url": "data:application/json,%7B%7D" } }
+  }
+]

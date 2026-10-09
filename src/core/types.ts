@@ -53,39 +53,106 @@ export interface Cookie {
 }
 
 /**
- * Body the beacon rule answers with (served as a `data:` URL by declarativeNetRequest).
+ * Body the beacon rules answer with (served as a `data:` URL by declarativeNetRequest).
  * Everything the MAIN-world shim needs before the first script of the page runs.
+ *
+ * A page can fetch the beacon URL itself, so the generic per-group answer carries identity only (`c`, `n`) and the
+ * cookie snapshot `k` is answered per registrable domain of the requesting frame (`initiatorDomains`).
  */
 export interface BeaconPayload {
   /** Container of the tab asking. */
   c: ContainerId;
-  /** Non-HttpOnly, unexpired cookies visible to this tab: the initial `document.cookie` state. */
+  /** Container display name (page marker `data-ctr`). */
+  n?: string;
+  /** Non-HttpOnly, unexpired cookies of the requesting frame's site: the initial `document.cookie` state. */
   k?: Cookie[];
-  /** Top-level site of the tab at compile time, needed to evaluate partitioned cookies in `k`. */
+  /** Top-level site of the group at compile time, needed to evaluate partitioned cookies in `k`. */
   s?: string | null;
   /** Set to 1 when `k` was dropped because it exceeded the size cap; the shim must fetch cookies asynchronously. */
   o?: 1;
 }
 
-/** Content script -> background: a `document.cookie = value` write made by the page. */
+/** Answer in a tab WITHOUT a container on an origin Facet has seen inside containers ("managed"). */
+export interface ManagedBeaconAnswer {
+  m: 1;
+}
+
+/** Anything the beacon XHR can yield: container payload, managed marker, or `{}` (plain tab, static default rule). */
+export type BeaconAnswer = BeaconPayload | ManagedBeaconAnswer | Record<string, never>;
+
+/** Storage-key / database-name / cache-name / channel-name prefix of container-namespaced page state. */
+export const NAMESPACE_PREFIX = '__facet:';
+export const namespacePrefix = (containerId: ContainerId): string => `${NAMESPACE_PREFIX}${containerId}:`;
+
+// ---- Content script (ISOLATED) -> background. The background derives tab, frame origin and container from
+// `sender`, never from the message, so a page driving the bridge can only act within its own container. ----
+
+/** A `document.cookie = value` (or cookieStore) write made by the page. Reply: `CookieSnapshotReply`. */
 export interface CookieWriteMessage {
   type: 'facet/cookie-write';
-  /** Document URL the write came from (host, default path and scheme are derived from it). */
-  url: string;
   /** Raw string assigned to `document.cookie`. */
   value: string;
+  /** Document path (for the default cookie path). */
+  path: string;
+  /** Epoch ms when the page made the write (start of the stale-navigation window). */
+  at: number;
 }
 
-/** Any extension page / content script -> background: open a URL in a container. */
-export interface OpenInContainerMessage {
-  type: 'facet/open-in-container';
-  containerId: ContainerId;
+/** Ask for the current script-visible cookies of the sender frame's site. Reply: `CookieSnapshotReply`. */
+export interface CookieSnapshotMessage {
+  type: 'facet/cookie-snapshot';
+}
+
+export interface CookieSnapshotReply {
+  ok: boolean;
+  /** Script-visible cookies of the sender frame's site (replace the local view of that site with these). */
+  cookies?: Cookie[];
+}
+
+/** Fetch barrier: resolve once Set-Cookie of a just-finished response has reached the container's rules. */
+export interface SettleMessage {
+  type: 'facet/settle';
   url: string;
+  method: string;
 }
 
-/** Content script -> background: which container does the sending tab belong to? */
-export interface GetTabAssignmentMessage {
-  type: 'facet/get-tab-assignment';
+/** The shim opened `about:blank#facet-<nonce>`; reply when the child tab is in the container with rules applied. */
+export interface AwaitChildMessage {
+  type: 'facet/await-child';
+  nonce: string;
 }
 
-export type FacetMessage = CookieWriteMessage | OpenInContainerMessage | GetTabAssignmentMessage;
+/** Open a URL in a new tab of the sender's container (noopener / target=_blank / modified clicks). */
+export interface OpenTabMessage {
+  type: 'facet/open-tab';
+  url: string;
+  active: boolean;
+}
+
+/** Keeps the service worker warm while container tabs are open. */
+export interface PingMessage {
+  type: 'facet/ping';
+}
+
+export type ContentMessage =
+  | CookieWriteMessage
+  | CookieSnapshotMessage
+  | SettleMessage
+  | AwaitChildMessage
+  | OpenTabMessage
+  | PingMessage;
+
+/** Background -> content scripts of a container tab: fresh script-visible cookies, per site. */
+export interface CookiesChangedMessage {
+  type: 'facet/cookies';
+  sites: Record<string, Cookie[]>;
+}
+
+/** Extension page -> background: programmatic API call (see `src/background/api.ts`). */
+export interface ApiCallMessage {
+  type: 'facet/api';
+  method: string;
+  args: unknown[];
+}
+
+export type ApiReply = { ok: true; value: unknown } | { ok: false; error: string };
