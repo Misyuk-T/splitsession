@@ -2,6 +2,7 @@ import { browser } from 'wxt/browser';
 import { CookieJar } from '../core/jar/cookie-jar';
 import { BEACON_URL } from '../core/dnr/rule-compiler';
 import { domainMatches, hostnameOf, isSecureUrl, siteOf } from '../core/site';
+import { startTitlePrefix } from './title-prefix';
 import type { BeaconAnswer, BeaconPayload, Cookie, CookieSnapshotReply, CookiesChangedMessage } from '../core/types';
 import {
   BRIDGE_TAG,
@@ -40,7 +41,10 @@ export function runBeacon(): void {
     bridge.setAttribute(MODE_ATTR, 'container');
     bridge.setAttribute(CONTAINER_ATTR, answer.c);
     startContainer(answer as BeaconPayload, bridge);
-    if (window === window.top) root.dataset.ctr = answer.n ?? answer.c;
+    if (window === window.top) {
+      root.dataset.ctr = answer.n ?? answer.c;
+      startTitlePrefix(answer.n ?? answer.c);
+    }
   } else if ('m' in answer && answer.m === 1) {
     bridge.setAttribute(MODE_ATTR, 'managed');
   } else {

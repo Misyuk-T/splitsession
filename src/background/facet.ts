@@ -29,6 +29,7 @@ import { SessionRuleManager, type DnrSessionApi } from '../engine/dnr/session-ru
 import { ContainerError, ContainerStore } from '../engine/storage/container-store';
 import { TabRegistry } from '../engine/storage/tab-registry';
 import { ServiceWorkerPolicy, type BrowsingDataApi, type DnrDynamicApi } from '../engine/sw-policy';
+import { FacetEvents } from './events';
 import { createLogger, type Logger } from './log';
 
 export const PURGE_ALARM = 'facet-purge';
@@ -121,6 +122,8 @@ export class Facet {
   readonly swPolicy: ServiceWorkerPolicy;
   readonly detector: StaleNavigationDetector;
   readonly log: Logger;
+  /** Assignment and container changes, for the Stage C modules (tab groups, badges, domain rules). */
+  readonly events = new FacetEvents();
   ready!: Promise<void>;
 
   /** Main/sub-frame requests: last hop's send time, for trusting Set-Cookie. */
@@ -237,6 +240,7 @@ export class Facet {
     const updated = await this.containers.update(id, patch);
     // The beacon echoes the name.
     if (patch.name !== undefined && this.tabs.tabsOf(id).length > 0) await this.rules.invalidate(id);
+    this.events.emit({ type: 'container-updated', container: updated, renamed: patch.name !== undefined, recolored: patch.color !== undefined });
     return updated;
   }
 
@@ -248,6 +252,7 @@ export class Facet {
     for (const tabId of tabIds) void this.tabs.delete(tabId);
     await this.containers.delete(id);
     await this.rules.invalidate(id);
+    this.events.emit({ type: 'container-deleted', id });
     if (tabIds.length > 0) await this.b.tabs.remove(tabIds).catch(() => {});
   }
 
@@ -310,6 +315,7 @@ export class Facet {
     const origin = networkOrigin(tab.url ?? tab.pendingUrl);
     if (origin) void this.swPolicy.noteContainerOrigin(origin);
     this.log('info', `tab ${tabId} -> ${containerId}`);
+    this.events.emit({ type: 'tab-assigned', tabId, containerId });
     return activeAt;
   }
 
@@ -319,6 +325,7 @@ export class Facet {
     await this.tabs.delete(tabId);
     await this.rules.invalidate(rec.containerId);
     this.log('info', `tab ${tabId} left ${rec.containerId}`);
+    this.events.emit({ type: 'tab-unassigned', tabId, containerId: rec.containerId });
   }
 
   /** New tab at about:blank (no network), into the container, then navigated: the first request is already isolated. */
@@ -597,6 +604,7 @@ export class Facet {
       await this.tabs.delete(removedTabId);
       await this.tabs.set(addedTabId, rec);
       await this.rules.invalidate(rec.containerId);
+      this.events.emit({ type: 'tab-replaced', added: addedTabId, removed: removedTabId });
     });
   }
 
@@ -707,7 +715,10 @@ export class Facet {
     const now = Date.now();
     for (const tabId of restored) {
       if (!ok) await this.tabs.delete(tabId);
-      else await this.tabs.update(tabId, { activeSince: now });
+      else {
+        await this.tabs.update(tabId, { activeSince: now });
+        this.events.emit({ type: 'tab-assigned', tabId, containerId: this.tabs.containerOf(tabId)! });
+      }
       await this.b.tabs.reload(tabId).catch(() => {});
     }
     this.log('info', `restored ${restored.length} container tabs after an update`);

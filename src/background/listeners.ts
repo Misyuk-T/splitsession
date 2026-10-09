@@ -1,7 +1,7 @@
 import { browser } from 'wxt/browser';
 import type { ApiReply } from '../core';
-import { dispatchApi, type FacetApi } from './api';
 import type { Facet } from './facet';
+import { dispatchFullApi, type FullApi } from './full-api';
 
 const ALL_URLS = { urls: ['<all_urls>'] };
 const FRAMES = { urls: ['<all_urls>'], types: ['main_frame', 'sub_frame'] };
@@ -14,7 +14,7 @@ const on = (event: unknown, listener: AnyListener, ...rest: unknown[]) => (event
  * Registers every listener synchronously, at the top level of the service worker, so that each of these events
  * wakes the worker after it was stopped. Handlers do their work after `facet.ready`.
  */
-export function registerListeners(facet: Facet, api: FacetApi, b: typeof browser = browser): void {
+export function registerListeners(facet: Facet, api: FullApi, b: typeof browser = browser): void {
   const wr = b.webRequest;
   on(wr.onSendHeaders, (d) => facet.handleSendHeaders(d), FRAMES, ['requestHeaders', 'extraHeaders']);
   // extraHeaders: Set-Cookie is only visible with it, and it shows the header even though DNR strips it.
@@ -47,7 +47,7 @@ export function registerListeners(facet: Facet, api: FacetApi, b: typeof browser
     let work: Promise<unknown>;
     if (message.type === 'facet/api') {
       if (!fromExtensionPage) return false;
-      work = dispatchApi(api, String(message.method), message.args).then(
+      work = dispatchFullApi(api, String(message.method), message.args).then(
         (value): ApiReply => ({ ok: true, value }),
         (error): ApiReply => ({ ok: false, error: error instanceof Error ? error.message : String(error) }),
       );

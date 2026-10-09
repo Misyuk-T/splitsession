@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" width="128" height="128">
+  <title>Facet</title>
+  <defs>
+    <clipPath id="front"><rect x="50" y="50" width="68" height="68" rx="16"/></clipPath>
+  </defs>
+  <rect x="10" y="10" width="68" height="68" rx="16" fill="#37adff" stroke="#0b1020" stroke-opacity=".28" stroke-width="3"/>
+  <rect x="30" y="30" width="68" height="68" rx="16" fill="#00c79a" stroke="#0b1020" stroke-opacity=".28" stroke-width="3"/>
+  <rect x="50" y="50" width="68" height="68" rx="16" fill="#af51f5" stroke="#0b1020" stroke-opacity=".28" stroke-width="3"/>
+  <g clip-path="url(#front)"><polygon points="50,50 118,50 50,118" fill="#fff" fill-opacity=".26"/></g>
+</svg>

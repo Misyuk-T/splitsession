@@ -6,6 +6,9 @@ import { defineConfig } from 'wxt';
 // Public half of the key pair from `pnpm keygen`; pins the extension ID (see docs/development.md).
 const extensionKey = readFileSync(new URL('./extension-key.pub', import.meta.url), 'utf8').trim();
 
+// Rendered from assets/icon.svg by scripts/make-icons.mjs and committed.
+const iconSet = { 16: 'icons/icon-16.png', 32: 'icons/icon-32.png', 48: 'icons/icon-48.png', 128: 'icons/icon-128.png' };
+
 export default defineConfig({
   srcDir: 'src',
   vite: () => ({ plugins: [preact()] }),
@@ -42,7 +45,8 @@ export default defineConfig({
     // headless e2e cannot click permission prompts. Optional-permission onboarding is deferred.
     host_permissions: ['<all_urls>'],
     optional_permissions: ['cookies'],
-    action: { default_title: 'Facet' },
+    icons: iconSet,
+    action: { default_title: 'Facet', default_icon: iconSet },
     // Static default answer for the beacon (`{}` = no container) so the content script never reaches the network,
     // even before the service worker has started. Per-tab (session) and managed-site (dynamic) rules override it.
     declarative_net_request: {

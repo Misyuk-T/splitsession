@@ -2,9 +2,9 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { chromium, expect, test as base, type BrowserContext, type Page, type Worker } from '@playwright/test';
-import { EXTENSION_ID, EXTENSION_PATH, TEST_PORT, at } from './env';
+import { EXTENSION_ID, EXTENSION_PATH, TEST_PORT, at, ext } from './env';
 
-export { expect, at };
+export { expect, at, ext };
 
 export interface LogEntry {
   at: number;
@@ -33,6 +33,11 @@ export interface Facet {
   stopServiceWorker(via: Page): Promise<void>;
   /** Number of running extension service-worker targets (asked through an existing page: opening a tab would wake it). */
   serviceWorkerTargets(via: Page): Promise<number>;
+  /** Tab and tab-group facts as Chrome reports them (asked through the extension worker). */
+  tabInfo(tabId: number): Promise<{ id: number; title: string; url: string; groupId: number; windowId: number; badge: string; badgeColor: number[] }>;
+  groupInfo(groupId: number): Promise<{ id: number; title: string; color: string; windowId: number } | null>;
+  /** Runs `fn` in the extension worker (use the global `chrome` inside it). */
+  inWorker<T, A>(fn: (arg: A) => Promise<T> | T, arg: A): Promise<T>;
   /** Cookies in the real profile (what an ordinary tab would send). */
   realCookies(url: string): Promise<Array<{ name: string; value: string; domain: string }>>;
 }
@@ -99,14 +104,24 @@ export const test = base.extend<{ facet: Facet }, { extContext: BrowserContext }
       },
       async tabIdOf(page) {
         const marker = `facet-tab-${Math.random().toString(36).slice(2)}`;
-        const original = await page.title();
-        await page.evaluate((m) => (document.title = m), marker);
+        // The tab may be in the middle of a navigation the extension started (a rule moving it): try again.
+        let original = '';
+        for (let attempt = 0; ; attempt++) {
+          try {
+            original = await page.title();
+            await page.evaluate((m) => (document.title = m), marker);
+            break;
+          } catch (error) {
+            if (attempt >= 8 || !/context was destroyed|navigation|Target closed/i.test(String(error))) throw error;
+            await page.waitForLoadState('domcontentloaded').catch(() => {});
+          }
+        }
         const worker = await sw();
         const id = await worker.evaluate(async (m) => {
           const chromeApi = (globalThis as any).chrome;
           for (let i = 0; i < 20; i++) {
             const tabs: Array<{ id?: number; title?: string }> = await chromeApi.tabs.query({});
-            const tab = tabs.find((t) => t.title === m);
+            const tab = tabs.find((t) => (t.title ?? '').endsWith(m)); // container tabs carry a "[name] " prefix
             if (tab?.id !== undefined) return tab.id;
             await new Promise((r) => setTimeout(r, 50));
           }
@@ -139,6 +154,43 @@ export const test = base.extend<{ facet: Facet }, { extContext: BrowserContext }
         await cdp.detach();
         return targetInfos.filter((t) => t.type === 'service_worker' && t.url.startsWith(`chrome-extension://${EXTENSION_ID}/`)).length;
       },
+      async inWorker(fn, arg) {
+        const worker = await sw();
+        return worker.evaluate(fn as never, arg as never) as Promise<never>;
+      },
+      async tabInfo(tabId) {
+        return this.inWorker(
+          async (id: number) => {
+            const c = (globalThis as any).chrome;
+            const tab = await c.tabs.get(id);
+            return {
+              id: tab.id,
+              title: tab.title ?? '',
+              url: tab.url ?? '',
+              groupId: tab.groupId,
+              windowId: tab.windowId,
+              badge: await c.action.getBadgeText({ tabId: id }),
+              badgeColor: await c.action.getBadgeBackgroundColor({ tabId: id }),
+            };
+          },
+          tabId,
+        );
+      },
+      async groupInfo(groupId) {
+        if (groupId < 0) return null;
+        return this.inWorker(
+          async (id: number) => {
+            const c = (globalThis as any).chrome;
+            try {
+              const g = await c.tabGroups.get(id);
+              return { id: g.id, title: g.title ?? '', color: g.color, windowId: g.windowId };
+            } catch {
+              return null;
+            }
+          },
+          groupId,
+        );
+      },
       async realCookies(url) {
         return (await context.cookies(url)).map((c) => ({ name: c.name, value: c.value, domain: c.domain }));
       },
@@ -146,6 +198,9 @@ export const test = base.extend<{ facet: Facet }, { extContext: BrowserContext }
     await sw();
     await api('listContainers'); // waits for the worker to be ready
     await context.clearCookies(); // real profile starts empty for every test
+    // Rules and settings outlive a test in the shared browser: start from the defaults.
+    for (const rule of await api<Array<{ domain: string }>>('listDomainRules')) await api('removeDomainRule', rule.domain);
+    await api('updateSettings', { tabGroups: true, titlePrefix: true });
     await use(facet);
     if (testInfo.status !== testInfo.expectedStatus) {
       const log = await Promise.race([api('getLog'), new Promise((r) => setTimeout(() => r('worker unreachable'), 2_000))]).catch(String);

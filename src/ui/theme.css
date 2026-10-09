@@ -1,0 +1,84 @@
+/* Facet UI tokens. Light and dark follow prefers-color-scheme. Main text is 16px, secondary 14px: nothing is smaller. */
+:root {
+  color-scheme: light dark;
+
+  --fx-bg: #ffffff;
+  --fx-surface: #f5f6f8;
+  --fx-surface-hover: #eceef2;
+  --fx-surface-raised: #ffffff;
+  --fx-text: #14161b;
+  --fx-muted: #565d6b;
+  --fx-border: #d9dde4;
+  --fx-border-strong: #b8bfca;
+  --fx-accent: #3f3fd9;
+  --fx-accent-hover: #3333c2;
+  --fx-accent-text: #ffffff;
+  --fx-accent-soft: #e8e8fb;
+  --fx-danger: #b3261e;
+  --fx-danger-hover: #961d17;
+  --fx-danger-soft: #fbe9e7;
+  --fx-warn-soft: #fff4d6;
+  --fx-warn-border: #e0b84a;
+  --fx-warn-text: #5c4300;
+  --fx-focus: #1a6fe0;
+  --fx-shadow: 0 8px 24px rgba(15, 20, 30, 0.18), 0 1px 3px rgba(15, 20, 30, 0.12);
+  --fx-radius: 8px;
+  --fx-radius-sm: 6px;
+
+  --fx-font: system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  --fx-mono: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+  --fx-text-main: 16px;
+  --fx-text-secondary: 14px;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --fx-bg: #16181d;
+    --fx-surface: #1f222a;
+    --fx-surface-hover: #292d37;
+    --fx-surface-raised: #232730;
+    --fx-text: #eceef3;
+    --fx-muted: #a3a9b6;
+    --fx-border: #343945;
+    --fx-border-strong: #4b5262;
+    --fx-accent: #8a8aff;
+    --fx-accent-hover: #a2a2ff;
+    --fx-accent-text: #0e0e24;
+    --fx-accent-soft: #2a2b55;
+    --fx-danger: #ff8a80;
+    --fx-danger-hover: #ffa8a0;
+    --fx-danger-soft: #3a2220;
+    --fx-warn-soft: #3a2f12;
+    --fx-warn-border: #8a6d1c;
+    --fx-warn-text: #f5dd9b;
+    --fx-focus: #6fb0ff;
+    --fx-shadow: 0 8px 24px rgba(0, 0, 0, 0.55), 0 1px 3px rgba(0, 0, 0, 0.4);
+  }
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  background: var(--fx-bg);
+  color: var(--fx-text);
+  font: var(--fx-text-main) / 1.45 var(--fx-font);
+  -webkit-font-smoothing: antialiased;
+}
+
+h1, h2, h3, p { margin: 0; }
+button, input, textarea { font: inherit; color: inherit; }
+button { cursor: pointer; }
+[hidden] { display: none !important; }
+
+:focus-visible { outline: 2px solid var(--fx-focus); outline-offset: 2px; }
+
+.fx-secondary { font-size: var(--fx-text-secondary); color: var(--fx-muted); }
+.fx-sr-only {
+  position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0;
+  overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: 0.001ms !important; transition-duration: 0.001ms !important; }
+}

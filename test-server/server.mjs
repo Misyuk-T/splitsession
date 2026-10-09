@@ -222,6 +222,26 @@ const server = createServer(async (req, res) => {
            <a id="same" href="${esc(at(host, '/whoami?via=same'))}">same</a>`,
         ),
       );
+    case '/spa':
+      // A page whose title changes under a title-prefix observer: via document.title, via the element's text, by
+      // replacing the element, and by appending to the title it just read.
+      return send(
+        res,
+        200,
+        page(
+          'Inbox',
+          `<button id="t-prop">prop</button><button id="t-text">text</button><button id="t-replace">replace</button><button id="t-append">append</button>
+           <script>
+             document.getElementById('t-prop').onclick = () => { document.title = 'Inbox (3)'; };
+             document.getElementById('t-text').onclick = () => { document.querySelector('title').textContent = 'Settings'; };
+             document.getElementById('t-replace').onclick = () => { const t = document.createElement('title'); t.textContent = 'Replaced'; document.querySelector('title').replaceWith(t); };
+             document.getElementById('t-append').onclick = () => { document.title = document.title + ' !'; };
+           </script>`,
+        ),
+      );
+    case '/late-title':
+      // No <title> at first; one is created a moment later.
+      return send(res, 200, `<!doctype html><html><head><meta charset="utf-8"></head><body><script>setTimeout(() => { document.title = 'Late title'; }, 150);</script></body></html>`);
     default:
       return send(res, 404, page('404', `<p>no route ${esc(path)}</p>`));
   }

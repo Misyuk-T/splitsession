@@ -1,0 +1,31 @@
+body { width: 380px; max-width: 100vw; min-height: 120px; }
+.popup { display: flex; flex-direction: column; gap: 14px; padding: 14px; }
+
+.popup__head { display: flex; align-items: center; gap: 10px; }
+.popup__title { font-size: 18px; font-weight: 700; letter-spacing: 0.2px; }
+.popup__spacer { flex: 1; }
+.popup__label { font-size: var(--fx-text-secondary); font-weight: 600; color: var(--fx-muted); text-transform: uppercase; letter-spacing: 0.6px; }
+
+.popup__current { display: flex; flex-direction: column; gap: 8px; padding: 12px; border: 1px solid var(--fx-border); border-radius: var(--fx-radius); background: var(--fx-surface); }
+.popup__tab { display: flex; align-items: center; gap: 10px; }
+.popup__tab .fx-dot, .popup__nodot { width: 18px; height: 18px; }
+.popup__nodot { flex: none; border-radius: 50%; border: 2px dashed var(--fx-border-strong); }
+.popup__tabtext { display: flex; flex-direction: column; min-width: 0; }
+.popup__tabname { font-size: 17px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.popup__note { margin-top: -2px; }
+
+.popup__list { display: flex; flex-direction: column; gap: 8px; }
+.popup__listhead { display: flex; align-items: center; justify-content: space-between; min-height: 32px; }
+.popup__form, .popup__row--editing { padding: 12px; border: 1px solid var(--fx-border); border-radius: var(--fx-radius); background: var(--fx-surface); }
+.popup__empty { padding: 4px 2px; }
+
+.popup__rows { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; max-height: 280px; overflow-y: auto; }
+.popup__row { display: flex; align-items: center; gap: 10px; padding: 6px 6px 6px 10px; border-radius: var(--fx-radius); }
+.popup__row:hover { background: var(--fx-surface); }
+.popup__row[data-current='true'] { background: var(--fx-accent-soft); }
+.popup__row--editing, .popup__row--editing:hover { display: block; background: var(--fx-surface); }
+.popup__rowtext { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.popup__rowname { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.popup__status { min-height: 20px; margin-top: -6px; }
+.popup__foot { display: flex; justify-content: space-between; gap: 8px; border-top: 1px solid var(--fx-border); padding-top: 8px; margin-top: -6px; }
