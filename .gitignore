@@ -1,0 +1,14 @@
+node_modules/
+.output/
+.wxt/
+.vite/
+dist/
+coverage/
+test-results/
+playwright-report/
+*.log
+.DS_Store
+
+# Extension signing key: never commit the private half (see docs/development.md)
+keys/
+*.pem

@@ -1,0 +1,40 @@
+{
+  "name": "facet",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Firefox-style containers for Chrome: several accounts of the same site open side by side in one profile.",
+  "license": "MIT",
+  "author": "Taras Misiuk",
+  "type": "module",
+  "packageManager": "pnpm@10.34.5",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "dev": "wxt",
+    "build": "wxt build",
+    "zip": "wxt zip",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "keygen": "node scripts/keygen.mjs",
+    "postinstall": "wxt prepare"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "esbuild"
+    ]
+  },
+  "dependencies": {
+    "preact": "^11.0.1",
+    "tldts": "^7.4.18"
+  },
+  "devDependencies": {
+    "@preact/preset-vite": "^2.10.6",
+    "@types/node": "^22.20.5",
+    "typescript": "^7.0.2",
+    "vite": "^8.3.4",
+    "vitest": "^5.0.3",
+    "wxt": "^0.21.4"
+  }
+}
