@@ -70,7 +70,7 @@ function setup(settings: Partial<Settings> = {}) {
   const chrome = new FakeChrome();
   const area = new MemoryStorageArea();
   const assigned: Array<{ tabId: number; containerId: string }> = [];
-  const state = { tabGroups: true, titlePrefix: true, strictMode: true, showNameToPages: true, ...settings };
+  const state = { tabGroups: true, titlePrefix: true, strictMode: true, showNameToPages: true, agentBridge: false, ...settings };
   const projection = new TabGroupProjection({
     tabs: chrome.api.tabs,
     tabGroups: chrome.api.tabGroups,
@@ -230,7 +230,7 @@ describe('TabGroupProjection', () => {
       tabs: chrome.api.tabs,
       tabGroups: chrome.api.tabGroups,
       area,
-      settings: () => ({ tabGroups: true, titlePrefix: true, strictMode: true, showNameToPages: true }),
+      settings: () => ({ tabGroups: true, titlePrefix: true, strictMode: true, showNameToPages: true, agentBridge: false }),
       container: (id) => containers.get(id),
       containerTabs: () => [],
       log: () => {},

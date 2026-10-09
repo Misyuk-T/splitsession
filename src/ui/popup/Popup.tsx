@@ -3,6 +3,7 @@ import { browser } from 'wxt/browser';
 import type { ContainerInfo } from '../../background/facet';
 import { CONTAINER_COLORS, CONTAINER_HEX, type ContainerColor, type Settings } from '../../core';
 import { facetApi } from '../../engine/api-client';
+import { BridgeCard } from '../components/BridgeCard';
 import { Button, Dot } from '../components/Button';
 import { ContainerForm } from '../components/ContainerForm';
 import { ConfirmDialog } from '../components/Dialog';
@@ -173,6 +174,8 @@ export function Popup() {
       </header>
 
       {strict?.needsConsent && <StrictWarning onReview={() => setConsentOpen(true)} />}
+
+      <BridgeCard layout="popup" />
 
       <section class="popup__current" aria-labelledby="current-title">
         <h2 id="current-title" class="popup__label">This tab</h2>

@@ -53,6 +53,7 @@ export const NO_TAB_KEY = '@no-tab';
 export const PAGE_KEY_SECRET_KEY = 'pageKeySecret';
 /** How long the `#ctr=` check waits for the navigation's request (to learn its initiator). */
 const CTR_INITIATOR_WAIT_MS = 2_000;
+const BLANK_COMMIT_WAIT_MS = 3_000;
 /** Frame sites remembered per tab for per-site beacon answers. */
 const MAX_FRAME_SITES_PER_TAB = 64;
 const AWAIT_CHILD_TIMEOUT_MS = 1_000;
@@ -200,6 +201,9 @@ export class Facet {
   /** Per tab: recent main-frame requests and their initiators (`#ctr=` is honoured for browser-initiated ones only). */
   private readonly mainFrameStarts = new Map<number, MainFrameStart[]>();
   private readonly mainFrameWaiters = new Set<() => void>();
+  /** Tabs whose initial about:blank has committed (`createBlankTab` waits for it) and who waits. */
+  private readonly blankCommitted = new Set<number>();
+  private readonly blankWaiters = new Set<() => void>();
   /** One `#ctr=` decision per navigation, shared with the domain-rule engine. */
   private readonly ctrDecisions = new Map<string, { at: number; decision: Promise<ContainerId | null> }>();
 
@@ -455,14 +459,44 @@ export class Facet {
     this.events.emit({ type: 'tab-unassigned', tabId, containerId: rec.containerId });
   }
 
+  /**
+   * A new tab at about:blank, returned once that initial page has COMMITTED. `tabs.create` returns while the blank
+   * load is still pending; a `tabs.update({ url })` issued meanwhile starts its request, and then the blank page
+   * commits over it: the tab stays blank ("unloaded") although the request succeeded.
+   */
+  private async createBlankTab(props: { active?: boolean; windowId?: number; index?: number; pinned?: boolean }): Promise<{ id?: number }> {
+    const tab = await this.b.tabs.create({ ...props, url: 'about:blank' });
+    const id = tab.id;
+    if (id === undefined) return tab;
+    const committed = () => this.blankCommitted.has(id);
+    if (!committed()) {
+      await new Promise<void>((resolve) => {
+        const finish = () => {
+          clearTimeout(timer);
+          this.blankWaiters.delete(wake);
+          resolve();
+        };
+        const wake = () => {
+          if (committed()) finish();
+        };
+        const timer = setTimeout(() => {
+          this.log('warn', `tab ${id}: about:blank did not commit in time`);
+          finish();
+        }, BLANK_COMMIT_WAIT_MS);
+        this.blankWaiters.add(wake);
+      });
+    }
+    this.blankCommitted.delete(id);
+    return tab;
+  }
+
   /** New tab at about:blank (no network), into the container, then navigated: the first request is already isolated. */
   async openInContainer(url: string, ref: ContainerId, options: InternalOpenOptions = {}): Promise<number> {
     await this.ready;
     if (!isHttpUrl(url)) throw new ContainerError('only http(s) URLs can be opened in a container');
     const container = this.containers.resolve(ref);
     if (!container) throw new ContainerError(`no container "${ref}"`);
-    const tab = await this.b.tabs.create({
-      url: 'about:blank',
+    const tab = await this.createBlankTab({
       active: options.active ?? true,
       ...(options.windowId !== undefined ? { windowId: options.windowId } : {}),
       ...(options.index !== undefined ? { index: options.index } : {}),
@@ -502,7 +536,7 @@ export class Facet {
       ...(old.pinned ? { pinned: true } : {}),
     };
     if (containerId !== null) return this.openInContainer(url, containerId, { ...place, ...(onCreated ? { onAssigned: onCreated } : {}) });
-    const tab = await this.b.tabs.create({ url: 'about:blank', ...place });
+    const tab = await this.createBlankTab(place);
     if (tab.id === undefined) throw new ContainerError('tab creation failed');
     onCreated?.(tab.id);
     await this.b.tabs.update(tab.id, { url });
@@ -792,6 +826,7 @@ export class Facet {
     this.recentResponses.delete(tabId);
     this.frameSites.delete(tabId);
     this.mainFrameStarts.delete(tabId);
+    this.blankCommitted.delete(tabId);
     void this.ready.then(() => this.unassign(tabId));
   }
 
@@ -908,6 +943,10 @@ export class Facet {
 
   handleCommitted(details: { tabId: number; frameId: number; url: string }): void {
     if (details.tabId < 0) return;
+    if (details.frameId === 0 && details.url === 'about:blank') {
+      this.blankCommitted.add(details.tabId);
+      for (const wake of [...this.blankWaiters]) wake();
+    }
     void this.ready.then(async () => {
       const rec = this.tabs.get(details.tabId);
       if (!rec) return;

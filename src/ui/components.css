@@ -142,3 +142,22 @@
 .fx-cform { display: flex; flex-direction: column; gap: 10px; }
 .fx-cform__colors { display: flex; flex-direction: column; gap: 6px; }
 .fx-cform__actions { display: flex; justify-content: flex-end; gap: 8px; }
+
+/* ---- Agent bridge card ---- */
+.fx-bridge { display: flex; flex-direction: column; gap: 6px; padding: 8px 12px; border: 1px solid var(--fx-border); border-radius: var(--fx-radius); background: var(--fx-surface); }
+.fx-bridge--on { border-color: var(--fx-warn-border); border-width: 2px; padding: 7px 11px; background: var(--fx-warn-soft); color: var(--fx-warn-text); }
+.fx-bridge--on .fx-secondary { color: var(--fx-warn-text); }
+.fx-bridge--on .fx-toggle[aria-checked='true'] .fx-switch { background: var(--fx-warn-border); }
+.fx-bridge--options { padding: 12px 16px; }
+.fx-bridge--options.fx-bridge--on { padding: 11px 15px; }
+.fx-bridge__live { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; padding: 8px 10px; border-radius: var(--fx-radius-sm); background: var(--fx-bg); color: var(--fx-text); }
+.fx-bridge__headline { font-size: var(--fx-text-main); }
+.fx-bridge__count { margin-left: auto; font-size: var(--fx-text-secondary); color: var(--fx-muted); font-variant-numeric: tabular-nums; }
+.fx-bridge__dot { flex: none; width: 12px; height: 12px; border-radius: 50%; background: var(--fx-warn-border); }
+.fx-bridge__dot--connected { background: var(--fx-ok); box-shadow: 0 0 0 0 var(--fx-ok); animation: fx-bridge-pulse 1.8s ease-out infinite; }
+.fx-bridge__dot--error, .fx-bridge__dot--host-missing { background: var(--fx-danger); }
+@keyframes fx-bridge-pulse { 0% { box-shadow: 0 0 0 0 var(--fx-ok); } 70% { box-shadow: 0 0 0 7px transparent; } 100% { box-shadow: 0 0 0 0 transparent; } }
+@media (prefers-reduced-motion: reduce) { .fx-bridge__dot--connected { animation: none; } }
+.fx-bridge__help { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; font-size: var(--fx-text-secondary); }
+.fx-bridge__cmd { display: flex; align-items: center; gap: 8px; align-self: stretch; padding: 6px 6px 6px 10px; border-radius: var(--fx-radius-sm); background: var(--fx-bg); color: var(--fx-text); }
+.fx-bridge__cmd code { flex: 1; font: var(--fx-text-main) / 1.4 var(--fx-mono); user-select: all; overflow-wrap: anywhere; }

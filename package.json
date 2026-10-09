@@ -14,14 +14,17 @@
     "dev": "wxt",
     "build": "wxt build",
     "zip": "wxt zip",
-    "typecheck": "tsc --noEmit && tsc --noEmit -p e2e",
+    "typecheck": "tsc --noEmit && tsc --noEmit -p e2e && tsc --noEmit -p bridge",
     "test": "vitest run",
     "test:watch": "vitest",
     "keygen": "node scripts/keygen.mjs",
     "postinstall": "wxt prepare",
-    "e2e": "wxt build && playwright test -c e2e/playwright.config.ts",
+    "e2e": "wxt build && node bridge/build.mjs && playwright test -c e2e/playwright.config.ts",
     "e2e:only": "playwright test -c e2e/playwright.config.ts",
-    "stand": "node test-server/server.mjs"
+    "stand": "node test-server/server.mjs",
+    "bridge:build": "node bridge/build.mjs",
+    "bridge:install": "node scripts/bridge-install.mjs",
+    "bridge:uninstall": "node scripts/bridge-install.mjs --uninstall"
   },
   "pnpm": {
     "onlyBuiltDependencies": [
@@ -33,12 +36,15 @@
     "tldts": "^7.4.18"
   },
   "devDependencies": {
+    "@modelcontextprotocol/sdk": "1.32.1",
     "@playwright/test": "1.64.0",
     "@preact/preset-vite": "^2.10.6",
     "@types/node": "^22.20.5",
+    "esbuild": "^0.28.2",
     "typescript": "^7.0.2",
     "vite": "^8.3.4",
     "vitest": "^5.0.3",
-    "wxt": "^0.21.4"
+    "wxt": "^0.21.4",
+    "zod": "^4.6.5"
   }
 }

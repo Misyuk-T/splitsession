@@ -18,14 +18,20 @@ export interface Settings {
    * name on every site lets trackers link the visits. Off by default.
    */
   showNameToPages: boolean;
+  /**
+   * Agent bridge: one all-or-nothing switch. On: the extension connects to the local native-messaging host
+   * (`com.facet.bridge`) and the user's own AI agent (an MCP server on the same machine) can list, read and operate
+   * every tab of every window. Off (default): no connection, no host process, nothing reachable. Docs: docs/agents.md.
+   */
+  agentBridge: boolean;
 }
 
 /** `chrome.storage.local` key holding the settings object. */
 export const SETTINGS_KEY = 'settings';
 
-export const DEFAULT_SETTINGS: Readonly<Settings> = Object.freeze({ tabGroups: true, titlePrefix: true, strictMode: true, showNameToPages: false });
+export const DEFAULT_SETTINGS: Readonly<Settings> = Object.freeze({ tabGroups: true, titlePrefix: true, strictMode: true, showNameToPages: false, agentBridge: false });
 
-export const SETTING_KEYS = ['tabGroups', 'titlePrefix', 'strictMode', 'showNameToPages'] as const satisfies readonly (keyof Settings)[];
+export const SETTING_KEYS = ['tabGroups', 'titlePrefix', 'strictMode', 'showNameToPages', 'agentBridge'] as const satisfies readonly (keyof Settings)[];
 
 export type SettingKey = (typeof SETTING_KEYS)[number];
 
@@ -42,7 +48,7 @@ export interface StoredSettings extends Settings {
  * cannot be told apart from a default. Every default was `true` then: a `false` was the user's choice, a `true` is
  * read as "never set" (the one that matters: `showNameToPages`, whose default is now off).
  */
-const LEGACY_DEFAULTS: Readonly<Settings> = Object.freeze({ tabGroups: true, titlePrefix: true, strictMode: true, showNameToPages: true });
+const LEGACY_DEFAULTS: Readonly<Settings> = Object.freeze({ tabGroups: true, titlePrefix: true, strictMode: true, showNameToPages: true, agentBridge: false });
 
 export interface ReadSettings {
   settings: Settings;

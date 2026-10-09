@@ -21,6 +21,8 @@
   --fx-warn-border: #e0b84a;
   --fx-warn-text: #5c4300;
   --fx-focus: #1a6fe0;
+  --fx-ok: #1a7f43;
+  --fx-ok-soft: #dcf3e5;
   --fx-shadow: 0 8px 24px rgba(15, 20, 30, 0.18), 0 1px 3px rgba(15, 20, 30, 0.12);
   --fx-radius: 8px;
   --fx-radius-sm: 6px;
@@ -52,6 +54,8 @@
     --fx-warn-border: #8a6d1c;
     --fx-warn-text: #f5dd9b;
     --fx-focus: #6fb0ff;
+    --fx-ok: #4ed38a;
+    --fx-ok-soft: #153a26;
     --fx-shadow: 0 8px 24px rgba(0, 0, 0, 0.55), 0 1px 3px rgba(0, 0, 0, 0.4);
   }
 }

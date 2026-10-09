@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { chromium, expect, test as base, type BrowserContext, type Page, type Worker } from '@playwright/test';
@@ -14,8 +14,19 @@ export interface LogEntry {
   cookie: string;
 }
 
+/** Where this run's browser profile and agent-bridge socket live (a private temp dir, removed afterwards). */
+export interface Profile {
+  userDataDir: string;
+  /** Chrome reads host manifests from `<user data dir>/NativeMessagingHosts`. */
+  nativeHostsDir: string;
+  /** Where the installer copies the host program for this run. */
+  hostDir: string;
+  socketPath: string;
+}
+
 export interface Facet {
   ctx: BrowserContext;
+  profile: Profile;
   /** Current extension service worker (re-resolved after restarts). */
   sw(): Promise<Worker>;
   api<T = unknown>(method: string, ...args: unknown[]): Promise<T>;
@@ -47,22 +58,35 @@ export interface Facet {
 let counter = 0;
 const unique = (label: string) => `${label}-${Date.now().toString(36)}-${++counter}`;
 
-export const test = base.extend<{ facet: Facet }, { extContext: BrowserContext }>({
-  extContext: [
+export const test = base.extend<{ facet: Facet }, { profile: Profile; extContext: BrowserContext }>({
+  profile: [
     async ({}, use) => {
       const userDataDir = mkdtempSync(path.join(tmpdir(), 'facet-e2e-'));
-      const context = await chromium.launchPersistentContext(userDataDir, {
-        channel: 'chromium',
-        headless: !process.env.HEADED,
-        args: [`--disable-extensions-except=${EXTENSION_PATH}`, `--load-extension=${EXTENSION_PATH}`],
-      });
-      await use(context);
-      await context.close();
+      const nativeHostsDir = path.join(userDataDir, 'NativeMessagingHosts');
+      mkdirSync(nativeHostsDir);
+      // Unix socket paths are short (104 bytes on macOS, and $TMPDIR there is long): a short directory directly under /tmp.
+      const socketDir = mkdtempSync(path.join(process.platform === 'win32' ? tmpdir() : '/tmp', 'fb-'));
+      await use({ userDataDir, nativeHostsDir, hostDir: path.join(userDataDir, 'facet-host'), socketPath: path.join(socketDir, 'bridge.sock') });
       rmSync(userDataDir, { recursive: true, force: true });
+      rmSync(socketDir, { recursive: true, force: true });
     },
     { scope: 'worker' },
   ],
-  facet: async ({ extContext: context }, use, testInfo) => {
+  extContext: [
+    async ({ profile }, use) => {
+      const context = await chromium.launchPersistentContext(profile.userDataDir, {
+        channel: 'chromium',
+        headless: !process.env.HEADED,
+        args: [`--disable-extensions-except=${EXTENSION_PATH}`, `--load-extension=${EXTENSION_PATH}`],
+        // The agent bridge host Chrome starts inherits this: its socket stays inside the test's temp dir.
+        env: { ...(process.env as Record<string, string>), FACET_BRIDGE_SOCKET: profile.socketPath },
+      });
+      await use(context);
+      await context.close();
+    },
+    { scope: 'worker' },
+  ],
+  facet: async ({ extContext: context, profile }, use, testInfo) => {
     const ours = (w: Worker) => w.url().startsWith(`chrome-extension://${EXTENSION_ID}/`);
     let latest: Worker | null = context.serviceWorkers().filter(ours).at(-1) ?? null;
     const onWorker = (w: Worker) => {
@@ -83,6 +107,7 @@ export const test = base.extend<{ facet: Facet }, { extContext: BrowserContext }
     const opened: Page[] = [];
     const facet: Facet = {
       ctx: context,
+      profile,
       sw,
       api,
       async container(label) {
@@ -205,7 +230,7 @@ export const test = base.extend<{ facet: Facet }, { extContext: BrowserContext }
     await context.clearCookies(); // real profile starts empty for every test
     // Rules and settings outlive a test in the shared browser: start from the defaults.
     for (const rule of await api<Array<{ domain: string }>>('listDomainRules')) await api('removeDomainRule', rule.domain);
-    await api('updateSettings', { tabGroups: true, titlePrefix: true, strictMode: true, showNameToPages: true });
+    await api('updateSettings', { tabGroups: true, titlePrefix: true, strictMode: true, showNameToPages: true, agentBridge: false });
     // Steady state of a user who said yes to strict mode (tests of the other states change it themselves).
     if (!(await api<{ active: boolean }>('getStrictMode')).active) await api('grantStrictMode');
     await use(facet);

@@ -28,3 +28,6 @@
 .opt-facts dd { margin: 0; overflow-wrap: anywhere; }
 .opt-log { margin: 0; max-height: 320px; overflow: auto; padding: 10px 12px; border: 1px solid var(--fx-border); border-radius: var(--fx-radius-sm); background: var(--fx-bg); font: var(--fx-text-secondary) / 1.5 var(--fx-mono); white-space: pre-wrap; overflow-wrap: anywhere; }
 
+
+.opt-list { margin: 0; padding-left: 22px; display: flex; flex-direction: column; gap: 4px; }
+.opt-card code { font-family: var(--fx-mono); }

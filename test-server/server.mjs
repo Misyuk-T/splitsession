@@ -275,6 +275,34 @@ const server = createServer(async (req, res) => {
     case '/late-title':
       // No <title> at first; one is created a moment later.
       return send(res, 200, `<!doctype html><html><head><meta charset="utf-8"></head><body><script>setTimeout(() => { document.title = 'Late title'; }, 150);</script></body></html>`);
+    case '/agent':
+    case '/agent-csp': {
+      // Page for the agent bridge tools: fields, a button, a form, a long page, a page-world variable.
+      // /agent-csp forbids eval (no 'unsafe-eval'), so run_js cannot evaluate code strings there.
+      const headers = path === '/agent-csp' ? { 'content-security-policy': "script-src 'self' 'unsafe-inline'" } : {};
+      return send(
+        res,
+        200,
+        page(
+          'Agent page',
+          `<h1 id="title">Agent page</h1><p id="user">${esc(userOf() ?? 'anonymous')}</p>
+           <input id="name" type="text"><textarea id="note"></textarea>
+           <button id="go">Go</button>
+           <form id="f" action="/agent-submit" method="get"><input id="q" name="q"><button id="search" type="submit">Search</button></form>
+           <p id="out"></p><pre id="echo"></pre>
+           <div style="height:3000px"></div><p id="bottom">bottom</p>
+           <script>
+             window.pageVar = 42;
+             document.getElementById('go').addEventListener('click', () => { document.getElementById('out').textContent = 'clicked:' + document.getElementById('name').value; });
+             document.getElementById('name').addEventListener('input', (e) => { document.getElementById('echo').textContent = 'input:' + e.target.value; });
+             document.getElementById('name').addEventListener('change', (e) => { document.getElementById('echo').textContent += '|change'; });
+           </script>`,
+        ),
+        headers,
+      );
+    }
+    case '/agent-submit':
+      return send(res, 200, page('Submitted', `<pre id="submitted">${esc(url.searchParams.get('q') ?? '')}</pre>`));
     default:
       return send(res, 404, page('404', `<p>no route ${esc(path)}</p>`));
   }

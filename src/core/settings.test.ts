@@ -3,7 +3,7 @@ import { applySettingsPatch, DEFAULT_SETTINGS, normalizeSettings, readSettings, 
 
 describe('settings defaults', () => {
   it('shows tab groups, prefixes titles, strict mode on, and the container name hidden from pages by default', () => {
-    expect(DEFAULT_SETTINGS).toEqual({ tabGroups: true, titlePrefix: true, strictMode: true, showNameToPages: false });
+    expect(DEFAULT_SETTINGS).toEqual({ tabGroups: true, titlePrefix: true, strictMode: true, showNameToPages: false, agentBridge: false });
   });
 
   it('normalizeSettings fills gaps from the defaults and ignores junk', () => {
@@ -36,7 +36,7 @@ describe('settings defaults', () => {
       legacy: true,
     });
     // An explicit "off" from before stays off (and is remembered as a choice).
-    expect(readSettings({ tabGroups: true, titlePrefix: true, strictMode: false, showNameToPages: false })).toEqual({
+    expect(readSettings({ tabGroups: true, titlePrefix: true, strictMode: false, showNameToPages: false, agentBridge: false })).toEqual({
       settings: { ...DEFAULT_SETTINGS, strictMode: false },
       explicit: ['strictMode', 'showNameToPages'],
       legacy: true,
@@ -69,5 +69,17 @@ describe('applySettingsPatch', () => {
   it('rejects unknown keys and non-boolean values', () => {
     expect(() => applySettingsPatch(DEFAULT_SETTINGS, { colour: true })).toThrow(/unknown setting/);
     expect(() => applySettingsPatch(DEFAULT_SETTINGS, { tabGroups: 'yes' })).toThrow(/true or false/);
+  });
+});
+
+describe('agentBridge setting', () => {
+  it('is off by default, can be switched like the others, and an old install without it reads as off', () => {
+    expect(DEFAULT_SETTINGS.agentBridge).toBe(false);
+    expect(applySettingsPatch(DEFAULT_SETTINGS, { agentBridge: true }).agentBridge).toBe(true);
+    expect(() => applySettingsPatch(DEFAULT_SETTINGS, { agentBridge: 'yes' })).toThrow(SettingsError);
+    expect(normalizeSettings({ tabGroups: false, titlePrefix: true, strictMode: true, showNameToPages: false }).agentBridge).toBe(false);
+    // Only an explicit choice sticks; a stored `true` that was never set explicitly does not turn the bridge on.
+    expect(normalizeSettings({ ...DEFAULT_SETTINGS, agentBridge: true, explicit: [] }).agentBridge).toBe(false);
+    expect(normalizeSettings({ ...DEFAULT_SETTINGS, agentBridge: true, explicit: ['agentBridge'] }).agentBridge).toBe(true);
   });
 });

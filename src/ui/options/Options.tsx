@@ -1,5 +1,6 @@
 import { useContainers } from '../useContainers';
 import { Logo } from '../components/Logo';
+import { BridgeSection } from './BridgeSection';
 import { DiagnosticsSection } from './DiagnosticsSection';
 import { GeneralSection } from './GeneralSection';
 import { RulesSection } from './RulesSection';
@@ -15,6 +16,7 @@ export function Options() {
       </header>
       <nav class="opt-nav" aria-label="Sections">
         <a href="#general">General</a>
+        <a href="#agent">AI agent</a>
         <a href="#rules">Domain rules</a>
         <a href="#transfer">Export and import</a>
         <a href="#diagnostics">Diagnostics</a>
@@ -22,6 +24,7 @@ export function Options() {
       {error && <p class="fx-notice fx-notice--error" role="alert">Facet could not load its containers: {error}</p>}
       <main>
         <GeneralSection />
+        <BridgeSection />
         <RulesSection containers={containers} />
         <TransferSection onChanged={() => void reload()} />
         <DiagnosticsSection />

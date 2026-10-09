@@ -40,11 +40,14 @@ export default defineConfig({
       'webNavigation',
       'browsingData',
       'alarms',
+      // Agent bridge (off by default): talk to the local native host `com.facet.bridge` (docs/agents.md).
+      'nativeMessaging',
     ],
     // v0.1 asks for every host up front: header rewriting needs host access, and
     // headless e2e cannot click permission prompts. Optional-permission onboarding is deferred.
     host_permissions: ['<all_urls>'],
-    optional_permissions: ['cookies'],
+    // userScripts: only for run_js on pages whose Content-Security-Policy forbids eval; asked for in the options page.
+    optional_permissions: ['cookies', 'userScripts'],
     icons: iconSet,
     action: { default_title: 'Facet', default_icon: iconSet },
     // Static default answer for the beacon (`{}` = no container) so the content script never reaches the network,

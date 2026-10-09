@@ -1,4 +1,4 @@
-body { width: 380px; max-width: 100vw; min-height: 120px; }
+html, body { width: 420px; min-height: 120px; }
 .popup { display: flex; flex-direction: column; gap: 14px; padding: 14px; }
 
 .popup__head { display: flex; align-items: center; gap: 10px; }

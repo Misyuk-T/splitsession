@@ -27,7 +27,7 @@ Chrome profiles isolate everything, but they are separate windows with separate 
 - **Indicators**: a toolbar badge with the container's initials on its colour, the page title prefixed with `[name]`, `data-ctr="name"` on the page's `<html>` (the last two only while "Show the container name to pages" is on; it is off by default, AI agents need it on).
 - **Strict mode** (default on, asks first): removes every service worker of the profile and stops sites from installing new ones, so none can answer a container tab with your regular logins.
 - **Export and import** of containers and rules as JSON. Cookies are left out unless you tick a clearly marked box.
-- **For AI agents**: `open.html?container=…&url=…`, a `#ctr=name` marker, a plain-text `state.html`. See [docs/agents.md](docs/agents.md).
+- **For AI agents**: `open.html?container=…&url=…`, a `#ctr=name` marker, a plain-text `state.html`; and an opt-in **agent bridge** that lets your own local agent (Claude Code) list, read and operate all your tabs through an MCP server. See [docs/agents.md](docs/agents.md).
 - Light and dark theme. Every control is custom and keyboard accessible: no browser `<select>`, `alert` or validation bubbles.
 
 ## Install
@@ -46,7 +46,7 @@ pnpm zip            # .output/facet-<version>-chrome.zip
 
 then *Load unpacked* on `.output/chrome-mv3`. The extension ID is fixed (`hapfikidacgfgnnajkgnaednpgnhmffk`, see [docs/development.md](docs/development.md)), so `chrome-extension://hapfikidacgfgnnajkgnaednpgnhmffk/open.html` is the same address on every machine.
 
-Facet asks for access to all sites: rewriting request headers per tab needs it. It sends nothing anywhere; containers and cookie jars live in `chrome.storage.local` on your machine, unencrypted (so does Chrome's own cookie store, and FileVault or the like is what protects both).
+Facet asks for access to all sites: rewriting request headers per tab needs it. It sends nothing anywhere (the optional [agent bridge](#the-agent-bridge-off-by-default) opens a local, off-by-default channel to your own agent, and nothing else); containers and cookie jars live in `chrome.storage.local` on your machine, unencrypted (so does Chrome's own cookie store, and FileVault or the like is what protects both).
 
 ## How isolation works
 
@@ -81,6 +81,20 @@ https://example.com/#ctr=Work                                                   
 chrome-extension://hapfikidacgfgnnajkgnaednpgnhmffk/state.html                                                       (plain text: containers, container tabs, ready-to-copy addresses)
 ```
 
+### The agent bridge (off by default)
+
+A local MCP server lets Claude Code (running on your Mac) see your Chrome tabs across all windows, each with its container, and operate them: read text and HTML, screenshots, click, type, run JavaScript, open pages in a container. It is **one all-or-nothing switch** ("Agent bridge" in the popup): off, nothing is reachable; on, **the agent can do everything in every tab, logged-in pages included**. The popup turns amber and says "Agent connected — full access" while it is on.
+
+```sh
+pnpm bridge:install                  # 1. builds the bridge, registers the Chrome native host, prints step 2
+claude mcp add --scope user facet -- <node> <repo>/bridge/dist/facet-bridge.mjs mcp   # 2. (printed by step 1; run it yourself)
+# 3. flip "Agent bridge" in the Facet popup
+```
+
+Chrome's Native Messaging connects the extension to a local host (pinned to Facet's extension ID); the MCP server talks to the host over a private Unix socket (0600), never a network port. Details, tool list and limits: [docs/agents.md](docs/agents.md#7-the-agent-bridge-your-own-agent-drives-your-chrome-tabs-opt-in).
+
+### Without the bridge
+
 First switch on **"Show the container name to pages (for AI agents)"** in Facet's settings (off by default, because any page can read the name). Then container tabs have a `[Work] ` title prefix (so `tabs_context` shows which account is which) and `data-ctr="Work"` on `<html>`. Details for Claude in Chrome and Playwright: [docs/agents.md](docs/agents.md).
 
 ## Compatibility
@@ -104,8 +118,9 @@ pnpm install
 pnpm typecheck      # tsc for src and e2e
 pnpm test           # unit tests (Vitest)
 pnpm build          # unpacked extension in .output/chrome-mv3
-pnpm e2e            # build, then the Playwright suite in real Chromium against the local stand
+pnpm e2e            # build (extension and agent bridge), then the Playwright suite in real Chromium against the local stand
 pnpm zip            # release zip in .output/
+pnpm bridge:build   # the agent bridge alone (bridge/dist/); bridge:install / bridge:uninstall register it with Chrome
 pnpm dev            # WXT dev mode with a throwaway Chrome profile
 ```
 
