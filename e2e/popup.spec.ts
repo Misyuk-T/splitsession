@@ -93,7 +93,7 @@ test.describe('popup', () => {
     const popup = await openPopup(facet, tabId);
     await expect(popup.getByTestId('current-container')).toContainText('No container');
 
-    await popup.getByRole('button', { name: /Reopen this tab in/ }).click();
+    await popup.getByRole('button', { name: /Reopen in/ }).click();
     await expect(popup.getByRole('menu', { name: 'Reopen this tab in' })).toBeVisible();
     await popup.getByRole('menuitemradio', { name: W.name }).click();
     await expect(popup.getByTestId('current-container')).toContainText(W.name);
@@ -101,7 +101,7 @@ test.describe('popup', () => {
     expect(await facet.api('getTabContainer', tabId)).toBe(W.id);
 
     // Same menu, by keyboard: ArrowDown opens on the first item, End goes to "No container", Enter chooses.
-    const trigger = popup.getByRole('button', { name: /Reopen this tab in/ });
+    const trigger = popup.getByRole('button', { name: /Reopen in/ });
     await trigger.focus();
     await popup.keyboard.press('ArrowDown');
     await expect(popup.getByRole('menuitemradio').first()).toBeFocused();
@@ -125,7 +125,7 @@ test.describe('popup', () => {
     const blank = await facet.ctx.newPage();
     await blank.goto('about:blank');
     const popup = await openPopup(facet, await facet.tabIdOf(blank));
-    await expect(popup.getByRole('button', { name: /Reopen this tab in/ })).toBeDisabled();
+    await expect(popup.getByRole('button', { name: /Reopen in/ })).toBeDisabled();
     await expect(popup.getByText(/Only web pages/)).toBeVisible();
     await popup.close();
     await blank.close();

@@ -10,6 +10,9 @@ describe('tool arguments', () => {
       [
         'activate_tab', 'assign_tab', 'bridge_info', 'click', 'close_tab', 'get_tab_html', 'get_tab_text', 'list_containers', 'list_tabs',
         'navigate', 'open_in_container', 'open_tab', 'run_js', 'screenshot_tab', 'scroll', 'type',
+        // CDP ("full hands")
+        'snapshot', 'hover', 'drag', 'press_key', 'select_option', 'upload_file', 'wait_for', 'navigate_back', 'navigate_forward', 'reload',
+        'handle_dialog', 'console_messages', 'network_requests', 'watch', 'resize_viewport',
       ].sort(),
     );
     for (const tool of TOOLS) {
@@ -60,5 +63,25 @@ describe('tool arguments', () => {
   it('treats missing arguments as an empty object for tools without required ones', () => {
     expect(validateArgs(schema('list_containers'), undefined)).toEqual({ ok: true, value: {} });
     expect(validateArgs(schema('list_tabs'), null)).toEqual({ ok: true, value: {} });
+  });
+
+  it('checks arrays (items, bounds) and string patterns', () => {
+    expect(validateArgs(schema('select_option'), { tabId: 1, ref: 'e3', values: ['a', 'b'] })).toEqual({ ok: true, value: { tabId: 1, ref: 'e3', values: ['a', 'b'] } });
+    expect(validateArgs(schema('select_option'), { tabId: 1, values: [] })).toEqual({ ok: false, error: 'values: needs at least 1 item' });
+    expect(validateArgs(schema('select_option'), { tabId: 1, values: 'a' })).toEqual({ ok: false, error: 'values: expected array, got string' });
+    expect(validateArgs(schema('select_option'), { tabId: 1, values: ['a', 2] })).toEqual({ ok: false, error: 'values[1]: expected string, got number' });
+    expect(validateArgs(schema('upload_file'), { tabId: 1, selector: 'input', paths: ['relative.txt'] })).toMatchObject({ ok: false, error: expect.stringMatching(/paths\[0\]: .* has the wrong form/) });
+    expect(validateArgs(schema('upload_file'), { tabId: 1, selector: 'input', paths: Array.from({ length: 21 }, (_, i) => `/f${i}`) })).toEqual({ ok: false, error: 'paths: takes at most 20 items' });
+    expect(validateArgs(schema('click'), { tabId: 1, ref: 'x12' })).toMatchObject({ ok: false, error: expect.stringMatching(/^ref: .* has the wrong form/) });
+    expect(validateArgs(schema('click'), { tabId: 1, ref: 'e12', modifiers: ['Shift', 'Hyper'] })).toMatchObject({ ok: false, error: expect.stringMatching(/modifiers\[1\]: must be one of/) });
+    expect(validateArgs(schema('click'), { tabId: 1, ref: 'e12' })).toEqual({ ok: true, value: { tabId: 1, ref: 'e12', button: 'left', clickCount: 1 } });
+    expect(validateArgs(schema('wait_for'), { tabId: 1, text: 'x', timeout: 31_000 })).toEqual({ ok: false, error: 'timeout: must be at most 30000' });
+  });
+
+  it('gives slow tools a longer deadline', async () => {
+    const { toolTimeoutMs } = await import('./spec');
+    expect(toolTimeoutMs('list_tabs')).toBe(15_000);
+    expect(toolTimeoutMs('wait_for')).toBe(35_000);
+    expect(toolTimeoutMs('nope')).toBe(15_000);
   });
 });

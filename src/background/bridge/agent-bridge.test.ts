@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { MemoryStorageArea } from '../../engine/storage/storage-area';
 import { createLogger } from '../log';
-import { AgentBridge, BRIDGE_ALARM, BRIDGE_STATE_KEY } from './agent-bridge';
+import { AgentBridge, BRIDGE_ALARM, BRIDGE_STATE_KEY, RELEASE_GRACE_MS } from './agent-bridge';
 
 class FakePort {
   sent: any[] = [];
@@ -101,6 +101,31 @@ describe('AgentBridge', () => {
       { tool: 'boom', tabId: 5, host: 'a.test', ok: false, ms: expect.any(Number), error: 'tool failed' },
     ]);
     expect(JSON.stringify(entries)).not.toContain('secret');
+  });
+
+  it('keeps the latest five actions, newest first, with the tab they touched', async () => {
+    const { bridge, ports, run } = setup();
+    await bridge.sync(true, true);
+    const port = ports[0]!;
+    port.receive({ type: 'ready', version: 1, socket: '/s' });
+    run.mockImplementation(async (tool: string, _a: unknown, meta: { tabId?: number; host?: string; title?: string }) => {
+      if (tool === 'get_tab_text') Object.assign(meta, { tabId: 5, host: 'a.test', title: 'Inbox' });
+      if (tool === 'boom') throw new Error('tool failed');
+      return { content: [{ type: 'text' as const, text: 'ok' }] };
+    });
+    for (const [id, tool] of [['1', 'list_tabs'], ['2', 'get_tab_text'], ['3', 'boom'], ['4', 'list_containers'], ['5', 'list_tabs'], ['6', 'list_tabs']] as const) {
+      port.receive({ type: 'request', id: Number(id), tool, args: {} });
+      await vi.advanceTimersByTimeAsync(0);
+    }
+    const recent = bridge.state().recent;
+    expect(recent.map((r) => r.tool)).toEqual(['list_tabs', 'list_tabs', 'list_containers', 'boom', 'get_tab_text']); // the first list_tabs fell off
+    expect(recent[4]).toMatchObject({ ok: true, title: 'Inbox', host: 'a.test' });
+    expect(recent[3]).toMatchObject({ ok: false, title: null });
+    expect(bridge.state().actions).toBe(6);
+    // A fresh "on" starts the list again.
+    await bridge.sync(false);
+    await bridge.sync(true, true);
+    expect(bridge.state().recent).toEqual([]);
   });
 
   it('turning it off disconnects the port and clears the retry alarm; the counter restarts on the next "on"', async () => {
@@ -278,6 +303,30 @@ describe('AgentBridge', () => {
     await area.set({ [BRIDGE_STATE_KEY]: stored });
     const again = new AgentBridge({ runtime: { connectNative: vi.fn(() => new FakePort()) }, alarms: { create: vi.fn(), clear: vi.fn() } } as never, area, createLogger(5));
     await again.sync(true, false);
-    expect(again.state()).toMatchObject({ status: 'connecting', actions: 1 });
+    expect(again.state()).toMatchObject({ status: 'connecting', actions: 1, recent: [expect.objectContaining({ tool: 'list_tabs' })] });
+  });
+
+  it('lets go of what the agent left behind a grace after the last MCP client has gone, unless one comes back', async () => {
+    const { bridge, ports } = setup();
+    const release = vi.fn(async () => {});
+    bridge.setRunner({ run: vi.fn(async () => ({ content: [] })), release });
+    await bridge.sync(true, true);
+    const port = ports[0]!;
+    port.receive({ type: 'ready', version: 1, socket: '/s' });
+    port.receive({ type: 'clients', count: 1 });
+    port.receive({ type: 'clients', count: 0 });
+    await vi.advanceTimersByTimeAsync(RELEASE_GRACE_MS - 1_000);
+    expect(release).not.toHaveBeenCalled();
+    port.receive({ type: 'clients', count: 1 }); // a restarting client came back in time
+    await vi.advanceTimersByTimeAsync(RELEASE_GRACE_MS);
+    expect(release).not.toHaveBeenCalled();
+    port.receive({ type: 'clients', count: 0 });
+    await vi.advanceTimersByTimeAsync(RELEASE_GRACE_MS + 100);
+    expect(release).toHaveBeenCalledTimes(1);
+    // Switched off during the grace: the off switch does its own cleanup, nothing is released twice.
+    port.receive({ type: 'clients', count: 0 });
+    await bridge.sync(false);
+    await vi.advanceTimersByTimeAsync(RELEASE_GRACE_MS * 2);
+    expect(release).toHaveBeenCalledTimes(1);
   });
 });

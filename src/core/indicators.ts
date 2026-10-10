@@ -68,3 +68,23 @@ export function prefixedTitle(title: string, prefix: string, previous?: string):
 export function unprefixedTitle(title: string, prefix: string): string {
   return title.startsWith(prefix) ? title.slice(prefix.length) : title;
 }
+
+// ---- Agent activity mark ----
+
+/**
+ * Marks that older versions of the agent bridge put in front of a tab's title (eye for reads, robot for actions), after
+ * the `[container] ` prefix: "[Work] 👁 Inbox". Nothing writes them any more (the title is never touched); the list stays
+ * so that `withoutAgentMark` can still clean a title that an older worker left behind.
+ */
+export const AGENT_READ_FRAMES = ['👁 ', '👀 '] as const;
+export const AGENT_ACT_FRAMES = ['🤖◐ ', '🤖◓ ', '🤖◑ ', '🤖◒ '] as const;
+/** Every mark that may stand in front of a title, longest first (the static forms of older versions included). */
+export const AGENT_TITLE_MARKS = [...AGENT_ACT_FRAMES, ...AGENT_READ_FRAMES, '🤖 '] as const;
+
+/** The title without the agent mark (the `[container] ` prefix stays). For the action log, which must not show our own marks. */
+export function withoutAgentMark(title: string): string {
+  const prefix = /^\[[^\]]*\] /.exec(title)?.[0] ?? '';
+  const rest = title.slice(prefix.length);
+  for (const mark of AGENT_TITLE_MARKS) if (rest.startsWith(mark)) return prefix + rest.slice(mark.length);
+  return title;
+}

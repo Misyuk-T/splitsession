@@ -3,7 +3,7 @@ import { applySettingsPatch, DEFAULT_SETTINGS, normalizeSettings, readSettings, 
 
 describe('settings defaults', () => {
   it('shows tab groups, prefixes titles, strict mode on, and the container name hidden from pages by default', () => {
-    expect(DEFAULT_SETTINGS).toEqual({ tabGroups: true, titlePrefix: true, strictMode: true, showNameToPages: false, agentBridge: false });
+    expect(DEFAULT_SETTINGS).toEqual({ tabGroups: true, titlePrefix: true, strictMode: true, showNameToPages: false, agentBridge: false, agentActivity: true });
   });
 
   it('normalizeSettings fills gaps from the defaults and ignores junk', () => {
@@ -36,7 +36,7 @@ describe('settings defaults', () => {
       legacy: true,
     });
     // An explicit "off" from before stays off (and is remembered as a choice).
-    expect(readSettings({ tabGroups: true, titlePrefix: true, strictMode: false, showNameToPages: false, agentBridge: false })).toEqual({
+    expect(readSettings({ tabGroups: true, titlePrefix: true, strictMode: false, showNameToPages: false, agentBridge: false, agentActivity: true })).toEqual({
       settings: { ...DEFAULT_SETTINGS, strictMode: false },
       explicit: ['strictMode', 'showNameToPages'],
       legacy: true,

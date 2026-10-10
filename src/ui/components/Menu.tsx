@@ -14,6 +14,8 @@ export interface MenuItem {
   separatorBefore?: boolean;
   /** Marks the current choice (announced as checked). */
   checked?: boolean;
+  /** With `checked`: an independent on/off item (`menuitemcheckbox`) instead of one choice among several (`menuitemradio`). */
+  toggle?: boolean;
 }
 
 interface MenuButtonProps {
@@ -168,7 +170,7 @@ export function MenuButton({ children, ariaLabel, items, onSelect, menuLabel, al
                   itemRefs.current[index] = el;
                 }}
                 type="button"
-                role={item.checked !== undefined ? 'menuitemradio' : 'menuitem'}
+                role={item.checked !== undefined ? (item.toggle ? 'menuitemcheckbox' : 'menuitemradio') : 'menuitem'}
                 aria-checked={item.checked !== undefined ? item.checked : undefined}
                 class={`fx-popover__item${item.danger ? ' fx-popover__item--danger' : ''}`}
                 data-active={index === active}

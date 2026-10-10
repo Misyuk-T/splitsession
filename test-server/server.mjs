@@ -8,6 +8,7 @@
 // header), GET /__log?clear=1 empties it; the e2e tests use it to check what the FIRST request of a flow carried.
 import { createServer } from 'node:http';
 import { randomBytes } from 'node:crypto';
+import { deflateSync } from 'node:zlib';
 
 const PORT = Number(process.argv[2] ?? process.env.FACET_TEST_PORT ?? 47321);
 const sessions = new Map(); // sid -> user (per host family: a.localhost and sub.a.localhost share)
@@ -28,6 +29,37 @@ const parseCookies = (header = '') =>
         return i === -1 ? ['', p] : [p.slice(0, i), p.slice(i + 1)];
       }),
   );
+
+/** A solid-colour square PNG (the "page with a PNG favicon" of the activity tests). */
+function solidPng(size, [r, g, b]) {
+  const crcTable = Array.from({ length: 256 }, (_, n) => {
+    let c = n;
+    for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1;
+    return c >>> 0;
+  });
+  const crc = (buf) => {
+    let c = 0xffffffff;
+    for (const byte of buf) c = crcTable[(c ^ byte) & 0xff] ^ (c >>> 8);
+    return (c ^ 0xffffffff) >>> 0;
+  };
+  const chunk = (type, data) => {
+    const body = Buffer.concat([Buffer.from(type, 'ascii'), data]);
+    const out = Buffer.alloc(body.length + 8);
+    out.writeUInt32BE(data.length, 0);
+    body.copy(out, 4);
+    out.writeUInt32BE(crc(body), body.length + 4);
+    return out;
+  };
+  const header = Buffer.alloc(13);
+  header.writeUInt32BE(size, 0);
+  header.writeUInt32BE(size, 4);
+  header[8] = 8; // bit depth
+  header[9] = 6; // RGBA
+  const row = Buffer.concat([Buffer.from([0]), Buffer.from(Array.from({ length: size }, () => [r, g, b, 255]).flat())]);
+  const raw = Buffer.concat(Array.from({ length: size }, () => row));
+  return Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), chunk('IHDR', header), chunk('IDAT', deflateSync(raw)), chunk('IEND', Buffer.alloc(0))]);
+}
+const PNG_ICON = solidPng(32, [0, 120, 255]);
 
 function page(title, body, head = '') {
   return `<!doctype html><html><head><meta charset="utf-8"><title>${esc(title)}</title>${head}</head><body>${body}</body></html>`;
@@ -301,6 +333,153 @@ const server = createServer(async (req, res) => {
         headers,
       );
     }
+    case '/cdp':
+      // Page for the CDP ("full hands") tools: every handler records whether the event was trusted (a real input event).
+      return send(
+        res,
+        200,
+        page(
+          'CDP page',
+          `<h1>CDP page</h1><p id="user">${esc(userOf() ?? 'anonymous')}</p>
+           <button id="trusted">Join</button> <pre id="log"></pre>
+           <label for="ctl">Controlled</label> <input id="ctl"> <pre id="ctl-state"></pre>
+           <form id="kf" action="/agent-submit" method="get"><input id="kq" name="q" aria-label="Query"></form>
+           <div id="hov" style="display:inline-block;padding:8px">Hover me</div> <pre id="hov-out"></pre>
+           <label for="size">Size</label> <select id="size"><option value="s">Small</option><option value="m">Medium</option><option value="l">Large</option></select> <pre id="size-out"></pre>
+           <label for="file">Attachment</label> <input type="file" id="file" multiple> <pre id="file-out"></pre>
+           <button id="alert">Alert</button> <button id="confirm">Confirm</button> <button id="prompt">Prompt</button> <pre id="dialog-out"></pre>
+           <button id="logs">Log things</button>
+           <label for="keys">Keys</label> <input id="keys" value="abc"> <pre id="keys-out"></pre>
+           <div id="track" style="position:relative;width:300px;height:30px;background:#ddd"><div id="handle" style="position:absolute;left:0;top:0;width:30px;height:30px;background:#333"></div></div> <pre id="drag-out"></pre>
+           <div id="dragsrc" draggable="true" style="display:inline-block;width:60px;height:30px;background:#8c8">drag me</div>
+           <div id="drop" style="display:inline-block;width:120px;height:40px;background:#88c">drop here</div> <pre id="drop-out"></pre>
+           <button id="later">Later</button> <p id="later-out"></p>
+           <style>#hov:hover { background: rgb(255, 200, 0); }</style>
+           <script>
+             const $ = (id) => document.getElementById(id);
+             const note = (id, text) => { $(id).textContent += text + '\\n'; };
+             $('trusted').addEventListener('click', (e) => note('log', 'click trusted=' + e.isTrusted + ' detail=' + e.detail + ' shift=' + e.shiftKey));
+             $('trusted').addEventListener('dblclick', (e) => note('log', 'dblclick trusted=' + e.isTrusted));
+             $('trusted').addEventListener('contextmenu', (e) => { e.preventDefault(); note('log', 'contextmenu trusted=' + e.isTrusted); });
+             // A React-like controlled input: the instance's value setter is tracked, and an input event whose value
+             // equals the tracked one is ignored (that is how React drops values set by a script).
+             (() => {
+               const el = $('ctl');
+               const proto = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value');
+               let tracked = '';
+               let state = '';
+               Object.defineProperty(el, 'value', { configurable: true, get() { return proto.get.call(this); }, set(v) { tracked = String(v); proto.set.call(this, v); } });
+               el.addEventListener('input', (e) => {
+                 const now = proto.get.call(el);
+                 if (now === tracked) return;
+                 tracked = now;
+                 state = now;
+                 el.value = state; // controlled: re-render from state
+                 $('ctl-state').textContent = 'state=' + state + ' trusted=' + e.isTrusted;
+               });
+             })();
+             $('hov').addEventListener('mouseenter', (e) => { $('hov-out').textContent = 'entered trusted=' + e.isTrusted; });
+             $('size').addEventListener('change', (e) => { $('size-out').textContent = 'size=' + e.target.value; });
+             $('file').addEventListener('change', (e) => { $('file-out').textContent = Array.from(e.target.files).map((f) => f.name + ':' + f.size).join(','); });
+             $('alert').addEventListener('click', () => { alert('hello from the page'); note('dialog-out', 'alert closed'); });
+             $('confirm').addEventListener('click', () => { note('dialog-out', 'confirm=' + confirm('Sure?')); });
+             $('prompt').addEventListener('click', () => { note('dialog-out', 'prompt=' + prompt('Name?', 'x')); });
+             $('logs').addEventListener('click', () => { console.log('hello console', { a: 1 }); console.error('bad thing'); fetch('/api/ping?n=1'); setTimeout(() => { throw new Error('thrown later'); }, 10); });
+             $('keys').addEventListener('keydown', (e) => note('keys-out', e.key + (e.metaKey ? '+meta' : '') + (e.ctrlKey ? '+ctrl' : '') + ' trusted=' + e.isTrusted));
+             (() => {
+               let start = null;
+               $('handle').addEventListener('mousedown', (e) => { start = e.clientX; });
+               addEventListener('mousemove', (e) => { if (start !== null) $('handle').style.left = Math.max(0, Math.min(270, e.clientX - start)) + 'px'; });
+               addEventListener('mouseup', (e) => { if (start === null) return; $('drag-out').textContent = 'moved=' + Math.round(e.clientX - start) + ' trusted=' + e.isTrusted; start = null; });
+             })();
+             $('dragsrc').addEventListener('dragstart', (e) => e.dataTransfer.setData('text/plain', 'payload-42'));
+             $('drop').addEventListener('dragover', (e) => e.preventDefault());
+             $('drop').addEventListener('drop', (e) => { e.preventDefault(); $('drop-out').textContent = 'dropped=' + e.dataTransfer.getData('text/plain'); });
+             $('later').addEventListener('click', () => setTimeout(() => { $('later-out').textContent = 'Ready now'; }, 700));
+           </script>`,
+        ),
+      );
+    case '/cdp-frames':
+      return send(
+        res,
+        200,
+        page(
+          'Frames',
+          `<h1>Frames</h1><iframe id="same" title="Same site" src="/cdp-child" width="300" height="120"></iframe>
+           <iframe id="cross" title="Other site" src="${esc(at('b.localhost', '/cdp-child'))}" width="300" height="120"></iframe>`,
+        ),
+      );
+    case '/cdp-child':
+      return send(
+        res,
+        200,
+        page(
+          `child ${host}`,
+          `<button id="inside" onclick="document.getElementById('out').textContent = 'inside clicked trusted=' + event.isTrusted">Inside ${esc(host)}</button><p id="out"></p>`,
+        ),
+      );
+    case '/cdp-csp':
+      // A page that forbids eval and inline scripts: only its own files run.
+      return send(res, 200, page('Strict page', `<h1>Strict page</h1><script src="/cdp-csp.js"></script>`), { 'content-security-policy': "script-src 'self'" });
+    case '/cdp-csp.js':
+      return send(res, 200, 'window.cspVar = 7; try { eval("1"); window.pageEval = "ran"; } catch (e) { window.pageEval = e.name; }', { 'content-type': 'text/javascript' });
+    case '/api/ping':
+      return json(res, { pong: true });
+    case '/icon-page':
+      // A page with a favicon of its own (same origin, drawable).
+      return send(res, 200, page('Icon page', `<h1>Icon page</h1>`, '<link rel="icon" id="own-icon" href="/icon.svg">'));
+    case '/icon-png-page':
+      // Icons given as PNG: a plain one, a "shortcut icon" and an apple-touch-icon (not a favicon: never touched).
+      return send(
+        res,
+        200,
+        page(
+          'PNG icon page',
+          `<h1>PNG icon page</h1>`,
+          '<link rel="icon" type="image/png" id="own-icon" href="/icon.png"><link rel="shortcut icon" id="shortcut" href="/icon.png?v=2"><link rel="apple-touch-icon" id="apple" href="/icon.png?v=3">',
+        ),
+      );
+    case '/icon.png':
+      return send(res, 200, PNG_ICON, { 'content-type': 'image/png' });
+    case '/icon-fw-page':
+      // A framework-like page: it owns its icon link and rewrites it (href, or a whole new node) whenever the app asks.
+      return send(
+        res,
+        200,
+        page(
+          'Framework icon page',
+          `<h1>Framework icon page</h1>
+           <script>
+             window.setIcon = (href) => document.getElementById('fw-icon').setAttribute('href', href);
+             window.swapIcon = (href) => {
+               const old = document.getElementById('fw-icon');
+               const next = document.createElement('link');
+               next.rel = 'icon'; next.id = 'fw-icon'; next.type = 'image/png'; next.href = href;
+               old.replaceWith(next);
+             };
+           </script>`,
+          '<link rel="icon" type="image/png" id="fw-icon" href="/icon.png">',
+        ),
+      );
+    case '/spa-nav':
+      // An app that changes address and title by itself when a button is pressed (history.pushState + document.title).
+      return send(
+        res,
+        200,
+        page(
+          'SPA home',
+          `<h1>SPA</h1><button id="nav">Next</button>
+           <script>
+             document.getElementById('nav').addEventListener('click', () => {
+               history.pushState({}, '', '/spa-nav?page=2');
+               window.__navAt = performance.now();
+               document.title = 'SPA page 2';
+             });
+           </script>`,
+        ),
+      );
+    case '/icon.svg':
+      return send(res, 200, '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16"><rect width="16" height="16" fill="#0a0"/></svg>', { 'content-type': 'image/svg+xml' });
     case '/agent-submit':
       return send(res, 200, page('Submitted', `<pre id="submitted">${esc(url.searchParams.get('q') ?? '')}</pre>`));
     default:

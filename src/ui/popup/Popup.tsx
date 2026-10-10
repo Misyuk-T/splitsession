@@ -162,42 +162,47 @@ export function Popup() {
     void facetApi.dismissStrictModePrompt().then(setStrict, () => {});
   };
 
+  const overflowItems: MenuItem[] = [
+    { id: 'state', label: 'Open state page' },
+    { id: 'regroup', label: 'Re-group tabs by container', disabled: !(settings?.tabGroups && containers.some((c) => c.tabCount > 0)) },
+  ];
+  const onOverflow = (id: string) => {
+    if (id === 'state') void browser.tabs.create({ url: browser.runtime.getURL('/state.html' as never) });
+    else
+      void run(async () => {
+        await facetApi.regroupTabs();
+        say('Tabs grouped by container.');
+      }, 'Could not re-group');
+  };
+
   return (
     <main class="popup">
       <header class="popup__head">
-        <Logo size={26} />
+        <Logo size={24} />
         <h1 class="popup__title">Facet</h1>
         <span class="popup__spacer" />
         <Button variant="ghost" small onClick={() => void browser.runtime.openOptionsPage()}>
           Settings
         </Button>
+        <MenuButton ariaLabel="More" menuLabel="More" items={overflowItems} onSelect={onOverflow} align="end" variant="ghost" small icon>
+          <span aria-hidden="true">⋯</span>
+        </MenuButton>
       </header>
 
       {strict?.needsConsent && <StrictWarning onReview={() => setConsentOpen(true)} />}
 
       <BridgeCard layout="popup" />
 
-      <section class="popup__current" aria-labelledby="current-title">
-        <h2 id="current-title" class="popup__label">This tab</h2>
-        <div class="popup__tab" data-testid="current-container">
-          {current ? <Dot color={CONTAINER_HEX[current.color]} /> : <span class="popup__nodot" aria-hidden="true" />}
-          <div class="popup__tabtext">
-            <strong class="popup__tabname">{current ? current.name : 'No container'}</strong>
-            <span class="fx-secondary">{web ? hostOf(tab?.url) : 'Not a web page'}</span>
-          </div>
+      <section class="popup__tab" aria-label="This tab" data-testid="current-container">
+        {current ? <Dot color={CONTAINER_HEX[current.color]} /> : <span class="popup__nodot" aria-hidden="true" />}
+        <div class="popup__tabtext">
+          <strong class="popup__tabname">{current ? current.name : 'No container'}</strong>
+          <span class={`fx-secondary popup__tabsite${web ? '' : ' popup__tabsite--note'}`}>{web ? hostOf(tab?.url) : 'Only web pages can be put in a container'}</span>
         </div>
-        <MenuButton
-          items={reopenItems}
-          onSelect={(id) => void reopen(id)}
-          menuLabel="Reopen this tab in"
-          disabled={!web}
-          block
-        >
-          <span>Reopen this tab in…</span>
+        <MenuButton items={reopenItems} onSelect={(id) => void reopen(id)} menuLabel="Reopen this tab in" align="end" disabled={!web} small>
+          <span>Reopen in…</span>
           <span aria-hidden="true">▾</span>
         </MenuButton>
-        {!web && <p class="fx-secondary popup__note">Only web pages (http or https) can be put in a container.</p>}
-        {web && !current && <p class="fx-secondary popup__note">It uses your regular Chrome profile.</p>}
       </section>
 
       <section class="popup__list" aria-labelledby="containers-title">
@@ -231,7 +236,7 @@ export function Popup() {
           <p class="popup__empty fx-secondary">No containers yet. A container keeps its own logins, so you can use two accounts of one site side by side.</p>
         )}
 
-        <ul class="popup__rows">
+        <ul class="popup__rows" data-testid="container-list">
           {containers.map((c) =>
             editing?.id === c.id ? (
               <li key={c.id} class="popup__row popup__row--editing">
@@ -251,10 +256,10 @@ export function Popup() {
             ) : (
               <li key={c.id} class="popup__row" data-testid="container-row" data-current={c.id === tabContainer ? 'true' : undefined}>
                 <Dot color={CONTAINER_HEX[c.color]} />
-                <div class="popup__rowtext">
-                  <span class="popup__rowname">{c.name}</span>
-                  <span class="fx-secondary">{tabsLabel(c.tabCount)}</span>
-                </div>
+                <span class="popup__rowname" title={c.name}>
+                  {c.name}
+                </span>
+                <span class="fx-secondary popup__rowtabs">{tabsLabel(c.tabCount)}</span>
                 <Button small onClick={() => void newTab(c)} aria-label={`New tab in ${c.name}`}>
                   New tab
                 </Button>
@@ -276,29 +281,9 @@ export function Popup() {
         </ul>
       </section>
 
-      <div class={`popup__status${status?.error ? ' fx-status--error' : ''} fx-status`} role="status" aria-live="polite">
+      <div class={`popup__status fx-status${status?.error ? ' fx-status--error' : ''}${status ? ' popup__status--on' : ''}`} role="status" aria-live="polite">
         {status?.text}
       </div>
-
-      <footer class="popup__foot">
-        <Button variant="ghost" small onClick={() => void browser.tabs.create({ url: browser.runtime.getURL('/state.html' as never) })}>
-          Open state page
-        </Button>
-        {settings?.tabGroups && containers.some((c) => c.tabCount > 0) && (
-          <Button
-            variant="ghost"
-            small
-            onClick={() =>
-              void run(async () => {
-                await facetApi.regroupTabs();
-                say('Tabs grouped by container.');
-              }, 'Could not re-group')
-            }
-          >
-            Re-group tabs
-          </Button>
-        )}
-      </footer>
 
       {consentOpen && strict?.enabled && !strict.active && (
         <StrictConsentDialog busy={consentBusy} error={consentError} onAccept={() => void acceptStrict()} onLater={later} />

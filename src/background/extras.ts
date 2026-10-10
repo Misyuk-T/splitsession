@@ -48,6 +48,7 @@ export class Extras {
     this.badges = new BadgeIndicator(b.action as unknown as ActionApi, {
       containerOf: (tabId) => facet.getTabContainer(tabId),
       container: (id) => facet.containers.get(id),
+      bridgeOn: () => this.settings.get().agentBridge,
     });
     this.engine = new DomainRuleEngine(this.exemptions, {
       rules: () => this.rules.all(),
@@ -81,8 +82,16 @@ export class Extras {
       await Promise.all([this.settings.load(), this.exemptions.load(), this.groups.load(), this.rules.load()]);
       const tabIds = this.facet.tabs.entries().map(([id]) => id);
       await this.badges.applyMany(tabIds);
+      if (this.settings.get().agentBridge) await this.refreshAllBadges();
     });
     return this.ready;
+  }
+
+  /** The agent bridge was switched on or off: every tab's badge says so (or stops saying so). */
+  async refreshAllBadges(): Promise<void> {
+    await this.badges.applyGlobal();
+    const tabs = await this.b.tabs.query({}).catch(() => []);
+    await this.badges.applyMany(tabs.map((t) => t.id).filter((id): id is number => id !== undefined));
   }
 
   private onFacetEvent(event: FacetEvent): void {
@@ -146,7 +155,7 @@ export class Extras {
 
   /** Re-applies the badge after navigation, which resets tab-specific action state. */
   handleTabRefresh(tabId: number): void {
-    void this.ready.then(() => (this.facet.getTabContainer(tabId) !== null ? this.badges.apply(tabId) : undefined));
+    void this.ready.then(() => (this.facet.getTabContainer(tabId) !== null || this.settings.get().agentBridge ? this.badges.apply(tabId) : undefined));
   }
 
   handleTabAttached(tabId: number): void {

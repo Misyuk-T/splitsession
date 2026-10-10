@@ -6,6 +6,19 @@ import type { ActionMeta } from './router';
 
 type Browser = typeof browser;
 
+/** One finished tool call, for the popup's short list of what the agent just did. Never page content. */
+export interface RecentAction {
+  at: number;
+  tool: string;
+  ok: boolean;
+  /** The tab the tool worked on, when it had one: its title (our own marks removed) and site. */
+  title: string | null;
+  host: string | null;
+}
+
+/** How many of the latest actions the popup shows. */
+export const RECENT_ACTIONS = 5;
+
 export type BridgeStatus = 'off' | 'connecting' | 'connected' | 'host-missing' | 'busy' | 'error';
 
 export interface BridgeState {
@@ -16,6 +29,8 @@ export interface BridgeState {
   actions: number;
   lastTool: string | null;
   lastAt: number | null;
+  /** The latest actions, newest first (at most `RECENT_ACTIONS`). */
+  recent: RecentAction[];
 }
 
 export const BRIDGE_STATE_KEY = 'bridgeState';
@@ -24,6 +39,8 @@ export const BRIDGE_ALARM = 'facet-bridge-retry';
 /** What the connection needs from the router. */
 export interface ToolRunner {
   run(tool: string, args: unknown, meta: ActionMeta): Promise<ToolResult>;
+  /** No agent is connected any more: let go of whatever it left behind (viewport overrides, debugger sessions). */
+  release?(): Promise<void>;
 }
 
 interface PortLike {
@@ -37,8 +54,10 @@ const CONNECT_TIMEOUT_MS = 10_000;
 const MAX_BACKOFF_MS = 30_000;
 /** How often a profile that found the bridge held by another profile looks again (it is cheap: the host answers and exits). */
 const BUSY_RETRY_MS = 10_000;
+/** After the last MCP client has gone, how long the agent's leftovers (viewport overrides, debugger sessions) stay. */
+export const RELEASE_GRACE_MS = 10_000;
 
-const IDLE: BridgeState = { status: 'off', error: null, actions: 0, lastTool: null, lastAt: null };
+const IDLE: BridgeState = { status: 'off', error: null, actions: 0, lastTool: null, lastAt: null, recent: [] };
 
 /**
  * The extension's end of the agent bridge. While the setting is on it keeps a Native Messaging port to the host
@@ -59,6 +78,7 @@ export class AgentBridge {
   private lastBusy: string | null = null;
   /** Aborted when the switch goes off or the connection is dropped: tools still running stop before their next step. */
   private abort = new AbortController();
+  private releaseTimer: ReturnType<typeof setTimeout> | null = null;
   private loaded: Promise<void>;
 
   constructor(
@@ -80,7 +100,7 @@ export class AgentBridge {
   private async load(): Promise<void> {
     try {
       const stored = (await this.area.get(BRIDGE_STATE_KEY))[BRIDGE_STATE_KEY] as Partial<BridgeState> | undefined;
-      if (stored && typeof stored.actions === 'number') this.current = { ...IDLE, actions: stored.actions, lastTool: stored.lastTool ?? null, lastAt: stored.lastAt ?? null };
+      if (stored && typeof stored.actions === 'number') this.current = { ...IDLE, actions: stored.actions, lastTool: stored.lastTool ?? null, lastAt: stored.lastAt ?? null, recent: Array.isArray(stored.recent) ? stored.recent.slice(0, RECENT_ACTIONS) : [] };
     } catch {
       /* session storage unavailable: counters start from zero */
     }
@@ -99,6 +119,7 @@ export class AgentBridge {
     await this.loaded;
     if (!enabled) {
       this.enabled = false;
+      this.cancelRelease();
       this.abort.abort();
       this.teardown();
       this.attempt = 0;
@@ -110,7 +131,7 @@ export class AgentBridge {
     if (this.enabled && this.port) return;
     this.enabled = true;
     if (this.abort.signal.aborted) this.abort = new AbortController();
-    if (fresh) this.publish({ actions: 0, lastTool: null, lastAt: null });
+    if (fresh) this.publish({ actions: 0, lastTool: null, lastAt: null, recent: [] });
     // A worker that was stopped and comes back (or a retry that must survive the worker stopping) is woken by this.
     void this.b.alarms.create(BRIDGE_ALARM, { periodInMinutes: 1 });
     this.log('info', 'agent bridge on');
@@ -166,7 +187,11 @@ export class AgentBridge {
       this.lastBusy = String(message.reason).slice(0, 200);
       this.publish({ status: 'busy', error: this.lastBusy });
       this.log('warn', 'agent bridge busy', this.lastBusy);
+    } else if (message.type === 'clients' && typeof message.count === 'number') {
+      if (message.count > 0) this.cancelRelease();
+      else this.scheduleRelease();
     } else if (message.type === 'request' && typeof message.id === 'number') {
+      this.cancelRelease(); // somebody is working
       void this.serve(port, message.id, message.tool, message.args);
     }
   }
@@ -193,7 +218,8 @@ export class AgentBridge {
       ms: Date.now() - started,
       ...(reply.ok ? {} : { error: reply.error.slice(0, 120) }),
     });
-    this.publish({ actions: this.current.actions + 1, lastTool: String(tool), lastAt: Date.now() });
+    const entry: RecentAction = { at: started, tool: String(tool), ok: reply.ok, title: meta.title ?? null, host: meta.host ?? null };
+    this.publish({ actions: this.current.actions + 1, lastTool: String(tool), lastAt: Date.now(), recent: [entry, ...this.current.recent].slice(0, RECENT_ACTIONS) });
     if (this.port !== port) return; // switched off or reconnected while the tool ran: the answer has no reader
     try {
       port.postMessage(reply);
@@ -202,8 +228,24 @@ export class AgentBridge {
     }
   }
 
+  /** Every MCP client has gone: after a short grace (a restarting client comes back), the runner lets go of what the agent left. */
+  private scheduleRelease(): void {
+    this.cancelRelease();
+    this.releaseTimer = setTimeout(() => {
+      this.releaseTimer = null;
+      void this.runner?.release?.().catch((error) => this.log('warn', 'agent bridge: release failed', String(error)));
+      this.log('info', 'agent bridge: no agent connected; viewport overrides and debugger sessions released');
+    }, RELEASE_GRACE_MS);
+  }
+
+  private cancelRelease(): void {
+    if (this.releaseTimer) clearTimeout(this.releaseTimer);
+    this.releaseTimer = null;
+  }
+
   private onDisconnect(port: PortLike): void {
     if (this.port !== port) return; // our own teardown
+    this.scheduleRelease(); // the host is gone, and with it every client
     const reason = this.lastFatal ?? this.b.runtime.lastError?.message ?? 'the host exited';
     this.lastFatal = null;
     this.port = null;

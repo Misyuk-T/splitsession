@@ -1,14 +1,18 @@
 // Captures the README screenshots of the popup, options page and choose page (light and dark) into docs/screenshots/.
 //
-//   pnpm build && node scripts/screenshots.mjs [outDir]
+//   pnpm build && node bridge/build.mjs && node scripts/screenshots.mjs [outDir]
 //
 // Launches Playwright's Chromium with the built extension (.output/chrome-mv3) and the e2e stand, seeds a few demo
-// containers, tabs and rules, and takes the pictures. Needs `pnpm exec playwright install chromium` once.
-import { spawn } from 'node:child_process';
+// containers, tabs and rules, connects the agent bridge to a real (temporary) host and lets an MCP client do a few
+// things so the popup shows its "recent actions", and takes the pictures. Needs `pnpm exec playwright install chromium`
+// once. Nothing outside a temporary directory is touched (the host manifest goes into the temporary profile).
+import { execFileSync, spawn } from 'node:child_process';
 import { mkdirSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { Client } from '@modelcontextprotocol/sdk/client/index.js';
+import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
 import { chromium } from '@playwright/test';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
@@ -20,11 +24,19 @@ mkdirSync(out, { recursive: true });
 
 const stand = spawn(process.execPath, [resolve(root, 'test-server/server.mjs'), String(PORT)], { stdio: 'ignore' });
 const userDataDir = mkdtempSync(resolve(tmpdir(), 'facet-shots-'));
+// Unix socket paths are short: a directory directly under /tmp.
+const socketDir = mkdtempSync(resolve('/tmp', 'fb-shots-'));
+const socketPath = resolve(socketDir, 'bridge.sock');
+const nativeHostsDir = resolve(userDataDir, 'NativeMessagingHosts');
+mkdirSync(nativeHostsDir);
+execFileSync(process.execPath, [resolve(root, 'scripts/bridge-install.mjs'), '--dir', nativeHostsDir, '--host-dir', resolve(userDataDir, 'facet-host'), '--no-build'], { stdio: 'pipe' });
 const context = await chromium.launchPersistentContext(userDataDir, {
   channel: 'chromium',
   headless: true,
   args: [`--disable-extensions-except=${extension}`, `--load-extension=${extension}`],
+  env: { ...process.env, FACET_BRIDGE_SOCKET: socketPath },
 });
+let mcp = null;
 
 try {
   const worker = context.serviceWorkers().find((w) => w.url().includes(EXT_ID)) ?? (await context.waitForEvent('serviceworker', { timeout: 15_000 }));
@@ -47,6 +59,34 @@ try {
   await api('grantStrictMode');
   await new Promise((r) => setTimeout(r, 800));
 
+  // The agent bridge, connected, with a few things the "agent" just did.
+  await api('updateSettings', { agentBridge: true });
+  const connected = async () => {
+    const deadline = Date.now() + 15_000;
+    while (Date.now() < deadline) {
+      if ((await api('getBridgeState')).status === 'connected') return;
+      await new Promise((r) => setTimeout(r, 200));
+    }
+    throw new Error('the agent bridge did not connect');
+  };
+  await connected();
+  mcp = new Client({ name: 'facet-screenshots', version: '0.0.0' });
+  await mcp.connect(
+    new StdioClientTransport({
+      command: process.execPath,
+      args: [resolve(root, 'bridge/dist/facet-bridge.mjs'), 'mcp'],
+      env: { ...process.env, FACET_BRIDGE_SOCKET: socketPath, FACET_BRIDGE_MANIFEST_DIRS: nativeHostsDir },
+      stderr: 'pipe',
+    }),
+  );
+  const call = (name, args = {}) => mcp.callTool({ name, arguments: args });
+  await call('list_containers');
+  await call('list_tabs');
+  await call('get_tab_text', { tabId });
+  await call('get_tab_html', { tabId, selector: 'body' });
+  await call('scroll', { tabId, to: 'bottom' });
+  await new Promise((r) => setTimeout(r, 3500)); // the on-page highlight has faded; the popup keeps the list
+
   const shoot = async (name, path, viewport, { scheme, fullPage = false, before } = {}) => {
     const page = await context.newPage();
     await page.setViewportSize(viewport);
@@ -60,11 +100,12 @@ try {
   };
 
   for (const scheme of ['light', 'dark']) {
-    await shoot('popup', `popup.html?tab=${tabId}`, { width: 380, height: 560 }, { scheme, fullPage: true });
-    await shoot('popup-menu', `popup.html?tab=${tabId}`, { width: 380, height: 560 }, {
+    // 420 x 600: the largest popup Chrome shows.
+    await shoot('popup', `popup.html?tab=${tabId}`, { width: 420, height: 600 }, { scheme });
+    await shoot('popup-menu', `popup.html?tab=${tabId}`, { width: 420, height: 600 }, {
       scheme,
       before: async (page) => {
-        await page.getByRole('button', { name: /Reopen this tab in/ }).click();
+        await page.getByRole('button', { name: /Reopen in/ }).click();
         await page.waitForTimeout(200);
       },
     });
@@ -72,7 +113,9 @@ try {
     await shoot('choose', `choose.html?url=${encodeURIComponent('https://www.reddit.com/r/chrome/')}&tab=${tabId}`, { width: 700, height: 640 }, { scheme });
   }
 } finally {
+  await mcp?.close().catch(() => {});
   await context.close();
   stand.kill();
   rmSync(userDataDir, { recursive: true, force: true });
+  rmSync(socketDir, { recursive: true, force: true });
 }

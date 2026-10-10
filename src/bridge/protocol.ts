@@ -27,6 +27,8 @@ export type HostToExtension =
   | { type: 'fatal'; message: string }
   /** A live host (of another Chrome profile) already holds the socket: this one does not take it over and exits. */
   | { type: 'busy'; reason: string }
+  /** How many MCP clients are connected to the host now (sent whenever it changes); 0: the agent is gone. */
+  | { type: 'clients'; count: number }
   | { type: 'request'; id: number; tool: string; args: unknown };
 
 /** extension -> host (stdin of the host). */
@@ -45,6 +47,8 @@ export interface ClientRequest {
 export type ClientResponse = { id: number; ok: true; result: ToolResult } | { id: number; ok: false; error: string };
 
 export const PING_TOOL = '__ping';
+/** Sent once by an MCP server over a connection it keeps open for as long as it runs: the host counts these as "agents present". */
+export const SESSION_TOOL = '__session';
 
 /** Sent by a host that found the socket held by a live host; shown in the popup next to the explanation. */
 export const BUSY_REASON = 'another Chrome profile is connected';

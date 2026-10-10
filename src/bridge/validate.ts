@@ -4,7 +4,7 @@
  */
 
 export interface Schema {
-  type?: 'string' | 'integer' | 'number' | 'boolean' | 'object' | 'null' | Array<'string' | 'integer' | 'number' | 'boolean' | 'null'>;
+  type?: 'string' | 'integer' | 'number' | 'boolean' | 'object' | 'array' | 'null' | Array<'string' | 'integer' | 'number' | 'boolean' | 'null'>;
   description?: string;
   enum?: readonly (string | number | boolean | null)[];
   default?: unknown;
@@ -12,6 +12,12 @@ export interface Schema {
   maxLength?: number;
   minimum?: number;
   maximum?: number;
+  /** Strings: a regular expression the whole value must match (anchor it yourself). */
+  pattern?: string;
+  /** Arrays: the schema of every item, and the bounds of the length. */
+  items?: Schema;
+  minItems?: number;
+  maxItems?: number;
   properties?: Record<string, Schema>;
   required?: readonly string[];
   additionalProperties?: boolean;
@@ -33,6 +39,8 @@ function matchesType(type: NonNullable<Schema['type']>, value: unknown): boolean
         return value === null;
       case 'object':
         return typeOf(value) === 'object';
+      case 'array':
+        return Array.isArray(value);
       default:
         return typeof value === t;
     }
@@ -48,6 +56,17 @@ function check(schema: Schema, value: unknown, path: string): string | null {
   if (typeof value === 'string') {
     if (schema.minLength !== undefined && value.length < schema.minLength) return `${path}: must not be shorter than ${schema.minLength} characters`;
     if (schema.maxLength !== undefined && value.length > schema.maxLength) return `${path}: must not be longer than ${schema.maxLength} characters`;
+    if (schema.pattern !== undefined && !new RegExp(schema.pattern, 'u').test(value)) return `${path}: ${JSON.stringify(value.slice(0, 40))} has the wrong form`;
+  }
+  if (Array.isArray(value)) {
+    if (schema.minItems !== undefined && value.length < schema.minItems) return `${path}: needs at least ${schema.minItems} item${schema.minItems === 1 ? '' : 's'}`;
+    if (schema.maxItems !== undefined && value.length > schema.maxItems) return `${path}: takes at most ${schema.maxItems} items`;
+    if (schema.items) {
+      for (let i = 0; i < value.length; i++) {
+        const problem = check(schema.items, value[i], `${path}[${i}]`);
+        if (problem) return problem;
+      }
+    }
   }
   if (typeof value === 'number') {
     if (schema.minimum !== undefined && value < schema.minimum) return `${path}: must be at least ${schema.minimum}`;

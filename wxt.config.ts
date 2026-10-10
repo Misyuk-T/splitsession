@@ -42,6 +42,9 @@ export default defineConfig({
       'alarms',
       // Agent bridge (off by default): talk to the local native host `com.facet.bridge` (docs/agents.md).
       'nativeMessaging',
+      // Agent bridge "full hands": trusted input, accessibility snapshots, screenshots of background tabs, console and
+      // network capture through the Chrome DevTools Protocol. Attached only while the bridge is on and a tool runs.
+      'debugger',
     ],
     // v0.1 asks for every host up front: header rewriting needs host access, and
     // headless e2e cannot click permission prompts. Optional-permission onboarding is deferred.

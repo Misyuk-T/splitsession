@@ -24,14 +24,20 @@ export interface Settings {
    * every tab of every window. Off (default): no connection, no host process, nothing reachable. Docs: docs/agents.md.
    */
   agentBridge: boolean;
+  /**
+   * While the agent bridge is on, show the user what the agent touches: an overlay and a pill in the tab it reads or
+   * operates, a mark in front of that tab's title and an "AI" toolbar badge, all gone ~2.5 s after the last action.
+   * Off: nothing is injected or changed for the sake of showing. Default on.
+   */
+  agentActivity: boolean;
 }
 
 /** `chrome.storage.local` key holding the settings object. */
 export const SETTINGS_KEY = 'settings';
 
-export const DEFAULT_SETTINGS: Readonly<Settings> = Object.freeze({ tabGroups: true, titlePrefix: true, strictMode: true, showNameToPages: false, agentBridge: false });
+export const DEFAULT_SETTINGS: Readonly<Settings> = Object.freeze({ tabGroups: true, titlePrefix: true, strictMode: true, showNameToPages: false, agentBridge: false, agentActivity: true });
 
-export const SETTING_KEYS = ['tabGroups', 'titlePrefix', 'strictMode', 'showNameToPages', 'agentBridge'] as const satisfies readonly (keyof Settings)[];
+export const SETTING_KEYS = ['tabGroups', 'titlePrefix', 'strictMode', 'showNameToPages', 'agentBridge', 'agentActivity'] as const satisfies readonly (keyof Settings)[];
 
 export type SettingKey = (typeof SETTING_KEYS)[number];
 
@@ -48,7 +54,7 @@ export interface StoredSettings extends Settings {
  * cannot be told apart from a default. Every default was `true` then: a `false` was the user's choice, a `true` is
  * read as "never set" (the one that matters: `showNameToPages`, whose default is now off).
  */
-const LEGACY_DEFAULTS: Readonly<Settings> = Object.freeze({ tabGroups: true, titlePrefix: true, strictMode: true, showNameToPages: true, agentBridge: false });
+const LEGACY_DEFAULTS: Readonly<Settings> = Object.freeze({ tabGroups: true, titlePrefix: true, strictMode: true, showNameToPages: true, agentBridge: false, agentActivity: true });
 
 export interface ReadSettings {
   settings: Settings;

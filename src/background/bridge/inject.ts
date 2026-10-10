@@ -11,7 +11,9 @@ export interface PageError {
 
 export function pageText(maxChars: number): { text: string; total: number; url: string; title: string } {
   const text = (document.body?.innerText ?? document.documentElement?.innerText ?? '') as string;
-  return { text: text.slice(0, maxChars), total: text.length, url: location.href, title: document.title };
+  // The title as the page has it: without a mark an older version of the agent-activity display may have left in front of it.
+  const title = document.title.replace(/^(\[[^\]]*\] )?(?:👁|👀|🤖[◐◓◑◒]?) /u, '$1');
+  return { text: text.slice(0, maxChars), total: text.length, url: location.href, title };
 }
 
 export function pageHtml(selector: string | null, maxChars: number): { html: string; total: number; url: string; title: string } | PageError {
@@ -22,14 +24,44 @@ export function pageHtml(selector: string | null, maxChars: number): { html: str
     return { error: `invalid selector: ${(e as Error).message}` };
   }
   if (!el) return { error: `no element matches "${selector}"` };
-  const html = el.outerHTML;
-  return { html: html.slice(0, maxChars), total: html.length, url: location.href, title: document.title };
+  let html = el.outerHTML;
+  // The favicon link the agent-activity display may append (a page without an icon) is ours: leave it out.
+  const ours = document.querySelector('link[data-facet-agent-icon]');
+  if (ours && el.contains(ours)) html = html.replace(ours.outerHTML, '');
+  // While the display runs, the page's icon links carry our animation frame in `href`/`type`: serialise the page's own values.
+  const tracked = (globalThis as unknown as { __facetAgentActivity?: { icon?: { tracked?: Map<HTMLLinkElement, { orig: { href: string | null; type: string | null }; wrote: { href: string | null; type: string | null } }> } } })
+    .__facetAgentActivity?.icon?.tracked;
+  if (tracked) {
+    for (const [node, rec] of tracked) {
+      if (!el.contains(node)) continue;
+      const own = node.cloneNode(false) as HTMLLinkElement;
+      if (node.getAttribute('href') === rec.wrote.href) (rec.orig.href === null ? own.removeAttribute('href') : own.setAttribute('href', rec.orig.href));
+      if (node.getAttribute('type') === rec.wrote.type) (rec.orig.type === null ? own.removeAttribute('type') : own.setAttribute('type', rec.orig.type));
+      html = html.replace(node.outerHTML, () => own.outerHTML);
+    }
+  }
+  // The agent-activity overlay (a closed shadow root on <html>) is ours, not the page's: leave its element out.
+  const overlay = document.querySelector('facet-agent-overlay[data-facet-agent]');
+  if (overlay && el.contains(overlay)) html = html.replace(overlay.outerHTML, '');
+  // Same for the mark in front of the <title> (it is written into the page's own title element).
+  if (el === document.documentElement) html = html.replace(/(<title[^>]*>)(\[[^\]]*\] )?(?:👁|👀|🤖[◐◓◑◒]?) /u, '$1$2');
+  const title = document.title.replace(/^(\[[^\]]*\] )?(?:👁|👀|🤖[◐◓◑◒]?) /u, '$1');
+  return { html: html.slice(0, maxChars), total: html.length, url: location.href, title };
 }
 
-export function pageClick(selector: string | null, x: number | null, y: number | null): { clicked: string } | PageError {
+/** Where the agent acted, in viewport coordinates (the router turns it into a pulse and leaves it out of the result). */
+export interface PageRect {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+}
+
+export function pageClick(selector: string | null, x: number | null, y: number | null): { clicked: string; rect: PageRect | null } | PageError {
   let el: Element | null;
   let cx: number;
   let cy: number;
+  let rect: PageRect | null = null;
   if (selector !== null) {
     try {
       el = document.querySelector(selector);
@@ -41,11 +73,14 @@ export function pageClick(selector: string | null, x: number | null, y: number |
     const r = el.getBoundingClientRect();
     cx = r.left + r.width / 2;
     cy = r.top + r.height / 2;
+    rect = { x: r.left, y: r.top, w: r.width, h: r.height };
   } else if (x !== null && y !== null) {
     el = document.elementFromPoint(x, y);
     if (!el) return { error: `no element at (${x}, ${y}); the viewport is ${innerWidth}x${innerHeight}` };
     cx = x;
     cy = y;
+    const r = el.getBoundingClientRect();
+    rect = { x: r.left, y: r.top, w: r.width, h: r.height };
   } else {
     return { error: 'give a selector, or both x and y' };
   }
@@ -58,10 +93,10 @@ export function pageClick(selector: string | null, x: number | null, y: number |
   if (el instanceof HTMLElement) el.click();
   else el.dispatchEvent(new MouseEvent('click', init));
   const id = el.id ? `#${el.id}` : '';
-  return { clicked: `<${el.tagName.toLowerCase()}${id}>` };
+  return { clicked: `<${el.tagName.toLowerCase()}${id}>`, rect };
 }
 
-export function pageType(selector: string, text: string, append: boolean, submit: boolean): { typed: number } | PageError {
+export function pageType(selector: string, text: string, append: boolean, submit: boolean): { typed: number; rect: PageRect | null } | PageError {
   let el: Element | null;
   try {
     el = document.querySelector(selector);
@@ -70,6 +105,8 @@ export function pageType(selector: string, text: string, append: boolean, submit
   }
   if (!el) return { error: `no element matches "${selector}"` };
   el.scrollIntoView({ block: 'center', inline: 'center' });
+  const box = el.getBoundingClientRect();
+  const rect: PageRect = { x: box.left, y: box.top, w: box.width, h: box.height };
   if (el instanceof HTMLElement) el.focus({ preventScroll: true });
   const fire = (target: Element) => {
     target.dispatchEvent(new InputEvent('input', { bubbles: true, composed: true, inputType: 'insertText', data: text }));
@@ -98,7 +135,7 @@ export function pageType(selector: string, text: string, append: boolean, submit
     }
     el.dispatchEvent(new KeyboardEvent('keyup', key));
   }
-  return { typed: text.length };
+  return { typed: text.length, rect };
 }
 
 export function pageScroll(selector: string | null, to: string | null, dx: number, dy: number): { x: number; y: number; maxY: number } | PageError {
@@ -133,7 +170,18 @@ export type RunResult =
 export async function pageRun(code: string, maxChars: number): Promise<RunResult> {
   let value: unknown;
   try {
-    const fn = new Function(`return (async () => {\n${code}\n})();`);
+    // A bare expression (`document.title`, `({a: 1})`) first: its value comes back; anything that does not parse as one is a function body.
+    const expr = code.trim().replace(/[;\s]+$/, '');
+    let fn: (() => Promise<unknown>) | null = null;
+    if (expr !== '') {
+      try {
+        fn = new Function(`return (async () => (\n${expr}\n))();`) as () => Promise<unknown>;
+      } catch (e) {
+        if ((e as { name?: string })?.name === 'EvalError') throw e; // the page's CSP: reported below
+        fn = null;
+      }
+    }
+    fn ??= new Function(`return (async () => {\n${code}\n})();`) as () => Promise<unknown>;
     value = await fn();
   } catch (e) {
     const err = e as { name?: string; message?: string };

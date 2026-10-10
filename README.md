@@ -7,8 +7,8 @@ Each container has its own cookies and its own page storage (localStorage, Index
 *A 20-second demo GIF (three accounts of one site in one window, one tab group per container) belongs here; it has not been recorded yet. Still pictures are below and in `docs/screenshots/`.*
 
 <p>
-  <img src="docs/screenshots/popup-light.png" alt="The Facet popup: current tab's container, 'Reopen this tab in', and the list of containers" width="260">
-  <img src="docs/screenshots/popup-menu-light.png" alt="The 'Reopen this tab in' menu" width="260">
+  <img src="docs/screenshots/popup-light.png" alt="The Facet popup: the agent bridge with its latest actions, the current tab's container with 'Reopen in', and the list of containers" width="260">
+  <img src="docs/screenshots/popup-menu-light.png" alt="The 'Reopen in' menu" width="260">
   <img src="docs/screenshots/choose-light.png" alt="The page that asks which container a site should open in" width="360">
 </p>
 
@@ -83,7 +83,7 @@ chrome-extension://hapfikidacgfgnnajkgnaednpgnhmffk/state.html                  
 
 ### The agent bridge (off by default)
 
-A local MCP server lets Claude Code (running on your Mac) see your Chrome tabs across all windows, each with its container, and operate them: read text and HTML, screenshots, click, type, run JavaScript, open pages in a container. It is **one all-or-nothing switch** ("Agent bridge" in the popup): off, nothing is reachable; on, **the agent can do everything in every tab, logged-in pages included**. The popup turns amber and says "Agent connected — full access" while it is on.
+A local MCP server lets Claude Code (running on your Mac) see your Chrome tabs across all windows, each with its container, and operate them like a Playwright-class agent: accessibility snapshots with element refs, real (trusted) clicks, typing and key presses, hover, drag and drop, select boxes, file uploads, JavaScript dialogs, `run_js` under any page CSP, screenshots of background tabs without switching to them, console and network recording, viewport sizes, and opening pages in a container. It uses Chrome's debugger (`chrome.debugger`), only while the switch is on and a tool works on a tab; Chrome shows its "started debugging this browser" bar meanwhile, and its Cancel takes the debugger back. It is **one all-or-nothing switch** ("Agent bridge" in the popup): off, nothing is reachable; on, **the agent can do everything in every tab, logged-in pages included**, and every tab's toolbar badge turns amber ("ON", or the container's initials on amber). The popup says "Agent connected — full access" and lists the agent's last five actions. Whatever tab the agent reads or operates shows it (a glowing frame and an "Agent: reading" label on the page, an animated eye in the tab title while it reads, a pulsing ring around the tab's favicon, "AI" on the toolbar button), then fades; "Show agent activity" in the settings turns that off. Container isolation still holds for the pages: the debugger is never used to read or set cookies, headers or storage, and navigations go through Facet's own paths.
 
 ```sh
 pnpm bridge:install                  # 1. builds the bridge, registers the Chrome native host, prints step 2

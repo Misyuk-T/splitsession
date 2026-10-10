@@ -1,4 +1,5 @@
-import { HOST_TIMEOUT_MS, PING_TOOL, type ClientResponse, type HostToExtension, type ToolResult } from '../../src/bridge/protocol';
+import { toolTimeoutMs, HOST_MARGIN_MS } from '../../src/bridge/spec';
+import { PING_TOOL, SESSION_TOOL, type ClientResponse, type HostToExtension, type ToolResult } from '../../src/bridge/protocol';
 
 interface Pending {
   clientId: number;
@@ -9,6 +10,7 @@ interface Pending {
 export interface RelayOptions {
   /** Writes one message to the extension; throws (FrameError) when it cannot be sent, e.g. it is over Chrome's 1 MiB cap. */
   sendToExtension(message: HostToExtension): void;
+  /** Fixed deadline for every request (tests); by default each tool's own deadline plus a margin. */
   timeoutMs?: number;
 }
 
@@ -20,13 +22,15 @@ export interface RelayOptions {
 export class Relay {
   private readonly clients = new Map<number, (response: ClientResponse) => void>();
   private readonly pending = new Map<number, Pending>();
+  /** Clients that registered with `__session`: an MCP server that is running (its connection stays open). */
+  private readonly sessions = new Set<number>();
   private nextClient = 1;
   private nextRequest = 1;
-  private readonly timeoutMs: number;
+  private readonly timeoutMs: number | undefined;
   private closed: string | null = null;
 
   constructor(private readonly options: RelayOptions) {
-    this.timeoutMs = options.timeoutMs ?? HOST_TIMEOUT_MS;
+    this.timeoutMs = options.timeoutMs;
   }
 
   get clientCount(): number {
@@ -46,6 +50,7 @@ export class Relay {
   /** The client went away: its requests are forgotten (the extension still finishes them, the answers are dropped). */
   removeClient(clientId: number): void {
     this.clients.delete(clientId);
+    if (this.sessions.delete(clientId)) this.announceSessions();
     for (const [id, p] of this.pending) {
       if (p.clientId !== clientId) continue;
       clearTimeout(p.timer);
@@ -61,6 +66,13 @@ export class Relay {
     const requestId = msg.id;
     if (typeof msg.tool !== 'string' || msg.tool === '') return reply({ id: requestId, ok: false, error: 'request has no tool name' });
     if (this.closed) return reply({ id: requestId, ok: false, error: this.closed });
+    if (msg.tool === SESSION_TOOL) {
+      if (!this.sessions.has(clientId)) {
+        this.sessions.add(clientId);
+        this.announceSessions();
+      }
+      return reply({ id: requestId, ok: true, result: { content: [{ type: 'text', text: 'pong' }] } });
+    }
     if (msg.tool === PING_TOOL) return reply({ id: requestId, ok: true, result: { content: [{ type: 'text', text: 'pong' }] } });
 
     const id = this.nextRequest++;
@@ -69,11 +81,21 @@ export class Relay {
     } catch (error) {
       return reply({ id: requestId, ok: false, error: `could not send the request to Chrome: ${error instanceof Error ? error.message : String(error)}` });
     }
+    const timeoutMs = this.timeoutMs ?? toolTimeoutMs(msg.tool) + HOST_MARGIN_MS;
     const timer = setTimeout(() => {
       this.pending.delete(id);
-      reply({ id: requestId, ok: false, error: `Chrome did not answer ${msg.tool} within ${Math.round(this.timeoutMs / 1000)} seconds` });
-    }, this.timeoutMs);
+      reply({ id: requestId, ok: false, error: `Chrome did not answer ${msg.tool} within ${Math.round(timeoutMs / 1000)} seconds` });
+    }, timeoutMs);
     this.pending.set(id, { clientId, clientRequestId: requestId, timer });
+  }
+
+  /** Tells the extension how many agents are present now, so it can let go of what a vanished one left behind. */
+  private announceSessions(): void {
+    try {
+      this.options.sendToExtension({ type: 'clients', count: this.sessions.size });
+    } catch {
+      /* the extension is gone or the pipe is full: it will find out by itself */
+    }
   }
 
   /** A message from the extension. Only answers to requests are meaningful here. */

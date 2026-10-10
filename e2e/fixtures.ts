@@ -230,7 +230,7 @@ export const test = base.extend<{ facet: Facet }, { profile: Profile; extContext
     await context.clearCookies(); // real profile starts empty for every test
     // Rules and settings outlive a test in the shared browser: start from the defaults.
     for (const rule of await api<Array<{ domain: string }>>('listDomainRules')) await api('removeDomainRule', rule.domain);
-    await api('updateSettings', { tabGroups: true, titlePrefix: true, strictMode: true, showNameToPages: true, agentBridge: false });
+    await api('updateSettings', { tabGroups: true, titlePrefix: true, strictMode: true, showNameToPages: true, agentBridge: false, agentActivity: true });
     // Steady state of a user who said yes to strict mode (tests of the other states change it themselves).
     if (!(await api<{ active: boolean }>('getStrictMode')).active) await api('grantStrictMode');
     await use(facet);

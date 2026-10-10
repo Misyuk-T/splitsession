@@ -1,31 +1,34 @@
+/* The popup is capped by Chrome at 600px tall: everything is tight, and only the container list scrolls (inside its own region). */
 html, body { width: 420px; min-height: 120px; }
-.popup { display: flex; flex-direction: column; gap: 14px; padding: 14px; }
+.popup { display: flex; flex-direction: column; gap: 8px; padding: 10px 12px; max-height: 600px; }
 
-.popup__head { display: flex; align-items: center; gap: 10px; }
+.popup__head { display: flex; align-items: center; gap: 8px; min-height: 32px; }
 .popup__title { font-size: 18px; font-weight: 700; letter-spacing: 0.2px; }
 .popup__spacer { flex: 1; }
 .popup__label { font-size: var(--fx-text-secondary); font-weight: 600; color: var(--fx-muted); text-transform: uppercase; letter-spacing: 0.6px; }
 
-.popup__current { display: flex; flex-direction: column; gap: 8px; padding: 12px; border: 1px solid var(--fx-border); border-radius: var(--fx-radius); background: var(--fx-surface); }
-.popup__tab { display: flex; align-items: center; gap: 10px; }
-.popup__tab .fx-dot, .popup__nodot { width: 18px; height: 18px; }
+.popup__tab { display: flex; align-items: center; gap: 10px; min-height: 52px; padding: 6px 8px 6px 12px; border: 1px solid var(--fx-border); border-radius: var(--fx-radius); background: var(--fx-surface); }
+.popup__tab .fx-dot, .popup__nodot { width: 16px; height: 16px; }
 .popup__nodot { flex: none; border-radius: 50%; border: 2px dashed var(--fx-border-strong); }
-.popup__tabtext { display: flex; flex-direction: column; min-width: 0; }
-.popup__tabname { font-size: 17px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.popup__note { margin-top: -2px; }
+.popup__tabtext { flex: 1; display: flex; flex-direction: column; min-width: 0; line-height: 1.3; }
+.popup__tabname { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.popup__tabsite { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.popup__tabsite--note { white-space: normal; }
 
-.popup__list { display: flex; flex-direction: column; gap: 8px; }
+.popup__list { display: flex; flex-direction: column; gap: 4px; flex: 0 1 auto; min-height: 0; }
 .popup__listhead { display: flex; align-items: center; justify-content: space-between; min-height: 32px; }
-.popup__form, .popup__row--editing { padding: 12px; border: 1px solid var(--fx-border); border-radius: var(--fx-radius); background: var(--fx-surface); }
+.popup__form, .popup__row--editing { padding: 10px; border: 1px solid var(--fx-border); border-radius: var(--fx-radius); background: var(--fx-surface); }
 .popup__empty { padding: 4px 2px; }
 
-.popup__rows { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; max-height: 280px; overflow-y: auto; }
-.popup__row { display: flex; align-items: center; gap: 10px; padding: 6px 6px 6px 10px; border-radius: var(--fx-radius); }
+.popup__rows { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; flex: 1 1 auto; min-height: 0; overflow-y: auto; }
+.popup__row { flex: none; display: flex; align-items: center; gap: 8px; min-height: 38px; padding: 3px 4px 3px 10px; border-radius: var(--fx-radius); }
 .popup__row:hover { background: var(--fx-surface); }
 .popup__row[data-current='true'] { background: var(--fx-accent-soft); }
 .popup__row--editing, .popup__row--editing:hover { display: block; background: var(--fx-surface); }
-.popup__rowtext { flex: 1; min-width: 0; display: flex; flex-direction: column; }
-.popup__rowname { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.popup__rowname { flex: 1; min-width: 0; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.popup__rowtabs { flex: none; white-space: nowrap; }
 
-.popup__status { min-height: 20px; margin-top: -6px; }
-.popup__foot { display: flex; justify-content: space-between; gap: 8px; border-top: 1px solid var(--fx-border); padding-top: 8px; margin-top: -6px; }
+/* A short message over the bottom edge instead of a reserved line: it must not change the popup's height. */
+.popup .popup__status { position: fixed; left: 12px; right: 12px; bottom: 10px; z-index: 800; margin: 0; min-height: 0; pointer-events: none; }
+.popup .popup__status--on { padding: 8px 12px; border: 1px solid var(--fx-border-strong); border-radius: var(--fx-radius); background: var(--fx-surface-raised); box-shadow: var(--fx-shadow); color: var(--fx-text); pointer-events: auto; }
+.popup .popup__status--on.fx-status--error { color: var(--fx-danger); border-color: var(--fx-danger); }

@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { FrameError } from '../../src/bridge/framing';
-import { PING_TOOL, type ClientResponse, type HostToExtension } from '../../src/bridge/protocol';
+import { PING_TOOL, SESSION_TOOL, type ClientResponse, type HostToExtension } from '../../src/bridge/protocol';
 import { Relay } from './relay';
 
 function setup(timeoutMs = 1000) {
@@ -115,5 +115,43 @@ describe('relay', () => {
     relay.handleExtension({ type: 'response', id: 'x' });
     expect(a.got).toEqual([{ id: 4, ok: false, error: 'request has no tool name' }]);
     expect(sent).toEqual([]);
+  });
+
+  it('gives each tool its own deadline: a 30 s wait_for is not cut off at 20 s', () => {
+    const sent: HostToExtension[] = [];
+    const relay = new Relay({ sendToExtension: (m) => sent.push(m) });
+    const got: ClientResponse[] = [];
+    const id = relay.addClient((r) => got.push(r));
+    relay.handleClient(id, { id: 1, tool: 'list_tabs' });
+    relay.handleClient(id, { id: 2, tool: 'wait_for', args: { tabId: 1, text: 'x', timeout: 30_000 } });
+    vi.advanceTimersByTime(20_001);
+    expect(got.map((r) => r.id)).toEqual([1]);
+    expect(got[0]).toMatchObject({ ok: false, error: 'Chrome did not answer list_tabs within 20 seconds' });
+    vi.advanceTimersByTime(20_000);
+    expect(got.map((r) => r.id)).toEqual([1, 2]);
+    expect(got[1]).toMatchObject({ ok: false, error: 'Chrome did not answer wait_for within 40 seconds' });
+  });
+
+  it('tells the extension how many agents are present: a __session connection counts until it closes', () => {
+    const { relay, sent, client } = setup();
+    const a = client();
+    const b = client();
+    const oneShot = client(); // a plain per-call connection never counts
+    relay.handleClient(a.id, { id: 1, tool: SESSION_TOOL });
+    relay.handleClient(a.id, { id: 2, tool: SESSION_TOOL }); // twice on one connection: still one
+    relay.handleClient(b.id, { id: 1, tool: SESSION_TOOL });
+    relay.handleClient(oneShot.id, { id: 1, tool: PING_TOOL });
+    expect(a.got[0]).toMatchObject({ id: 1, ok: true });
+    expect(sent).toEqual([
+      { type: 'clients', count: 1 },
+      { type: 'clients', count: 2 },
+    ]);
+    relay.removeClient(oneShot.id);
+    relay.removeClient(a.id);
+    relay.removeClient(b.id);
+    expect(sent.slice(2)).toEqual([
+      { type: 'clients', count: 1 },
+      { type: 'clients', count: 0 },
+    ]);
   });
 });

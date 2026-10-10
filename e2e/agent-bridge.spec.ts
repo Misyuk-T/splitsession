@@ -75,7 +75,11 @@ test.describe('agent bridge', () => {
 
     const { tools } = await mcp.client.listTools();
     expect(tools.map((t) => t.name).sort()).toEqual(
-      ['activate_tab', 'assign_tab', 'bridge_info', 'click', 'close_tab', 'get_tab_html', 'get_tab_text', 'list_containers', 'list_tabs', 'navigate', 'open_in_container', 'open_tab', 'run_js', 'screenshot_tab', 'scroll', 'type'],
+      [
+        'activate_tab', 'assign_tab', 'bridge_info', 'click', 'close_tab', 'console_messages', 'drag', 'get_tab_html', 'get_tab_text', 'handle_dialog', 'hover',
+        'list_containers', 'list_tabs', 'navigate', 'navigate_back', 'navigate_forward', 'network_requests', 'open_in_container', 'open_tab', 'press_key',
+        'reload', 'resize_viewport', 'run_js', 'screenshot_tab', 'scroll', 'select_option', 'snapshot', 'type', 'upload_file', 'wait_for', 'watch',
+      ],
     );
     expect(tools.find((t) => t.name === 'list_tabs')?.annotations?.readOnlyHint).toBe(true);
     expect(tools.find((t) => t.name === 'get_tab_text')?.inputSchema).toMatchObject({ required: ['tabId'], properties: { maxChars: { default: 20_000 } } });
@@ -235,12 +239,14 @@ test.describe('agent bridge', () => {
     expect((await mcp.json<{ y: number }>('scroll', { tabId, to: 'top' })).y).toBe(0);
     expect((await mcp.json<{ y: number }>('scroll', { tabId, dy: 300 })).y).toBe(300);
     expect((await mcp.json<{ y: number }>('scroll', { tabId, selector: '#bottom' })).y).toBeGreaterThan(1000);
-    expect((await mcp.call('scroll', { tabId })).text).toMatch(/give selector, to, or dx\/dy/);
+    expect((await mcp.call('scroll', { tabId })).text).toMatch(/give ref, selector, to, or dx\/dy/);
 
     // run_js: MAIN world sees the page's own variables, async code works, errors come back as errors.
     expect((await mcp.call('run_js', { tabId, code: 'return window.pageVar;' })).text).toBe('42');
+    // (run_js never sees an agent-activity mark in document.title: tools that can change the app leave the title alone, see agent-activity.spec.ts)
     expect((await mcp.call('run_js', { tabId, code: 'await new Promise(r => setTimeout(r, 50)); return {a: [1, "two"], t: document.title};' })).text).toBe('{"a":[1,"two"],"t":"Agent page"}');
-    expect((await mcp.call('run_js', { tabId, code: 'document.title = "changed";' })).text).toBe('undefined');
+    expect((await mcp.call('run_js', { tabId, code: 'document.title = "changed";' })).text).toBe('"changed"'); // an assignment is an expression: its value comes back
+    expect((await mcp.call('run_js', { tabId, code: 'document.title = "changed again"; void 0' })).text).toBe('undefined'); // statements, no return: a body
     const thrown = await mcp.call('run_js', { tabId, code: 'throw new TypeError("boom");' });
     expect(thrown.isError).toBe(true);
     expect(thrown.text).toBe('TypeError: boom');
@@ -255,19 +261,17 @@ test.describe('agent bridge', () => {
     expect((await mcp.call('get_tab_text', { tabId })).texts[1]).toContain('cats');
   });
 
-  test('run_js reports a page that forbids eval, and the ISOLATED world', async ({ facet }) => {
+  test('run_js works on a page that forbids eval (through the debugger); the ISOLATED world is refused', async ({ facet }) => {
     await turnOn(facet);
     mcp = await startMcp(facet);
     const tabId = await openPlain(mcp, at('a.localhost', '/agent-csp'));
-    const blocked = await mcp.call('run_js', { tabId, code: 'return 1;' });
-    expect(blocked.isError).toBe(true);
-    expect(blocked.text).toMatch(/Content-Security-Policy forbids evaluating code strings/);
+    expect((await mcp.call('run_js', { tabId, code: 'return window.pageVar + 1;' })).text).toBe('43');
     // The other tools do not need eval and still work there.
     expect((await mcp.call('get_tab_text', { tabId })).texts[1]).toContain('Agent page');
     expect(await mcp.json('click', { tabId, selector: '#go' })).toEqual({ clicked: '<button#go>' });
     const isolated = await mcp.call('run_js', { tabId, code: 'return 1;', world: 'ISOLATED' });
     expect(isolated.isError).toBe(true);
-    expect(isolated.text).toMatch(/ISOLATED world cannot evaluate code strings/);
+    expect(isolated.text).toMatch(/only in the page's own \(MAIN\) world/);
   });
 
   test('screenshot_tab returns an image of a background tab and puts the active tab back', async ({ facet }) => {

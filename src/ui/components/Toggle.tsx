@@ -57,3 +57,12 @@ export function Checkbox({ checked, onChange, label, description, disabled, id, 
     </button>
   );
 }
+
+/** Just the switch, for rows that lay out their own text. `label` is its accessible name. */
+export function SwitchControl({ checked, onChange, label, disabled, id }: { checked: boolean; onChange(next: boolean): void; label: string; disabled?: boolean; id?: string }) {
+  return (
+    <button type="button" id={id} role="switch" class="fx-toggle fx-toggle--bare" aria-checked={checked} aria-label={label} disabled={disabled} onClick={() => onChange(!checked)}>
+      <span class="fx-switch" aria-hidden="true" />
+    </button>
+  );
+}

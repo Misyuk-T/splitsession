@@ -81,7 +81,7 @@ describe('bridge router', () => {
     const { router } = setup([tab()]);
     const meta: ActionMeta = {};
     await run(router, 'get_tab_text', { tabId: 1 }, meta);
-    expect(meta).toEqual({ tabId: 1, host: 'mail.test' });
+    expect(meta).toEqual({ tabId: 1, host: 'mail.test', tool: 'get_tab_text', title: '[Work] Inbox' });
   });
 
   it('get_tab_text returns metadata and the text as two blocks', async () => {
@@ -109,7 +109,7 @@ describe('bridge router', () => {
     const { router } = setup([tab()]);
     await expect(run(router, 'click', { tabId: 1 })).rejects.toThrow('selector, or both x and y');
     await expect(run(router, 'click', { tabId: 1, x: 5 })).rejects.toThrow('selector, or both x and y');
-    await expect(run(router, 'scroll', { tabId: 1 })).rejects.toThrow('give selector, to, or dx/dy');
+    await expect(run(router, 'scroll', { tabId: 1 })).rejects.toThrow('give ref, selector, to, or dx/dy');
   });
 
   it('a tab that is gone is a clear error', async () => {
@@ -222,6 +222,77 @@ describe('bridge router: switched off while a tool runs', () => {
     await expect(router.run('assign_tab', { tabId: 1, container: 'Work' }, assign.meta)).rejects.toThrow(SWITCHED_OFF);
     expect(api.assignTab).not.toHaveBeenCalled();
     expect(b.scripting.executeScript).not.toHaveBeenCalled();
+  });
+});
+
+describe('bridge router: visible agent activity', () => {
+  const withActivity = () => {
+    const base = setup([tab(), tab({ id: 2, url: 'https://b.test/', title: 'B' })]);
+    const events: string[] = [];
+    const activity = {
+      touch: vi.fn(async (tabId: number, tool: string, rect?: unknown) => void events.push(`touch ${tabId} ${tool}${rect ? ' +rect' : ''}`)),
+      hide: vi.fn(async (tabId: number) => void events.push(`hide ${tabId}`)),
+      unhide: vi.fn(async (tabId: number) => void events.push(`unhide ${tabId}`)),
+    };
+    const router = new BridgeRouter({ b: base.b as never, facet: base.facet as never, api: base.api as never, sleep: async () => {}, activity });
+    return { ...base, router, activity, events };
+  };
+
+  it('shows the tab a tool touches, and nothing for tools without a specific tab', async () => {
+    const { router, events } = withActivity();
+    await run(router, 'list_tabs', {});
+    await run(router, 'list_containers', {});
+    await run(router, 'bridge_info', {});
+    expect(events).toEqual([]);
+    await run(router, 'get_tab_text', { tabId: 1 });
+    await run(router, 'get_tab_text', { tabId: 2 });
+    expect(events).toEqual(['touch 1 get_tab_text', 'touch 2 get_tab_text']);
+  });
+
+  it('click and type pulse at the target, and the rectangle is not part of the answer', async () => {
+    const { router, b, events } = withActivity();
+    b.scripting.executeScript.mockResolvedValueOnce([{ result: { clicked: '<a#go>', rect: { x: 1, y: 2, w: 30, h: 10 } } }] as never);
+    expect(JSON.parse((await run(router, 'click', { tabId: 1, selector: '#go' }))[0]!)).toEqual({ clicked: '<a#go>' });
+    b.scripting.executeScript.mockResolvedValueOnce([{ result: { typed: 3, rect: { x: 1, y: 2, w: 30, h: 10 } } }] as never);
+    expect(JSON.parse((await run(router, 'type', { tabId: 1, selector: 'input', text: 'abc' }))[0]!)).toEqual({ typed: 3 });
+    expect(events).toEqual(['touch 1 click', 'touch 1 click +rect', 'touch 1 type', 'touch 1 type +rect']);
+  });
+
+  it('hides the overlay for the capture and shows it again, even when the capture fails', async () => {
+    const { router, b, events } = withActivity();
+    (b.tabs as any).captureVisibleTab = vi.fn(async () => {
+      events.push('capture');
+      return 'data:image/png;base64,AAAA';
+    });
+    expect(await run(router, 'screenshot_tab', { tabId: 1 })).toEqual(['[image]']);
+    expect(events).toEqual(['touch 1 screenshot_tab', 'hide 1', 'capture', 'unhide 1']);
+    events.length = 0;
+    (b.tabs as any).captureVisibleTab = vi.fn(async () => {
+      throw new Error('no window');
+    });
+    await expect(run(router, 'screenshot_tab', { tabId: 1 })).rejects.toThrow(/could not capture/);
+    expect(events).toEqual(['touch 1 screenshot_tab', 'hide 1', 'unhide 1']);
+  });
+
+  it('shows "closing" before the tab goes, and the new page after a navigation', async () => {
+    const { router, calls, events } = withActivity();
+    await run(router, 'close_tab', { tabId: 2 });
+    expect(events).toEqual(['touch 2 close_tab']);
+    expect(calls).toEqual(['remove 2']);
+    events.length = 0;
+    await run(router, 'navigate', { tabId: 1, url: 'https://x.test/', wait: true });
+    expect(events).toEqual(['touch 1 navigate', 'touch 1 navigate']);
+  });
+
+  it('the log records the title of the tab without our own mark', async () => {
+    const { router } = withActivity();
+    const meta: ActionMeta = {};
+    await run(router, 'get_tab_text', { tabId: 1 }, meta);
+    expect(meta.title).toBe('[Work] Inbox');
+    const marked = setup([tab({ title: '[Work] 👁 Inbox' })]);
+    const m2: ActionMeta = {};
+    await run(marked.router, 'get_tab_text', { tabId: 1 }, m2);
+    expect(m2.title).toBe('[Work] Inbox');
   });
 });
 

@@ -143,6 +143,7 @@ test.describe('options page', () => {
 
   test('import: shows what will happen, then does it; a broken file changes nothing', async ({ facet }) => {
     const existing = await facet.container('Keep');
+    const existingColor = (await facet.api<Array<{ id: string; color: string }>>('listContainers')).find((c) => c.id === existing.id)!.color;
     const fresh = `Imported-${Date.now().toString(36)}`;
     const file = {
       format: 'facet-export',
@@ -185,7 +186,7 @@ test.describe('options page', () => {
     const containers = await facet.api<Array<{ id: string; name: string; color: string }>>('listContainers');
     const made = containers.find((c) => c.name === fresh)!;
     expect(made.color).toBe('pink');
-    expect(containers.find((c) => c.id === existing.id)!.color).not.toBe('red'); // matched containers are left as they are
+    expect(containers.find((c) => c.id === existing.id)!.color).toBe(existingColor); // matched containers are left as they are (their random colour may even be red)
     expect(await facet.api<Rule[]>('listDomainRules')).toEqual([
       { domain: 'github.com', action: 'always', containerId: made.id },
       { domain: 'reddit.com', action: 'ask' },

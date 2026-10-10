@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { CONTAINER_COLORS } from './types';
-import { badgeText, CONTAINER_HEX, GROUP_COLOR, prefixedTitle, readableTextColor, titlePrefixFor, unprefixedTitle } from './indicators';
+import { badgeText, CONTAINER_HEX, GROUP_COLOR, prefixedTitle, readableTextColor, titlePrefixFor, unprefixedTitle, withoutAgentMark } from './indicators';
 
 describe('palette', () => {
   it('has a hex colour and a Chrome group colour for every container colour', () => {
@@ -59,5 +59,15 @@ describe('title prefix', () => {
     expect(unprefixedTitle('[Work] Inbox', prefix)).toBe('Inbox');
     expect(unprefixedTitle('Inbox', prefix)).toBe('Inbox');
     expect(unprefixedTitle('[Work] [Work] x', prefix)).toBe('[Work] x');
+  });
+});
+
+describe('agent title mark', () => {
+  it('is taken off after the container prefix, or from the front', () => {
+    expect(withoutAgentMark('[Work] 👁 Inbox')).toBe('[Work] Inbox');
+    expect(withoutAgentMark('[Work] 🤖 Inbox')).toBe('[Work] Inbox');
+    expect(withoutAgentMark('👁 Inbox')).toBe('Inbox');
+    expect(withoutAgentMark('[Work] Inbox')).toBe('[Work] Inbox');
+    expect(withoutAgentMark('Inbox 👁 later')).toBe('Inbox 👁 later');
   });
 });

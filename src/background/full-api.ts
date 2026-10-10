@@ -35,10 +35,10 @@ export function createFullApi(
 ): FullApi {
   const base = createApi(facet, getSessionRules);
   const bridgeApi: BridgeApi = {
-    getBridgeState: async () => bridge?.state() ?? { status: 'off', error: null, actions: 0, lastTool: null, lastAt: null },
+    getBridgeState: async () => bridge?.state() ?? { status: 'off', error: null, actions: 0, lastTool: null, lastAt: null, recent: [] },
     retryBridge: async () => {
       bridge?.retry();
-      return bridge?.state() ?? { status: 'off', error: null, actions: 0, lastTool: null, lastAt: null };
+      return bridge?.state() ?? { status: 'off', error: null, actions: 0, lastTool: null, lastAt: null, recent: [] };
     },
     getBridgeProfileLabel: () => readProfileLabel(b.storage.local as unknown as StorageAreaLike),
     setBridgeProfileLabel: (label) => writeProfileLabel(b.storage.local as unknown as StorageAreaLike, label),

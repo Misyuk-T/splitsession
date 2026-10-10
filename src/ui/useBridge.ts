@@ -6,10 +6,12 @@ import { describeError } from './format';
 export interface BridgeView {
   /** The `agentBridge` setting. */
   enabled: boolean;
+  /** The `agentActivity` setting: show on tabs what the agent touches. */
+  activity: boolean;
   state: BridgeState;
 }
 
-const OFF: BridgeState = { status: 'off', error: null, actions: 0, lastTool: null, lastAt: null };
+const OFF: BridgeState = { status: 'off', error: null, actions: 0, lastTool: null, lastAt: null, recent: [] };
 
 /** The agent bridge's setting and live state (polled while the page is open), with the switch and "check again". */
 export function useBridge(pollMs = 1000): {
@@ -17,6 +19,7 @@ export function useBridge(pollMs = 1000): {
   error: string | null;
   busy: boolean;
   setEnabled(next: boolean): Promise<void>;
+  setActivity(next: boolean): Promise<void>;
   retry(): Promise<void>;
 } {
   const [view, setView] = useState<BridgeView | null>(null);
@@ -26,7 +29,7 @@ export function useBridge(pollMs = 1000): {
   const load = useCallback(async () => {
     try {
       const [settings, state] = await Promise.all([facetApi.getSettings(), facetApi.getBridgeState()]);
-      setView({ enabled: settings.agentBridge, state });
+      setView({ enabled: settings.agentBridge, activity: settings.agentActivity, state });
     } catch (e) {
       setError(describeError(e));
     }
@@ -40,7 +43,7 @@ export function useBridge(pollMs = 1000): {
 
   const setEnabled = async (next: boolean) => {
     setBusy(true);
-    setView((v) => ({ enabled: next, state: v?.state ?? OFF })); // optimistic; the background confirms
+    setView((v) => ({ enabled: next, activity: v?.activity ?? true, state: v?.state ?? OFF })); // optimistic; the background confirms
     try {
       await facetApi.updateSettings({ agentBridge: next });
       setError(null);
@@ -52,6 +55,17 @@ export function useBridge(pollMs = 1000): {
     }
   };
 
+  const setActivity = async (next: boolean) => {
+    setView((v) => (v ? { ...v, activity: next } : v));
+    try {
+      await facetApi.updateSettings({ agentActivity: next });
+      setError(null);
+    } catch (e) {
+      setError(describeError(e));
+    }
+    await load();
+  };
+
   const retry = async () => {
     try {
       await facetApi.retryBridge();
@@ -61,5 +75,5 @@ export function useBridge(pollMs = 1000): {
     await load();
   };
 
-  return { view, error, busy, setEnabled, retry };
+  return { view, error, busy, setEnabled, setActivity, retry };
 }
