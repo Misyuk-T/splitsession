@@ -74,6 +74,8 @@ export function createExtrasApi(facet: Facet, extras: Extras, b: typeof browser 
     getSettings: async () => (await ready(), extras.settings.get()),
     updateSettings: async (patch) => {
       await ready();
+      // Strict mode on: the service workers go first. If that fails the setting stays off and the caller gets the error.
+      if (patch.strictMode === true) await facet.strict.turnOn();
       const next = await extras.settings.update(patch);
       await facet.applySettings(next); // already started by the change listener; this waits for it
       return next;

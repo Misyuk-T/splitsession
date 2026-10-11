@@ -6,10 +6,11 @@ export interface Settings {
   /** Prefix the title of container tabs with `[name] ` (needs `showNameToPages`: pages can read their title). */
   titlePrefix: boolean;
   /**
-   * Strict mode: once the user agrees, Facet removes every service worker of this Chrome profile and refuses new
-   * registrations on every site (and blocks worker scripts outside tabs), so no worker of the real profile can answer a
-   * container tab's requests. Also strips `Cookie` and `Set-Cookie` of requests that belong to no tab (service workers,
-   * shared workers, other extensions) on sites containers use. Off: the per-site policy only (docs/limits.md).
+   * Strict mode: turning it on removes every service worker of this Chrome profile and refuses new registrations on
+   * every site (and blocks worker scripts outside tabs), so no worker of the real profile can answer a container tab's
+   * requests. Also strips `Cookie` and `Set-Cookie` of requests that belong to no tab (service workers, shared workers,
+   * other extensions) on sites containers use. Costs push notifications on every site, so the default is off: the
+   * per-site policy only (workers removed on sites used in containers, docs/limits.md).
    */
   strictMode: boolean;
   /**
@@ -42,11 +43,22 @@ export interface Settings {
 /** `chrome.storage.local` key holding the settings object. */
 export const SETTINGS_KEY = 'settings';
 
-export const DEFAULT_SETTINGS: Readonly<Settings> = Object.freeze({ tabGroups: true, titlePrefix: true, strictMode: true, showNameToPages: false, agentBridge: false, agentActivity: true, restoreTabs: true });
+/**
+ * Lite has only `tabGroups`, `strictMode` and `restoreTabs`: the agent bridge, agent activity and page-name settings are
+ * not part of its schema at all (no default, not a valid key: an update naming one is an error, nothing stored, no string
+ * shipped). The `Settings` type stays the Full one; Lite code never reads the other keys (every use sits behind `__FULL__`).
+ */
+export const DEFAULT_SETTINGS: Readonly<Settings> = Object.freeze(
+  __FULL__
+    ? { tabGroups: true, titlePrefix: true, strictMode: false, showNameToPages: false, agentBridge: false, agentActivity: true, restoreTabs: true }
+    : ({ tabGroups: true, strictMode: false, restoreTabs: true } as Settings),
+);
 
-export const SETTING_KEYS = ['tabGroups', 'titlePrefix', 'strictMode', 'showNameToPages', 'agentBridge', 'agentActivity', 'restoreTabs'] as const satisfies readonly (keyof Settings)[];
+export const SETTING_KEYS: readonly SettingKey[] = __FULL__
+  ? ['tabGroups', 'titlePrefix', 'strictMode', 'showNameToPages', 'agentBridge', 'agentActivity', 'restoreTabs']
+  : ['tabGroups', 'strictMode', 'restoreTabs'];
 
-export type SettingKey = (typeof SETTING_KEYS)[number];
+export type SettingKey = keyof Settings;
 
 /**
  * What `chrome.storage.local.settings` holds: every value, plus the keys the user (or the API) set explicitly. A key
@@ -61,7 +73,7 @@ export interface StoredSettings extends Settings {
  * cannot be told apart from a default. Every default was `true` then: a `false` was the user's choice, a `true` is
  * read as "never set" (the one that matters: `showNameToPages`, whose default is now off).
  */
-const LEGACY_DEFAULTS: Readonly<Settings> = Object.freeze({ tabGroups: true, titlePrefix: true, strictMode: true, showNameToPages: true, agentBridge: false, agentActivity: true, restoreTabs: true });
+const LEGACY_DEFAULTS: Readonly<Settings> = Object.freeze({ ...DEFAULT_SETTINGS, strictMode: true, ...(__FULL__ ? { showNameToPages: true } : {}) });
 
 export interface ReadSettings {
   settings: Settings;

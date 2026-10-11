@@ -19,6 +19,7 @@
   --fx-danger-soft: #fbe9e7;
   --fx-warn-soft: #fff4d6;
   --fx-warn-border: #e0b84a;
+  --fx-amber: #d98e04;
   --fx-warn-text: #5c4300;
   --fx-focus: #1a6fe0;
   --fx-ok: #1a7f43;
@@ -52,6 +53,7 @@
     --fx-danger-soft: #3a2220;
     --fx-warn-soft: #3a2f12;
     --fx-warn-border: #8a6d1c;
+    --fx-amber: #f2b52d;
     --fx-warn-text: #f5dd9b;
     --fx-focus: #6fb0ff;
     --fx-ok: #4ed38a;

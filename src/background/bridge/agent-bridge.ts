@@ -1,5 +1,5 @@
 import type { browser } from 'wxt/browser';
-import { HOST_NAME, PROTOCOL_VERSION, SWITCHED_OFF, type ExtensionToHost, type HostToExtension, type ToolResult } from '../../bridge/protocol';
+import { HOST_NAME, PING_TOOL, PROTOCOL_VERSION, SESSION_TOOL, SWITCHED_OFF, type ExtensionToHost, type HostToExtension, type ToolResult } from '../../bridge/protocol';
 import type { StorageAreaLike } from '../../engine/storage/storage-area';
 import type { Logger } from '../log';
 import type { ActionMeta } from './router';
@@ -57,6 +57,9 @@ const BUSY_RETRY_MS = 10_000;
 /** After the last MCP client has gone, how long the agent's leftovers (viewport overrides, debugger sessions) stay. */
 export const RELEASE_GRACE_MS = 10_000;
 
+/** Keepalive and session bookkeeping of the host: never an agent action, so never run, counted or listed. */
+const isInternalTool = (tool: unknown): boolean => tool === PING_TOOL || tool === SESSION_TOOL || (typeof tool === 'string' && tool.startsWith('__'));
+
 const IDLE: BridgeState = { status: 'off', error: null, actions: 0, lastTool: null, lastAt: null, recent: [] };
 
 /**
@@ -100,7 +103,7 @@ export class AgentBridge {
   private async load(): Promise<void> {
     try {
       const stored = (await this.area.get(BRIDGE_STATE_KEY))[BRIDGE_STATE_KEY] as Partial<BridgeState> | undefined;
-      if (stored && typeof stored.actions === 'number') this.current = { ...IDLE, actions: stored.actions, lastTool: stored.lastTool ?? null, lastAt: stored.lastAt ?? null, recent: Array.isArray(stored.recent) ? stored.recent.slice(0, RECENT_ACTIONS) : [] };
+      if (stored && typeof stored.actions === 'number') this.current = { ...IDLE, actions: stored.actions, lastTool: stored.lastTool ?? null, lastAt: stored.lastAt ?? null, recent: Array.isArray(stored.recent) ? stored.recent.filter((r) => !isInternalTool(r?.tool)).slice(0, RECENT_ACTIONS) : [] };
     } catch {
       /* session storage unavailable: counters start from zero */
     }
@@ -197,6 +200,14 @@ export class AgentBridge {
   }
 
   private async serve(port: PortLike, id: number, tool: string, args: unknown): Promise<void> {
+    if (isInternalTool(tool)) {
+      try {
+        port.postMessage({ type: 'response', id, ok: true, result: { content: [{ type: 'text', text: 'pong' }] } } satisfies ExtensionToHost);
+      } catch {
+        /* the host is gone: nothing to answer */
+      }
+      return;
+    }
     const started = Date.now();
     const meta: ActionMeta = { signal: this.abort.signal };
     let reply: ExtensionToHost;

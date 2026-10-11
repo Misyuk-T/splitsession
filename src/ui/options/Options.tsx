@@ -16,7 +16,7 @@ export function Options() {
       </header>
       <nav class="opt-nav" aria-label="Sections">
         <a href="#general">General</a>
-        <a href="#agent">AI agent</a>
+        {__FULL__ && <a href="#agent">AI agent</a>}
         <a href="#rules">Domain rules</a>
         <a href="#transfer">Export and import</a>
         <a href="#diagnostics">Diagnostics</a>
@@ -24,7 +24,7 @@ export function Options() {
       {error && <p class="fx-notice fx-notice--error" role="alert">Facet could not load its containers: {error}</p>}
       <main>
         <GeneralSection />
-        <BridgeSection />
+        {__FULL__ && <BridgeSection />}
         <RulesSection containers={containers} />
         <TransferSection onChanged={() => void reload()} />
         <DiagnosticsSection />

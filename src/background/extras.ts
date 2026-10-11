@@ -48,7 +48,7 @@ export class Extras {
     this.badges = new BadgeIndicator(b.action as unknown as ActionApi, {
       containerOf: (tabId) => facet.getTabContainer(tabId),
       container: (id) => facet.containers.get(id),
-      bridgeOn: () => this.settings.get().agentBridge,
+      ...(__FULL__ ? { bridgeOn: () => this.settings.get().agentBridge } : {}),
       isHeld: (tabId) => facet.restore.isHeld(tabId),
       heldCount: () => facet.restore.heldCount(),
     });
@@ -85,7 +85,7 @@ export class Extras {
       const tabIds = [...this.facet.tabs.entries().map(([id]) => id), ...this.facet.restore.heldIds()];
       await this.badges.applyGlobal();
       await this.badges.applyMany(tabIds);
-      if (this.settings.get().agentBridge) await this.refreshAllBadges();
+      if (__FULL__ && this.settings.get().agentBridge) await this.refreshAllBadges();
     });
     return this.ready;
   }
@@ -123,7 +123,7 @@ export class Extras {
           void this.groups.containerUpdated(event.container);
           const tabIds = this.facet.tabs.tabsOf(event.container.id);
           await this.badges.applyMany(tabIds);
-          if (event.renamed) {
+          if (__FULL__ && event.renamed) {
             for (const tabId of tabIds) {
               void this.b.tabs.sendMessage(tabId, { type: RENAMED_MESSAGE, name: event.container.name }).catch(() => {});
             }
@@ -166,7 +166,7 @@ export class Extras {
   /** Re-applies the badge after navigation, which resets tab-specific action state. */
   handleTabRefresh(tabId: number): void {
     void this.ready.then(() =>
-      this.facet.getTabContainer(tabId) !== null || this.settings.get().agentBridge || this.facet.restore.isHeld(tabId) ? this.badges.apply(tabId) : undefined,
+      this.facet.getTabContainer(tabId) !== null || (__FULL__ && this.settings.get().agentBridge) || this.facet.restore.isHeld(tabId) ? this.badges.apply(tabId) : undefined,
     );
   }
 

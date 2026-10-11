@@ -423,7 +423,8 @@ export const TOOLS: readonly ToolSpec[] = [
   },
 ];
 
-export const TOOL_NAMES: readonly string[] = TOOLS.map((t) => t.name);
+// Pure annotation: the extension's Lite build imports this module through dead branches only, and must not keep `TOOLS` alive.
+export const TOOL_NAMES: readonly string[] = /* @__PURE__ */ TOOLS.map((t) => t.name);
 export const toolByName = (name: string): ToolSpec | undefined => TOOLS.find((t) => t.name === name);
 
 /** The extension's deadline for one call of `name`. The host waits `HOST_MARGIN_MS` longer, the MCP server longer still. */

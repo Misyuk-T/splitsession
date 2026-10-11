@@ -33,13 +33,15 @@ interface MenuButtonProps {
   block?: boolean;
   disabled?: boolean;
   id?: string;
+  /** Tooltip; an icon-only button (one with `ariaLabel`) gets its name by default. */
+  title?: string;
 }
 
 /**
  * Menu button (ARIA menu pattern): ArrowDown/ArrowUp open it and move, Home/End jump, Enter/Space choose, Escape closes
  * and returns focus to the button, Tab closes, typing a letter jumps to a matching item.
  */
-export function MenuButton({ children, ariaLabel, items, onSelect, menuLabel, align = 'start', variant = 'secondary', small, icon, block, disabled, id }: MenuButtonProps) {
+export function MenuButton({ children, ariaLabel, items, onSelect, menuLabel, align = 'start', variant = 'secondary', small, icon, block, disabled, id, title }: MenuButtonProps) {
   const uid = useUid('menu');
   const [open, setOpen] = useState(false);
   const [active, setActive] = useState(0);
@@ -101,6 +103,7 @@ export function MenuButton({ children, ariaLabel, items, onSelect, menuLabel, al
         aria-expanded={open}
         aria-controls={open ? uid : undefined}
         aria-label={ariaLabel}
+        title={title ?? ariaLabel}
         disabled={disabled}
         onClick={() => (open ? close(false) : openAt('checked'))}
         onKeyDown={(event) => {

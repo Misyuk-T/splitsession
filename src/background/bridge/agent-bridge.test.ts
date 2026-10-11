@@ -128,6 +128,22 @@ describe('AgentBridge', () => {
     expect(bridge.state().recent).toEqual([]);
   });
 
+  it('never runs, counts or lists the host\'s internal keepalive and session calls', async () => {
+    const { bridge, ports, run, log } = setup();
+    await bridge.sync(true, true);
+    const port = ports[0]!;
+    port.receive({ type: 'ready', version: 1, socket: '/s' });
+    port.receive({ type: 'request', id: 1, tool: '__session', args: {} });
+    port.receive({ type: 'request', id: 2, tool: '__ping' });
+    port.receive({ type: 'request', id: 3, tool: 'list_tabs', args: {} });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(run).toHaveBeenCalledTimes(1);
+    expect(bridge.state().actions).toBe(1);
+    expect(bridge.state().recent.map((r) => r.tool)).toEqual(['list_tabs']);
+    expect(port.sent.map((m) => m.id)).toEqual([1, 2, 3]); // the host still gets answers
+    expect(log.entries().filter((e) => e.message === 'agent action')).toHaveLength(1);
+  });
+
   it('turning it off disconnects the port and clears the retry alarm; the counter restarts on the next "on"', async () => {
     const { bridge, ports, alarms } = setup();
     await bridge.sync(true, true);

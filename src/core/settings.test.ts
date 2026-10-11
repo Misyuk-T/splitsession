@@ -2,8 +2,8 @@ import { describe, expect, it } from 'vitest';
 import { applySettingsPatch, DEFAULT_SETTINGS, normalizeSettings, readSettings, SettingsError, storedSettings } from './settings';
 
 describe('settings defaults', () => {
-  it('shows tab groups, prefixes titles, strict mode on, and the container name hidden from pages by default', () => {
-    expect(DEFAULT_SETTINGS).toEqual({ tabGroups: true, titlePrefix: true, strictMode: true, showNameToPages: false, agentBridge: false, agentActivity: true, restoreTabs: true });
+  it('shows tab groups, prefixes titles, strict mode off, and the container name hidden from pages by default', () => {
+    expect(DEFAULT_SETTINGS).toEqual({ tabGroups: true, titlePrefix: true, strictMode: false, showNameToPages: false, agentBridge: false, agentActivity: true, restoreTabs: true });
   });
 
   it('normalizeSettings fills gaps from the defaults and ignores junk', () => {

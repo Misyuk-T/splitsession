@@ -1,10 +1,10 @@
 import { useState } from 'preact/hooks';
-import { browser } from 'wxt/browser';
 import type { BridgeState, RecentAction } from '../../background/bridge/agent-bridge';
 import { useBridge } from '../useBridge';
+import { IconChevron } from '../icons';
 import { Button } from './Button';
-import { MenuButton, type MenuItem } from './Menu';
 import { Switch, SwitchControl } from './Toggle';
+import './bridge-card.css';
 
 export const INSTALL_COMMAND = 'pnpm bridge:install';
 
@@ -26,6 +26,9 @@ function headline(state: BridgeState): string {
   }
 }
 
+/** What the row says, in two words, when the bridge is on but not connected. */
+const SHORT: Record<BridgeState['status'], string> = { off: '', connecting: 'Connecting…', connected: '', 'host-missing': 'Setup needed', busy: 'In use elsewhere', error: 'Not working' };
+
 const clock = (at: number) => new Date(at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false });
 
 /** The agent's latest actions: when, which tool, on which tab (title, else site). Never page content. */
@@ -33,7 +36,7 @@ function RecentActions({ recent }: { recent: RecentAction[] }) {
   if (recent.length === 0) {
     return (
       <p class="fx-bridge__none" data-testid="bridge-recent-empty">
-        No agent actions yet.
+        Nothing yet.
       </p>
     );
   }
@@ -64,6 +67,7 @@ function RecentActions({ recent }: { recent: RecentAction[] }) {
 export function BridgeCard({ layout }: { layout: 'popup' | 'options' }) {
   const { view, error, busy, setEnabled, setActivity, retry } = useBridge();
   const [copied, setCopied] = useState(false);
+  const [open, setOpen] = useState(false);
   const on = view?.enabled ?? false;
   const state = view?.state;
   const status = on ? (state && state.status !== 'off' ? state.status : 'connecting') : 'off';
@@ -151,42 +155,46 @@ export function BridgeCard({ layout }: { layout: 'popup' | 'options' }) {
     );
   }
 
-  // ---- popup: compact
-  const menu: MenuItem[] = [
-    { id: 'activity', label: 'Show agent activity', checked: view?.activity ?? true, toggle: true },
-    { id: 'settings', label: 'Bridge settings…', separatorBefore: true },
-  ];
-  const onMenu = (id: string) => {
-    if (id === 'activity') void setActivity(!(view?.activity ?? true));
-    else void browser.tabs.create({ url: browser.runtime.getURL('/options.html#agent' as never) });
-  };
+  // ---- popup: one quiet row. The log is folded away until the row is pressed.
+  const note = !on ? null : status === 'connected' ? null : SHORT[status];
+  const count = state?.actions ?? 0;
+  const canOpen = on && status === 'connected';
+  const tip = on ? `${headline(state ?? FRESH)}. Settings has the details.` : 'Agent bridge is off. No AI agent can see or control your tabs.';
+  const label = (
+    <>
+      <span class={`fx-bridge__dot fx-bridge__dot--${on ? status : 'off'}`} aria-hidden="true" />
+      <span class="fx-bridge__name">Agent</span>
+      {canOpen && (
+        <span class="fx-bridge__count" data-testid="bridge-actions">
+          {count}
+        </span>
+      )}
+      {note && <span class="fx-bridge__note">{note}</span>}
+      {canOpen && <span class={`fx-chevron${open ? ' fx-chevron--open' : ''}`}><IconChevron /></span>}
+    </>
+  );
   return (
-    <section class={`fx-bridge fx-bridge--popup${on ? ' fx-bridge--on' : ''}`} aria-label="Agent bridge" data-testid="bridge-card" data-status={status}>
+    <section class={`fx-bridge fx-bridge--popup${on ? ' fx-bridge--on' : ''}`} aria-label="Agent bridge" data-testid="bridge-card" data-status={status} title={tip}>
       <div class="fx-bridge__row">
-        {on && <span class={`fx-bridge__dot fx-bridge__dot--${status}`} aria-hidden="true" />}
-        <div class="fx-bridge__text">
-          <div class="fx-bridge__title">
-            <strong>Agent bridge</strong>
-            {on && status === 'connected' && state ? (
-              <span class="fx-bridge__count fx-secondary" data-testid="bridge-actions">
-                {actionsLabel(state.actions)}
-              </span>
-            ) : (
-              !on && <span class="fx-secondary">Off · no access</span>
-            )}
-          </div>
-          {on && (
-            <span class="fx-secondary" role="status" data-testid="bridge-status">
-              {headline(state ?? FRESH)}
-            </span>
-          )}
-        </div>
-        <MenuButton ariaLabel="Agent bridge options" menuLabel="Agent bridge options" items={menu} onSelect={onMenu} align="end" variant="ghost" small icon>
-          <span aria-hidden="true">⋯</span>
-        </MenuButton>
+        {canOpen ? (
+          <button type="button" class="fx-bridge__main" aria-expanded={open} aria-controls="fx-bridge-log" aria-label={`Agent, ${actionsLabel(count)}. ${open ? 'Hide' : 'Show'} recent actions`} onClick={() => setOpen(!open)}>
+            {label}
+          </button>
+        ) : (
+          <div class="fx-bridge__main fx-bridge__main--static">{label}</div>
+        )}
+        {on && (
+          <span class="fx-sr-only" role="status" data-testid="bridge-status">
+            {headline(state ?? FRESH)}
+          </span>
+        )}
         <SwitchControl label="Agent bridge" checked={on} disabled={view === null || busy} onChange={(next) => void setEnabled(next)} />
       </div>
-      {on && status === 'connected' && <RecentActions recent={state?.recent ?? []} />}
+      {canOpen && open && (
+        <div id="fx-bridge-log">
+          <RecentActions recent={state?.recent ?? []} />
+        </div>
+      )}
       {help}
     </section>
   );

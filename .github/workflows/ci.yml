@@ -1,0 +1,90 @@
+# Facet CI: typecheck, unit tests and both editions on every push and pull request (no e2e here: it needs a headed
+# Chromium and the native bridge host, see docs/development.md). A tag `v*` also publishes a GitHub Release with both zips.
+name: CI
+
+on:
+  push:
+    branches: ['**']
+    tags: ['v*']
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4 # version comes from "packageManager" in package.json
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Typecheck
+        run: pnpm typecheck
+
+      - name: Unit tests
+        run: pnpm test
+
+      - name: Build Full
+        run: pnpm build:full
+
+      - name: Build Lite (includes scripts/check-lite.mjs)
+        run: pnpm build:lite
+
+      - name: Zip both editions
+        run: |
+          pnpm zip:full
+          pnpm zip:lite
+          ls -l .output/facet-full-*.zip .output/lite/facet-lite-*.zip
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: facet-zips
+          if-no-files-found: error
+          path: |
+            .output/facet-full-*.zip
+            .output/lite/facet-lite-*.zip
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: The tag must name the version in package.json
+        run: |
+          version="$(node -p "require('./package.json').version")"
+          if [ "${GITHUB_REF_NAME}" != "v${version}" ]; then
+            echo "Tag ${GITHUB_REF_NAME} does not match package.json version ${version}" >&2
+            exit 1
+          fi
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: facet-zips
+          path: zips
+
+      - name: Create the GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          find zips -name '*.zip' | sort
+          gh release create "${GITHUB_REF_NAME}" \
+            "$(find zips -name 'facet-lite-*.zip')" \
+            "$(find zips -name 'facet-full-*.zip')" \
+            --title "Facet ${GITHUB_REF_NAME}" \
+            --generate-notes

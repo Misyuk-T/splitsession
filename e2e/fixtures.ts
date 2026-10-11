@@ -248,8 +248,8 @@ export const test = base.extend<{ facet: Facet }, { profile: Profile; extContext
     await api('updateSettings', { tabGroups: true, titlePrefix: true, strictMode: true, showNameToPages: true, agentBridge: false, agentActivity: true, restoreTabs: true });
     // Container tabs closed by earlier tests are not reopened by this one.
     await api('forgetClosedTabs');
-    // Steady state of a user who said yes to strict mode (tests of the other states change it themselves).
-    if (!(await api<{ active: boolean }>('getStrictMode')).active) await api('grantStrictMode');
+    // Strict mode is on for every test (the isolation steady state; tests of the other states change it themselves).
+    expect(await api('getStrictMode')).toMatchObject({ enabled: true, active: true });
     await use(facet);
     if (testInfo.status !== testInfo.expectedStatus) {
       const log = await Promise.race([api('getLog'), new Promise((r) => setTimeout(() => r('worker unreachable'), 2_000))]).catch(String);

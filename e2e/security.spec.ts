@@ -33,11 +33,26 @@ async function realUser(facet: Facet, host: string): Promise<string | null> {
 
 const registrations = (page: Page) => page.evaluate(async () => (await navigator.serviceWorker.getRegistrations()).length);
 
-/** Strict mode on, OK not given yet: the state of a user who has not answered the dialog. */
-async function strictWithoutConsent(facet: Facet): Promise<void> {
+/**
+ * Strict mode on, but a realm slipped past both of its layers (the shim's guard and the worker-script block), so a
+ * worker can still be installed: the state the no-tab cookie rule exists for. Undo with `restoreStrict`.
+ */
+async function strictWithoutGuard(facet: Facet): Promise<void> {
+  await facet.api('updateSettings', { strictMode: true });
+  await facet.inWorker(async (_: null) => {
+    const dnr = (globalThis as any).chrome.declarativeNetRequest;
+    await dnr.updateDynamicRules({ removeRuleIds: [2] }); // STRICT_GUARD_RULE_ID
+    const blocks = (await dnr.getSessionRules()).filter(
+      (r: any) => r.action.type === 'block' && r.condition.tabIds?.includes(-1) && r.condition.resourceTypes?.join() === 'script',
+    );
+    await dnr.updateSessionRules({ removeRuleIds: blocks.map((r: any) => r.id) });
+  }, null);
+}
+
+/** Puts the guard back after `strictWithoutGuard` (off and on again: the same path as the switch in Settings). */
+async function restoreStrict(facet: Facet): Promise<void> {
   await facet.api('updateSettings', { strictMode: false });
   await facet.api('updateSettings', { strictMode: true });
-  expect(await facet.api('getStrictMode')).toMatchObject({ enabled: true, active: false, prompt: true });
 }
 
 test.describe('service workers of the real profile', () => {
@@ -74,16 +89,16 @@ test.describe('service workers of the real profile', () => {
     expect(await realUser(facet, other)).toBe('real');
   });
 
-  test('strict mode: the OK removes every worker and no site can install one, so a link inside a container tab is safe', async ({ facet }) => {
-    await strictWithoutConsent(facet);
+  test('strict mode: turning it on removes every worker and no site can install one, so a link inside a container tab is safe', async ({ facet }) => {
+    await facet.api('updateSettings', { strictMode: false });
+    expect(await facet.api('getStrictMode')).toMatchObject({ enabled: false, active: false });
     const host = freshHost('strict');
-    const real = await realProfileWithWorker(facet, host); // allowed: nothing agreed yet, the site is not a container site
+    const real = await realProfileWithWorker(facet, host); // allowed: strict mode is off, the site is not a container site
     const A = await facet.container('A');
-    expect((await facet.api<{ needsConsent: boolean }>('getStrictMode')).needsConsent).toBe(true);
 
-    await facet.api('grantStrictMode');
+    await facet.api('updateSettings', { strictMode: true });
     await expect.poll(() => registrations(real.page)).toBe(0);
-    expect(await facet.api('getStrictMode')).toMatchObject({ active: true, needsConsent: false, prompt: false });
+    expect(await facet.api('getStrictMode')).toMatchObject({ enabled: true, active: true });
 
     // A plain link in a container tab: the navigation is the page's own (Facet cannot prepare it), and there is no
     // worker left to answer it.
@@ -104,34 +119,38 @@ test.describe('service workers of the real profile', () => {
   });
 
   test('strict mode: a leftover real-profile worker on a container site can neither send nor write the real profile’s cookies', async ({ facet }) => {
-    await strictWithoutConsent(facet); // workers can still be installed
-    const family = freshHost('fam');
-    const www = `www.${family}`;
-    const real = await realProfileWithWorker(facet, www);
-    const A = await facet.container('A');
-    // The container visits the apex: the site (registrable domain) becomes a container site; only the apex
-    // origin's workers are removed, the worker of www.<site> stays.
-    const visit = await facet.openIn(A.name, at(family, '/blank'));
-    await expect(visit.locator('h1')).toHaveText(family);
-    await expect
-      .poll(async () =>
-        (await facet.api<Array<{ condition: { tabIds?: number[]; requestDomains?: string[] } }>>('getSessionRules')).some(
-          (r) => r.condition.tabIds?.includes(-1) && r.condition.requestDomains?.includes(family),
-        ),
-      )
-      .toBe(true);
+    await strictWithoutGuard(facet); // workers can still be installed
+    try {
+      const family = freshHost('fam');
+      const www = `www.${family}`;
+      const real = await realProfileWithWorker(facet, www);
+      const A = await facet.container('A');
+      // The container visits the apex: the site (registrable domain) becomes a container site; only the apex
+      // origin's workers are removed, the worker of www.<site> stays.
+      const visit = await facet.openIn(A.name, at(family, '/blank'));
+      await expect(visit.locator('h1')).toHaveText(family);
+      await expect
+        .poll(async () =>
+          (await facet.api<Array<{ condition: { tabIds?: number[]; requestDomains?: string[] } }>>('getSessionRules')).some(
+            (r) => r.condition.tabIds?.includes(-1) && r.condition.requestDomains?.includes(family),
+          ),
+        )
+        .toBe(true);
 
-    // The worker answers this navigation with its own fetch (no tab): it goes without the real profile's cookies
-    // (a worker answering a container tab's request cannot carry the real session in), and the response's Set-Cookie
-    // must not land.
-    await facet.clearLog();
-    await go(real.page, at(www, '/login?user=intruder'));
-    await expect(real.page.locator('#user')).toHaveText('anonymous');
-    expect(await real.page.evaluate(() => navigator.serviceWorker.controller !== null)).toBe(true);
-    const viaWorker = (await facet.serverLog()).filter((e) => e.host === www && (e.path === '/login?user=intruder' || e.path === '/whoami'));
-    expect(viaWorker.length).toBeGreaterThan(0);
-    for (const hit of viaWorker) expect(hit.cookie).toBe('');
-    expect((await facet.realCookies(at(www))).find((c) => c.name === 'sid')?.value).toBe(real.sid);
+      // The worker answers this navigation with its own fetch (no tab): it goes without the real profile's cookies
+      // (a worker answering a container tab's request cannot carry the real session in), and the response's Set-Cookie
+      // must not land.
+      await facet.clearLog();
+      await go(real.page, at(www, '/login?user=intruder'));
+      await expect(real.page.locator('#user')).toHaveText('anonymous');
+      expect(await real.page.evaluate(() => navigator.serviceWorker.controller !== null)).toBe(true);
+      const viaWorker = (await facet.serverLog()).filter((e) => e.host === www && (e.path === '/login?user=intruder' || e.path === '/whoami'));
+      expect(viaWorker.length).toBeGreaterThan(0);
+      for (const hit of viaWorker) expect(hit.cookie).toBe('');
+      expect((await facet.realCookies(at(www))).find((c) => c.name === 'sid')?.value).toBe(real.sid);
+    } finally {
+      await restoreStrict(facet);
+    }
   });
 
   test('strict mode: a request outside tabs that no page of the site started keeps the real profile’s cookies (session refresh by the browser)', async ({ facet }) => {
@@ -160,52 +179,66 @@ test.describe('service workers of the real profile', () => {
     expect(await realUser(facet, host)).toBe('real');
   });
 
-  test('the popup asks for the OK when the first container appears, warns until it is given, and the OK removes workers', async ({ facet }) => {
+  test('a fresh install shows no strict-mode prompt anywhere; the switch in Settings removes the existing workers', async ({ facet }) => {
+    // The state of an install that never saw strict mode: setting off (the default), nothing to answer.
     for (const c of await facet.api<Array<{ id: string }>>('listContainers')) await facet.api('deleteContainer', c.id);
-    await strictWithoutConsent(facet);
-    await facet.api('dismissStrictModePrompt'); // the prompt of switching it on; the first container asks again
+    await facet.api('updateSettings', { strictMode: false });
     const real = await realProfileWithWorker(facet, freshHost('ui'));
+    expect(await registrations(real.page)).toBe(1);
 
     const popup = await facet.ctx.newPage();
     await popup.setViewportSize({ width: 380, height: 700 });
     await popup.goto(ext('popup.html'));
     await expect(popup.getByRole('heading', { name: 'Containers' })).toBeVisible();
-    await expect(popup.getByTestId('strict-warning')).toHaveCount(0); // no containers, nothing to protect yet
     await popup.getByRole('button', { name: 'New container' }).click();
     await popup.getByLabel('Name').fill(`First-${Date.now().toString(36)}`);
     await popup.getByRole('button', { name: 'Create' }).click();
-
-    const dialog = popup.getByRole('alertdialog', { name: /service workers/ });
-    await expect(dialog).toBeVisible();
-    await expect(dialog.getByRole('button', { name: 'Not now' })).toBeFocused(); // the safe answer first
-    const tooSmall = await dialog.evaluate((root) => {
-      const out: string[] = [];
-      const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
-      for (let n = walker.nextNode(); n; n = walker.nextNode()) {
-        if (!n.textContent?.trim()) continue;
-        const size = parseFloat(getComputedStyle(n.parentElement!).fontSize);
-        if (size < 14) out.push(`${size}px: ${n.textContent.trim().slice(0, 30)}`);
-      }
-      return out;
-    });
-    expect(tooSmall).toEqual([]);
-    await dialog.getByRole('button', { name: 'Not now' }).click();
-    await expect(dialog).toHaveCount(0);
-    await expect(popup.getByTestId('strict-warning')).toBeVisible();
-    expect(await registrations(real.page)).toBe(1);
-
-    await popup.reload(); // the warning stays, the dialog does not open by itself again
-    await expect(popup.getByTestId('strict-warning')).toBeVisible();
+    await expect(popup.getByRole('button', { name: 'Settings' })).toBeVisible();
     await popup.waitForTimeout(300);
     await expect(popup.getByRole('alertdialog')).toHaveCount(0);
-
-    await popup.getByTestId('strict-warning').getByRole('button', { name: /Review/ }).click();
-    await popup.getByRole('alertdialog').getByTestId('strict-accept').click();
-    await expect(popup.getByRole('alertdialog')).toHaveCount(0);
+    await expect(popup.getByRole('dialog')).toHaveCount(0);
     await expect(popup.getByTestId('strict-warning')).toHaveCount(0);
-    await expect.poll(() => registrations(real.page)).toBe(0);
-    expect(await facet.api('getStrictMode')).toMatchObject({ active: true });
+    await popup.reload();
+    await expect(popup.getByRole('heading', { name: 'Containers' })).toBeVisible();
+    await expect(popup.getByRole('alertdialog')).toHaveCount(0);
+    await expect(popup.getByLabel(/strict/i)).toHaveCount(0);
     await popup.close();
+    expect(await registrations(real.page)).toBe(1); // nothing was removed behind the user's back
+
+    const options = await facet.ctx.newPage();
+    await options.setViewportSize({ width: 1000, height: 900 });
+    await options.goto(ext('options.html'));
+    await expect(options.getByRole('heading', { name: 'Facet settings' })).toBeVisible();
+    await expect(options.getByRole('alertdialog')).toHaveCount(0);
+    const strict = options.getByRole('switch', { name: /Strict mode/ });
+    await expect(strict).toHaveAttribute('aria-checked', 'false');
+    await expect(strict).toContainText('Sites can’t send push notifications while it’s on.');
+
+    // "Why we need this": a custom disclosure, closed until asked for.
+    const why = options.getByRole('button', { name: 'Why we need this' });
+    await expect(why).toHaveAttribute('aria-expanded', 'false');
+    await why.click();
+    await expect(why).toHaveAttribute('aria-expanded', 'true');
+    await expect(options.getByText(/Chrome gives each site one background helper/)).toBeVisible();
+    await why.click();
+    await expect(why).toHaveAttribute('aria-expanded', 'false');
+
+    await strict.click();
+    await expect(strict).toHaveAttribute('aria-checked', 'true');
+    await expect.poll(() => registrations(real.page)).toBe(0);
+    expect(await facet.api('getStrictMode')).toMatchObject({ enabled: true, active: true });
+    expect(await facet.api('getSettings')).toMatchObject({ strictMode: true });
+    // No site can install a worker now, also in a plain tab.
+    const blocked = await facet.plain(at(freshHost('blocked'), '/sw-page'));
+    await expect(blocked.locator('#sw')).toHaveText('rejected: SecurityError');
+
+    // Off again: workers can register on sites no container uses.
+    await strict.click();
+    await expect(strict).toHaveAttribute('aria-checked', 'false');
+    expect(await facet.api('getStrictMode')).toMatchObject({ enabled: false, active: false });
+    const allowed = await facet.plain(at(freshHost('allowed'), '/sw-page'));
+    await expect(allowed.locator('#sw')).toHaveText('registered');
+    await options.close();
   });
 });
 

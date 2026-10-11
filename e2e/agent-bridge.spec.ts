@@ -89,13 +89,13 @@ test.describe('agent bridge', () => {
     const { popup, card } = await turnOn(facet);
     await expect(card).toHaveClass(/fx-bridge--on/);
     await expect(popup.getByTestId('bridge-status')).toContainText('Agent connected — full access');
-    await expect(popup.getByTestId('bridge-actions')).toHaveText('0 actions');
+    await expect(popup.getByTestId('bridge-actions')).toHaveText('0');
     expect(hostPids(facet)).toHaveLength(1);
 
     mcp = await startMcp(facet);
     await mcp.json('list_containers');
     await mcp.json('list_tabs');
-    await expect(popup.getByTestId('bridge-actions')).toHaveText('2 actions');
+    await expect(popup.getByTestId('bridge-actions')).toHaveText('2');
 
     // The options page shows the same switch, in the same state, with a plain explanation of what "on" means.
     const options = await facet.ctx.newPage();

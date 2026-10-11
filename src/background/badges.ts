@@ -35,7 +35,7 @@ export class BadgeIndicator {
 
   /** The default for tabs without their own badge, and the button's tooltip. */
   async applyGlobal(): Promise<void> {
-    const on = this.lookup.bridgeOn?.() ?? false;
+    const on = __FULL__ && (this.lookup.bridgeOn?.() ?? false);
     const held = this.lookup.heldCount?.() ?? 0;
     try {
       const color = on ? BRIDGE_ON_COLOR : held > 0 ? HELD_COLOR : null;
@@ -59,7 +59,7 @@ export class BadgeIndicator {
     if (tabId < 0) return;
     const id = this.lookup.containerOf(tabId);
     const container = id === null ? undefined : this.lookup.container(id);
-    const on = this.lookup.bridgeOn?.() ?? false;
+    const on = __FULL__ && (this.lookup.bridgeOn?.() ?? false);
     try {
       if (!container && this.lookup.isHeld?.(tabId)) {
         await this.action.setBadgeText({ tabId, text: '!' });

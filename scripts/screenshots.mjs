@@ -1,13 +1,15 @@
 // Captures the README screenshots of the popup, options page and choose page (light and dark) into docs/screenshots/.
 //
-//   pnpm build && node bridge/build.mjs && node scripts/screenshots.mjs [outDir]
+//   pnpm build && pnpm build:lite && node bridge/build.mjs && node scripts/screenshots.mjs [outDir]
+//
+// With the Lite build present (.output/lite/chrome-mv3) it also shoots the Lite popup (popup-lite-*).
 //
 // Launches Playwright's Chromium with the built extension (.output/chrome-mv3) and the e2e stand, seeds a few demo
 // containers, tabs and rules, connects the agent bridge to a real (temporary) host and lets an MCP client do a few
 // things so the popup shows its "recent actions", and takes the pictures. Needs `pnpm exec playwright install chromium`
 // once. Nothing outside a temporary directory is touched (the host manifest goes into the temporary profile).
 import { execFileSync, spawn } from 'node:child_process';
-import { mkdirSync, mkdtempSync, rmSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -55,8 +57,6 @@ try {
   await api('setDomainRule', { domain: 'github.com', action: 'always', containerId: work.id });
   await api('setDomainRule', { domain: 'reddit.com', action: 'ask' });
   await api('setDomainRule', { domain: 'threads.com', action: 'always', containerId: personal.id });
-  // The usual state: the user said yes to strict mode when the first container appeared (no dialog, no warning).
-  await api('grantStrictMode');
   await new Promise((r) => setTimeout(r, 800));
 
   // The agent bridge, connected, with a few things the "agent" just did.
@@ -102,6 +102,14 @@ try {
   for (const scheme of ['light', 'dark']) {
     // 420 x 600: the largest popup Chrome shows.
     await shoot('popup', `popup.html?tab=${tabId}`, { width: 420, height: 600 }, { scheme });
+    // The agent row unfolded: the last five actions.
+    await shoot('popup-agent', `popup.html?tab=${tabId}`, { width: 420, height: 600 }, {
+      scheme,
+      before: async (page) => {
+        await page.getByRole('button', { name: /^Agent, / }).click();
+        await page.waitForTimeout(200);
+      },
+    });
     await shoot('popup-menu', `popup.html?tab=${tabId}`, { width: 420, height: 600 }, {
       scheme,
       before: async (page) => {
@@ -111,6 +119,40 @@ try {
     });
     await shoot('options', 'options.html', { width: 900, height: 900 }, { scheme, fullPage: true });
     await shoot('choose', `choose.html?url=${encodeURIComponent('https://www.reddit.com/r/chrome/')}&tab=${tabId}`, { width: 700, height: 640 }, { scheme });
+  }
+  // The Lite edition's popup: containers only, no agent row.
+  const liteDir = resolve(root, '.output/lite/chrome-mv3');
+  if (existsSync(liteDir)) {
+    const liteData = mkdtempSync(resolve(tmpdir(), 'facet-shots-lite-'));
+    const lite = await chromium.launchPersistentContext(liteData, {
+      channel: 'chromium',
+      headless: true,
+      args: [`--disable-extensions-except=${liteDir}`, `--load-extension=${liteDir}`],
+    });
+    try {
+      const liteWorker = lite.serviceWorkers()[0] ?? (await lite.waitForEvent('serviceworker', { timeout: 15_000 }));
+      const liteId = new URL(liteWorker.url()).host;
+      const liteApi = (method, ...args) => liteWorker.evaluate(([m, a]) => globalThis.facet[m](...a), [method, args]);
+      await liteApi('listContainers');
+      const w = await liteApi('createContainer', { name: 'Work', color: 'blue' });
+      await liteApi('createContainer', { name: 'Personal', color: 'green' });
+      await liteApi('createContainer', { name: 'Client A', color: 'orange' });
+      const liteTab = await liteApi('openInContainer', url('a.localhost', '/login?user=work-account'), w.id);
+      await liteApi('openInContainer', url('b.localhost'), w.id);
+      for (const scheme of ['light', 'dark']) {
+        const page = await lite.newPage();
+        await page.setViewportSize({ width: 420, height: 600 });
+        await page.emulateMedia({ colorScheme: scheme });
+        await page.goto(`chrome-extension://${liteId}/popup.html?tab=${liteTab}`);
+        await page.waitForTimeout(500);
+        await page.screenshot({ path: resolve(out, `popup-lite-${scheme}.png`) });
+        await page.close();
+        console.log(`popup-lite-${scheme}.png`);
+      }
+    } finally {
+      await lite.close();
+      rmSync(liteData, { recursive: true, force: true });
+    }
   }
 } finally {
   await mcp?.close().catch(() => {});

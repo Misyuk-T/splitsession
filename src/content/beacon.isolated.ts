@@ -48,8 +48,8 @@ export function runBeacon(): void {
     bridge.setAttribute(MODE_ATTR, 'container');
     bridge.setAttribute(CONTAINER_ATTR, key);
     startContainer({ ...(answer as Partial<BeaconPayload>), c: key }, bridge);
-    // The name reaches pages only when the user allows it (the background leaves `n` out otherwise).
-    if (window === window.top && typeof answer.n === 'string') startPageName(root, answer.n);
+    // The name reaches pages only when the user allows it (the background leaves `n` out otherwise). Full edition only.
+    if (__FULL__ && window === window.top && typeof answer.n === 'string') startPageName(root, answer.n);
   } else if ('m' in answer && answer.m === 1) {
     bridge.setAttribute(MODE_ATTR, 'managed');
   } else if ('g' in answer && answer.g === 1) {

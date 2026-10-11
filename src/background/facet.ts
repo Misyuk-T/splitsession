@@ -38,7 +38,8 @@ import { ensureContentScripts, type ScriptingApi } from '../engine/content-scrip
 import { SessionRuleManager, type DnrSessionApi } from '../engine/dnr/session-rules';
 import { ContainerError, ContainerStore } from '../engine/storage/container-store';
 import { TabRegistry } from '../engine/storage/tab-registry';
-import { StrictMode } from '../engine/strict-mode';
+import { migrateStrictMode, StrictMode } from '../engine/strict-mode';
+import type { StorageAreaLike } from '../engine/storage/storage-area';
 import { ServiceWorkerPolicy, type BrowsingDataApi, type DnrDynamicApi } from '../engine/sw-policy';
 import { FacetEvents } from './events';
 import { createLogger, type Logger } from './log';
@@ -235,7 +236,7 @@ export class Facet {
         onGuardChanged: () => void this.rules.invalidate(NO_TAB_KEY),
       },
     );
-    this.strict = new StrictMode(local, this.swPolicy, () => this.containers.list().length);
+    this.strict = new StrictMode(this.swPolicy);
     this.detector = new StaleNavigationDetector({ containerOf: (tabId) => this.tabs.containerOf(tabId) });
     this.restore = new TabRestore({
       b: b as unknown as RestoreBrowser,
@@ -262,6 +263,8 @@ export class Facet {
 
   private async rehydrate(): Promise<void> {
     const local = this.b.storage.local;
+    // Before the settings are read: strict mode moves from "consent" to a plain setting (once).
+    await migrateStrictMode(local as unknown as StorageAreaLike).catch((error) => this.log('error', 'strict mode migration failed', String(error)));
     const stored = await local.get([SETTINGS_KEY, PAGE_KEY_SECRET_KEY]);
     this.settings = normalizeSettings(stored[SETTINGS_KEY]);
     let secret = typeof stored[PAGE_KEY_SECRET_KEY] === 'string' ? hexToBytes(stored[PAGE_KEY_SECRET_KEY]) : null;
@@ -272,7 +275,7 @@ export class Facet {
     this.pageKeyOf = createPageKeyCache(secret);
     await Promise.all([this.containers.load(), this.tabs.load()]);
     // Managed sites and the strict state first: the no-tab rule compiled below depends on both.
-    await this.swPolicy.load(await this.strict.load(this.settings.strictMode)).catch((error) => this.log('error', 'service-worker policy failed to load', String(error)));
+    await this.swPolicy.load(this.strict.load(this.settings.strictMode)).catch((error) => this.log('error', 'service-worker policy failed to load', String(error)));
     const liveTabList = await this.b.tabs.query({});
     const liveTabs = new Set(liveTabList.map((t) => t.id).filter((id): id is number => id !== undefined));
     const now = Date.now();
@@ -341,8 +344,8 @@ export class Facet {
         {
           tabIds: group.sort((a, b) => a - b),
           containerId,
-          // Pages see the name only when the user allows it (setting "Show container name to pages").
-          containerName: this.settings.showNameToPages ? container.name : undefined,
+          // Pages see the name only when the user allows it (setting "Show container name to pages"; Full edition only).
+          containerName: __FULL__ && this.settings.showNameToPages ? container.name : undefined,
           jar,
           topLevelSite: site,
           now,
@@ -367,9 +370,7 @@ export class Facet {
 
   async createContainer(input: { name: string; color?: ContainerColor }): Promise<Container> {
     await this.ready;
-    const created = await this.containers.create(input);
-    await this.strict.containerCreated();
-    return created;
+    return this.containers.create(input);
   }
 
   /**
@@ -378,18 +379,19 @@ export class Facet {
    */
   applySettings(next: Settings): Promise<void> {
     // Serialised: a caller awaiting this also waits for an application already under way.
-    this.settingsWork = this.settingsWork.then(async () => {
+    const work = this.settingsWork.then(async () => {
       await this.ready;
       const previous = this.settings;
       this.settings = { ...next };
-      if (previous.showNameToPages !== next.showNameToPages) await this.rules.invalidate(...this.tabs.containerIds());
+      if (__FULL__ && previous.showNameToPages !== next.showNameToPages) await this.rules.invalidate(...this.tabs.containerIds());
       if (previous.strictMode !== next.strictMode) {
         await this.strict.setEnabled(next.strictMode);
         await this.rules.invalidate(NO_TAB_KEY);
       }
       if (previous.restoreTabs !== next.restoreTabs) await this.restore.setEnabled(next.restoreTabs);
     });
-    return this.settingsWork;
+    this.settingsWork = work.catch(() => {}); // a failure reaches this caller only, not the next one
+    return work;
   }
 
   /**

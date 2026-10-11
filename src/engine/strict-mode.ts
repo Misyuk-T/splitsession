@@ -1,114 +1,98 @@
+import { readSettings, SETTINGS_KEY, storedSettings, type SettingKey } from '../core';
 import type { StorageAreaLike } from './storage/storage-area';
 import type { ServiceWorkerPolicy } from './sw-policy';
 
+/** `storage.local` key of the marker that the one-time move from "consent" to a plain setting is done. */
 export const STRICT_STATE_KEY = 'strictMode';
+const STATE_VERSION = 2;
 
-interface StoredState {
-  /** When the user agreed to remove and block service workers; null = not (yet) agreed since strict mode was enabled. */
-  consentAt: number | null;
-  /** The popup / options page should open the consent dialog by itself (first container, install, update, enabling). */
-  prompt: boolean;
-}
-
-/** What the interface needs to know about strict mode. */
+/** What the interface (and the tests) need to know about strict mode. */
 export interface StrictModeStatus {
   /** The `strictMode` setting. */
   enabled: boolean;
-  consentAt: number | null;
-  /** Enabled and agreed: every service worker was removed and registration is refused on every site. */
+  /** Every service worker of the profile was removed and registration is refused on every site (the shim's guard mode). */
   active: boolean;
-  /** Enabled, not agreed, and there are containers: show the persistent warning. */
-  needsConsent: boolean;
-  /** Open the consent dialog without being asked (cleared by "Not now" or by agreeing). */
-  prompt: boolean;
 }
 
-const normalize = (raw: unknown): StoredState => {
+/**
+ * Strict mode used to be a consent prompt (setting on by default, "active" only after the user agreed in a dialog).
+ * It is now a plain setting, off by default. Run once before the settings are read: an install that had agreed keeps
+ * strict mode on, every other install (never asked, "Not now", never answered) gets it off. Leaves `{v: 2}` in
+ * `storage.local.strictMode` (the old `{consentAt, prompt}` is dropped), so it never runs again.
+ */
+export async function migrateStrictMode(area: StorageAreaLike): Promise<void> {
+  const stored = await area.get([SETTINGS_KEY, STRICT_STATE_KEY]);
+  const state = stored[STRICT_STATE_KEY];
+  if (typeof state === 'object' && state !== null && (state as { v?: unknown }).v === STATE_VERSION) return;
+  const consentAt = typeof state === 'object' && state !== null ? (state as { consentAt?: unknown }).consentAt : null;
+  const consented = typeof consentAt === 'number' && Number.isFinite(consentAt);
+
+  const raw = stored[SETTINGS_KEY];
   const source = typeof raw === 'object' && raw !== null ? (raw as Record<string, unknown>) : {};
-  return {
-    consentAt: typeof source.consentAt === 'number' && Number.isFinite(source.consentAt) ? source.consentAt : null,
-    prompt: source.prompt === true,
-  };
-};
+  // The setting as the old code read it: on unless the user explicitly switched it off (the old default was on).
+  const explicitlyOff = source.strictMode === false && (Array.isArray(source.explicit) ? source.explicit.includes('strictMode') : true);
+  const on = consented && !explicitlyOff;
+
+  if (raw !== undefined || on) {
+    const read = readSettings(raw);
+    const explicit = new Set<SettingKey>(read.explicit);
+    if (on) explicit.add('strictMode');
+    else explicit.delete('strictMode'); // off follows the default (off)
+    await area.set({ [SETTINGS_KEY]: storedSettings({ ...read.settings, strictMode: on }, explicit) });
+  }
+  await area.set({ [STRICT_STATE_KEY]: { v: STATE_VERSION } });
+}
 
 /**
- * Strict mode (default on): a real-profile service worker can answer a container tab's first request on a site
- * before Facet gets to remove it (removal is asynchronous, the navigation is not). With the user's consent Facet
- * removes every service worker of the profile once and refuses new registrations on every site in every tab (the
- * shim's guard mode), so no such worker exists. Consent is explicit because it costs push notifications and offline
- * mode of every site in this profile. Until it is given, containers work with the per-site policy and the popup
- * shows a warning.
+ * Strict mode (setting `strictMode`, default off): a real-profile service worker can answer a container tab's first
+ * request on a site before Facet gets to remove it (removal is asynchronous, the navigation is not). On: Facet removes
+ * every service worker of the profile once and refuses new registrations on every site in every tab (the shim's guard
+ * mode), so no such worker exists. It costs push notifications and offline mode of every site in this profile, which
+ * is why it is off by default; the interface says so next to the switch. Off: the per-site policy only (workers are
+ * removed on sites used in containers, and every navigation Facet starts waits for that removal).
  */
 export class StrictMode {
-  private state: StoredState = { consentAt: null, prompt: false };
-  private enabled = true;
+  private enabled = false;
 
-  constructor(
-    private readonly area: StorageAreaLike,
-    private readonly sw: ServiceWorkerPolicy,
-    private readonly containerCount: () => number,
-    private readonly now: () => number = Date.now,
-  ) {}
+  constructor(private readonly sw: ServiceWorkerPolicy) {}
 
-  /** Reads the stored state; returns whether the guard should be on (call before `sw.load`). */
-  async load(enabled: boolean): Promise<boolean> {
+  /** Takes the setting at start; returns whether the guard should be on (call before `sw.load`). */
+  load(enabled: boolean): boolean {
     this.enabled = enabled;
-    this.state = normalize((await this.area.get(STRICT_STATE_KEY))[STRICT_STATE_KEY]);
     return this.active;
   }
 
   get active(): boolean {
-    return this.enabled && this.state.consentAt !== null;
+    return this.enabled;
   }
 
   status(): StrictModeStatus {
-    return {
-      enabled: this.enabled,
-      consentAt: this.state.consentAt,
-      active: this.active,
-      needsConsent: this.enabled && this.state.consentAt === null && this.containerCount() > 0,
-      prompt: this.enabled && this.state.consentAt === null && this.state.prompt,
-    };
+    return { enabled: this.enabled, active: this.active };
   }
 
-  /** The `strictMode` setting changed. Turning it off forgets the consent; turning it on asks again. */
+  /**
+   * Remove every service worker, then refuse registrations everywhere. Throws (and stays off) when the removal fails,
+   * so the caller can keep the setting off and tell the user.
+   */
+  async turnOn(): Promise<void> {
+    if (this.enabled) return;
+    await this.sw.removeAll();
+    this.enabled = true;
+    await this.sw.setGuard(true);
+  }
+
+  /** The `strictMode` setting changed (a no-op when `turnOn` already ran for it). */
   async setEnabled(enabled: boolean): Promise<void> {
     if (enabled === this.enabled) return;
-    this.enabled = enabled;
-    await this.save(enabled ? { consentAt: null, prompt: true } : { consentAt: null, prompt: false });
-    await this.sw.setGuard(this.active);
+    if (enabled) return this.turnOn();
+    this.enabled = false;
+    await this.sw.setGuard(false);
   }
 
-  /** The user agreed: remove every service worker, then refuse registrations everywhere. */
-  async grant(): Promise<StrictModeStatus> {
-    if (!this.enabled) throw new Error('strict mode is off');
-    await this.sw.removeAll();
-    await this.save({ consentAt: this.now(), prompt: false });
-    await this.sw.setGuard(true);
-    return this.status();
-  }
-
-  /** "Not now": stop opening the dialog by itself (the warning stays). */
-  async dismissPrompt(): Promise<StrictModeStatus> {
-    if (this.state.prompt) await this.save({ ...this.state, prompt: false });
-    return this.status();
-  }
-
-  /** A container was created: the first one makes the interface ask. */
-  async containerCreated(): Promise<void> {
-    if (this.enabled && this.state.consentAt === null && this.containerCount() === 1 && !this.state.prompt) {
-      await this.save({ ...this.state, prompt: true });
-    }
-  }
-
-  /** Install or update: ask again if containers exist without consent; with consent, sweep workers again. */
+  /** Install or update: on, sweep workers again. */
   async installed(reason: string): Promise<void> {
     if (reason !== 'install' && reason !== 'update') return;
-    if (this.active) {
-      await this.sw.removeAll().catch(() => {});
-      return;
-    }
-    if (this.enabled && this.containerCount() > 0 && !this.state.prompt) await this.save({ ...this.state, prompt: true });
+    if (this.active) await this.sw.removeAll().catch(() => {});
   }
 
   /**
@@ -117,10 +101,5 @@ export class StrictMode {
    */
   async startup(): Promise<void> {
     if (this.active) await this.sw.removeAll().catch(() => {});
-  }
-
-  private async save(next: StoredState): Promise<void> {
-    this.state = next;
-    await this.area.set({ [STRICT_STATE_KEY]: next });
   }
 }

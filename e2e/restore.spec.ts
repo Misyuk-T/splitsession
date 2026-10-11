@@ -243,7 +243,7 @@ test('closing a plain tab and quitting at once: the window’s container tabs st
     let api = apiOf(sw);
     await api('listContainers');
     const A = await api<{ id: string }>('createContainer', { name: 'Quit A' });
-    await api('grantStrictMode');
+    await api('updateSettings', { strictMode: true });
     const realSetup = await ctx.newPage();
     await realSetup.goto(setCookie('a.localhost', 'who=real'));
     await realSetup.close();
@@ -301,7 +301,7 @@ test('browser restart: container tabs return before their first request, groups 
     let api = apiOf(sw);
     await api('listContainers');
     const A = await api<{ id: string; name: string }>('createContainer', { name: 'Restart A' });
-    await api('grantStrictMode'); // the steady state of a user who said yes (no consent dialog over the popup)
+    await api('updateSettings', { strictMode: true }); // the isolation steady state these tests check
     const B = await api<{ id: string; name: string }>('createContainer', { name: 'Restart B' });
 
     const realSetup = await ctx.newPage();
@@ -444,11 +444,13 @@ test('browser restart: container tabs return before their first request, groups 
     const popup = await ctx.newPage();
     await popup.goto(ext('popup.html'));
     const banner = popup.getByTestId('restore-banner');
-    await expect(banner).toContainText('3 tabs from before the restart');
+    await expect(banner).toContainText('3 tabs waiting'); // one line; the tabs unfold on press
+    await banner.getByRole('button', { name: /3 tabs waiting/ }).click();
     await expect(banner.getByTestId('held-tab')).toHaveCount(3);
     await banner.getByRole('button', { name: 'Restore 1 container tab' }).click();
     await expect.poll(() => cookiesFor(log, '/whoami?w=y'), { timeout: 10_000 }).toEqual(['who=bob', 'who=bob']);
-    await banner.getByRole('button', { name: 'Open as ordinary tabs' }).click();
+    await banner.getByRole('button', { name: 'Waiting tabs options' }).click();
+    await popup.getByRole('menuitem', { name: 'Open as ordinary tabs' }).click();
     await expect.poll(() => cookiesFor(log, '/whoami?w=x'), { timeout: 10_000 }).toEqual(['who=real', 'who=real']);
     await expect(banner).toHaveCount(0);
     expect((await api<unknown[]>('listTabs')).length).toBe(6);

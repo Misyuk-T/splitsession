@@ -361,14 +361,11 @@ test.describe('visible agent activity', () => {
     expect(await overlayOf(facet, tabId)).toMatchObject({ present: true });
   });
 
-  test('the setting is in the options page and in the popup card menu', async ({ facet }) => {
+  test('the setting is in the options page (the popup row has no menu any more)', async ({ facet }) => {
     const { popup } = await turnOn(facet);
     expect(await facet.api<{ agentActivity: boolean }>('getSettings')).toMatchObject({ agentActivity: true });
-    await popup.getByRole('button', { name: 'Agent bridge options' }).click();
-    const item = popup.getByRole('menuitemcheckbox', { name: 'Show agent activity' });
-    await expect(item).toHaveAttribute('aria-checked', 'true');
-    await item.click();
-    await expect.poll(async () => (await facet.api<{ agentActivity: boolean }>('getSettings')).agentActivity).toBe(false);
+    await expect(popup.getByRole('button', { name: 'Agent bridge options' })).toHaveCount(0);
+    await facet.api('updateSettings', { agentActivity: false });
 
     const options = await facet.ctx.newPage();
     await options.goto(ext('options.html'));
@@ -394,6 +391,8 @@ test.describe('visible agent activity', () => {
 
   test('the popup lists the last five agent actions', async ({ facet }) => {
     const { popup } = await turnOn(facet);
+    await expect(popup.getByTestId('bridge-recent')).toHaveCount(0); // folded by default
+    await popup.getByRole('button', { name: /^Agent, / }).click();
     await expect(popup.getByTestId('bridge-recent-empty')).toBeVisible();
     mcp = await startMcp(facet);
     const page = await facet.plain(at('a.localhost', '/agent'));
@@ -416,7 +415,8 @@ test.describe('visible agent activity', () => {
     await expect(items).toHaveCount(5);
     await expect(items.nth(0)).toContainText('bridge_info');
     await expect(items.nth(4)).toContainText('get_tab_text'); // list_tabs, the oldest, scrolled off
-    await expect(popup.getByTestId('bridge-actions')).toHaveText('6 actions');
+    await expect(popup.getByTestId('bridge-actions')).toHaveText('6');
+    await expect(popup.getByTestId('bridge-recent').getByText('__session')).toHaveCount(0); // internal keepalives are never listed
   });
 
   test('the popup fits Chrome\'s 600px cap without scrolling: 6 containers, bridge on, 5 actions', async ({ facet }) => {
@@ -439,8 +439,9 @@ test.describe('visible agent activity', () => {
       await popup.setViewportSize({ width: 420, height: 600 }); // what Chrome gives a popup at most
       await popup.goto(ext(`popup.html?tab=${tabId}`));
       await expect(popup.getByTestId('container-row')).toHaveCount(6);
-      await expect(popup.getByTestId('bridge-recent-item')).toHaveCount(5);
       await expect(popup.getByTestId('bridge-card')).toHaveAttribute('data-status', 'connected');
+      await popup.getByRole('button', { name: /^Agent, / }).click(); // the worst case: the log unfolded
+      await expect(popup.getByTestId('bridge-recent-item')).toHaveCount(5);
       const metrics = await popup.evaluate(() => {
         const list = document.querySelector<HTMLElement>('[data-testid=container-list]')!;
         return {

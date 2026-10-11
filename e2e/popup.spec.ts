@@ -126,7 +126,7 @@ test.describe('popup', () => {
     await blank.goto('about:blank');
     const popup = await openPopup(facet, await facet.tabIdOf(blank));
     await expect(popup.getByRole('button', { name: /Reopen in/ })).toBeDisabled();
-    await expect(popup.getByText(/Only web pages/)).toBeVisible();
+    await expect(popup.getByRole('button', { name: /Reopen in/ })).toHaveAttribute('title', /Only web pages/);
     await popup.close();
     await blank.close();
   });
@@ -135,14 +135,14 @@ test.describe('popup', () => {
     const W = await facet.container('Work');
     const popup = await openPopup(facet);
     const row = popup.getByTestId('container-row').filter({ hasText: W.name });
-    await expect(row).toContainText('No tabs');
+    await expect(row.getByTestId('container-tabs')).toHaveCount(0); // no tabs: no number
     const opened = facet.ctx.waitForEvent('page');
     await row.getByRole('button', { name: `New tab in ${W.name}` }).click();
     const tab = await opened;
     await expect.poll(async () => (await facet.api<Array<{ containerId: string }>>('listTabs')).filter((t) => t.containerId === W.id).length).toBe(1);
     await expect.poll(() => popup.isClosed()).toBe(true); // a popup closes itself once its job is done
     const again = await openPopup(facet);
-    await expect(again.getByTestId('container-row').filter({ hasText: W.name })).toContainText('1 tab');
+    await expect(again.getByTestId('container-row').filter({ hasText: W.name }).getByTestId('container-tabs')).toHaveText('1');
     await again.close();
     // Typing an address into that tab keeps it isolated: here via navigation as the omnibox would do it.
     await tab.goto(at('a.localhost', '/login?user=blank-tab')); // 302 to /whoami
@@ -156,7 +156,7 @@ test.describe('popup', () => {
     const fresh = `Flow-${Date.now().toString(36)}`;
     await create(popup, fresh, 'Pink');
     const row = popup.getByTestId('container-row').filter({ hasText: fresh });
-    await expect(row).toContainText('No tabs');
+    await expect(row.getByTestId('container-tabs')).toHaveCount(0);
     const opened = facet.ctx.waitForEvent('page');
     await row.getByRole('button', { name: `New tab in ${fresh}` }).click();
     const tab = await opened;

@@ -28,12 +28,8 @@ export interface FacetApi {
    * workers, so none of the real profile answers the first request.
    */
   prepareNavigation(url: string): Promise<void>;
-  /** Strict mode: setting, consent, whether the interface must warn or ask. */
+  /** Strict mode: the setting, and whether every service worker is removed and refused (the guard is on). */
   getStrictMode(): Promise<StrictModeStatus>;
-  /** The user agreed in the consent dialog: remove every service worker of the profile and refuse new ones. */
-  grantStrictMode(): Promise<StrictModeStatus>;
-  /** "Not now" in the consent dialog: the warning stays, the dialog no longer opens by itself. */
-  dismissStrictModePrompt(): Promise<StrictModeStatus>;
   /** Container tabs that came back but could not be matched with certainty (the popup's banner). */
   getRestoreStatus(): Promise<RestoreStatus>;
   /**
@@ -67,8 +63,6 @@ export const API_METHODS = [
   'openInContainer',
   'prepareNavigation',
   'getStrictMode',
-  'grantStrictMode',
-  'dismissStrictModePrompt',
   'getRestoreStatus',
   'resolveHeldTabs',
   'forgetClosedTabs',
@@ -95,8 +89,6 @@ export function createApi(facet: Facet, getSessionRules: () => Promise<unknown[]
     openInContainer: (url, containerId, options) => facet.openInContainer(url, containerId, options),
     prepareNavigation: async (url) => (await facet.ready, facet.prepareNavigation(String(url))),
     getStrictMode: async () => (await facet.ready, facet.strict.status()),
-    grantStrictMode: async () => (await facet.ready, facet.strict.grant()),
-    dismissStrictModePrompt: async () => (await facet.ready, facet.strict.dismissPrompt()),
     getRestoreStatus: async () => (await facet.ready, facet.restore.status()),
     resolveHeldTabs: async (action, tabIds) => {
       await facet.ready;
