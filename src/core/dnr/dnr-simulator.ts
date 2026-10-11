@@ -2,7 +2,7 @@ import { registrableDomain } from '../site';
 import type { DnrRule } from './rule-compiler';
 
 /**
- * Test helper: a small model of declarativeNetRequest matching for the rule shapes Facet emits. Supports `tabIds`,
+ * Test helper: a small model of declarativeNetRequest matching for the rule shapes SplitSession emits. Supports `tabIds`,
  * `resourceTypes`, `requestDomains`, `initiatorDomains`, `domainType` (request vs initiator site; no initiator counts as
  * third-party, as measured in Chrome 156), `requestMethods`, `urlFilter` (`||`, `|`, `^`, `*`) and `regexFilter`; picks
  * the deciding allow/block/redirect rule by priority and Chrome's precedence, then the modifyHeaders rules an allow does not cancel. Not a full

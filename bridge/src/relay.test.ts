@@ -97,11 +97,11 @@ describe('relay', () => {
     const b = client();
     relay.handleClient(a.id, { id: 1, tool: 'list_tabs' });
     relay.handleClient(b.id, { id: 5, tool: 'list_tabs' });
-    relay.extensionGone('Facet agent bridge was switched off');
-    expect(a.got).toEqual([{ id: 1, ok: false, error: 'Facet agent bridge was switched off' }]);
-    expect(b.got).toEqual([{ id: 5, ok: false, error: 'Facet agent bridge was switched off' }]);
+    relay.extensionGone('SplitSession agent bridge was switched off');
+    expect(a.got).toEqual([{ id: 1, ok: false, error: 'SplitSession agent bridge was switched off' }]);
+    expect(b.got).toEqual([{ id: 5, ok: false, error: 'SplitSession agent bridge was switched off' }]);
     relay.handleClient(a.id, { id: 2, tool: 'list_tabs' });
-    expect(a.got[1]).toEqual({ id: 2, ok: false, error: 'Facet agent bridge was switched off' });
+    expect(a.got[1]).toEqual({ id: 2, ok: false, error: 'SplitSession agent bridge was switched off' });
   });
 
   it('ignores garbage from both sides and answers requests without a tool', () => {

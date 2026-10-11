@@ -135,8 +135,8 @@ export function BridgeSection() {
           <li>upload files from this computer into pages, answer their dialogs, and record their console and network.</li>
         </ul>
         <p>
-          For real clicks and key presses Facet uses Chrome’s debugger on the tab the agent works in, only while this is on.
-          Chrome then shows “Facet started debugging this browser”; its Cancel button takes the debugger back from Facet.
+          For real clicks and key presses SplitSession uses Chrome’s debugger on the tab the agent works in, only while this is on.
+          Chrome then shows “SplitSession started debugging this browser”; its Cancel button takes the debugger back from SplitSession.
           The debugger is never used to read or change cookies, so containers stay separate.
         </p>
         <p>
@@ -146,14 +146,14 @@ export function BridgeSection() {
           (tool, tab, site, result, never page content) under Diagnostics.
         </p>
         <p class="fx-secondary">
-          Set-up: run <code>{INSTALL_COMMAND}</code> in the Facet source folder, run the <code>claude mcp add …</code> command
+          Set-up: run <code>{INSTALL_COMMAND}</code> in the SplitSession source folder, run the <code>claude mcp add …</code> command
           it prints, then switch this on. Details: docs/agents.md in the repository.
         </p>
       </div>
       <div class="opt-card">
         <h3>Run JavaScript on pages that forbid it</h3>
         <p class="fx-secondary">
-          When Facet cannot use the debugger on a tab, a site’s Content-Security-Policy can block the “run_js” tool. As an optional fallback Facet can use Chrome’s
+          When SplitSession cannot use the debugger on a tab, a site’s Content-Security-Policy can block the “run_js” tool. As an optional fallback SplitSession can use Chrome’s
           userScripts permission, which those policies do not cover. Chrome also needs “Allow User Scripts” switched on
           in this extension’s details page.
         </p>

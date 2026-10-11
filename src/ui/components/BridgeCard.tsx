@@ -86,7 +86,7 @@ export function BridgeCard({ layout }: { layout: 'popup' | 'options' }) {
     <>
       {on && status === 'host-missing' && (
         <div class="fx-bridge__help" data-testid="bridge-install">
-          <p>Run this in the Facet source folder, then press “Check again”:</p>
+          <p>Run this in the SplitSession source folder, then press “Check again”:</p>
           <div class="fx-bridge__cmd">
             <code>{INSTALL_COMMAND}</code>
             <Button small onClick={() => void copy()}>
@@ -111,7 +111,7 @@ export function BridgeCard({ layout }: { layout: 'popup' | 'options' }) {
       )}
       {on && status === 'error' && (
         <div class="fx-bridge__help">
-          <p>{state?.error ?? 'The host stopped.'} Facet keeps trying.</p>
+          <p>{state?.error ?? 'The host stopped.'} SplitSession keeps trying.</p>
           <Button small onClick={() => void retry()}>
             Check again
           </Button>

@@ -782,7 +782,7 @@ function patchServiceWorker(W: any, h: Helpers): void {
   const SWC = W.ServiceWorkerContainer?.prototype;
   if (!SWC) return;
   h.replaceMethod(SWC, 'register', function () {
-    return W.Promise.reject(new W.DOMException('Service workers are disabled by Facet (containers).', 'SecurityError'));
+    return W.Promise.reject(new W.DOMException('Service workers are disabled by SplitSession (containers).', 'SecurityError'));
   });
 }
 

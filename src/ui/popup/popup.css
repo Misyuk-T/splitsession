@@ -35,7 +35,7 @@ body:has(.fx-backdrop) { min-height: 300px; }
 .popup__row > .fx-btn--icon { opacity: 0; }
 .popup__row:hover > .fx-btn--icon, .popup__row:focus-within > .fx-btn--icon, .popup__row > .fx-btn--icon[aria-expanded='true'] { opacity: 1; }
 
-/* Tabs from before a restart that Facet could not match with certainty: one line, details unfold. */
+/* Tabs from before a restart that SplitSession could not match with certainty: one line, details unfold. */
 .popup__held { border-radius: var(--fx-radius); background: var(--fx-surface); }
 .popup__heldline { display: flex; align-items: center; gap: 4px; min-height: 40px; padding: 4px 4px 4px 0; }
 .popup__heldmain { flex: 1; min-width: 0; display: flex; align-items: center; gap: 10px; align-self: stretch; padding: 0 10px 0 12px; border: 0; border-radius: var(--fx-radius-sm); background: transparent; text-align: left; font-size: var(--fx-text-main); }

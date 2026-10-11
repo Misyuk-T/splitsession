@@ -103,7 +103,7 @@ export function Popup() {
   if (loadError) {
     return (
       <main class="popup">
-        <p class="fx-notice fx-notice--error" role="alert">Facet could not start: {loadError}</p>
+        <p class="fx-notice fx-notice--error" role="alert">SplitSession could not start: {loadError}</p>
         <Button onClick={() => void refresh()}>Try again</Button>
       </main>
     );
@@ -189,7 +189,7 @@ export function Popup() {
     <main class="popup">
       <header class="popup__head">
         <Logo size={24} />
-        <h1 class="popup__title">Facet</h1>
+        <h1 class="popup__title">SplitSession</h1>
         <span class="popup__spacer" />
         <Button variant="ghost" small icon aria-label="Settings" title="Settings" onClick={() => void browser.runtime.openOptionsPage()}>
           <IconSettings />
@@ -215,7 +215,7 @@ export function Popup() {
                 variant="primary"
                 disabled={busy}
                 aria-label={`Restore ${restore!.oneClick === 1 ? '1 container tab' : `${restore!.oneClick} container tabs`}`}
-                title="Put the tabs Facet is sure about back in their containers"
+                title="Put the tabs SplitSession is sure about back in their containers"
                 onClick={() => void resolveHeld('restore')}
               >
                 Restore

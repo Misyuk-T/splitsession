@@ -1,4 +1,4 @@
-/** The Facet mark: three stacked cards in container colours, the front one with a facet highlight. Same drawing as assets/icon.svg. */
+/** The SplitSession mark: three stacked cards in container colours, the front one with a facet highlight. Same drawing as assets/icon.svg. */
 export function Logo({ size = 24 }: { size?: number }) {
   return (
     <svg width={size} height={size} viewBox="0 0 128 128" aria-hidden="true">

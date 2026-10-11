@@ -6,18 +6,18 @@ import { defineConfig } from 'wxt';
 /**
  * Two editions from one codebase (docs/decisions.md, "Two editions"). `FACET_EDITION=lite` selects Lite; anything else is
  * Full, the author's daily build and the default of `pnpm build`, `pnpm dev` and the e2e suite. Name and description per
- * edition live here and nowhere else (the names are placeholders until the final one is picked).
+ * edition live here and nowhere else (the product was called Facet until 2026-10-11; see docs/decisions.md, "Rename").
  */
 const edition = process.env.FACET_EDITION === 'lite' ? 'lite' : 'full';
 const full = edition === 'full';
 const EDITIONS = {
   full: {
-    name: 'Facet (Full)',
-    description: 'Containers for Chrome: several accounts of the same site open side by side in one profile. Includes the local AI-agent bridge (off by default).',
+    name: 'SplitSession (Full)',
+    description: 'Use several accounts of the same site side by side in one Chrome profile. Includes a local AI-agent bridge (off by default).',
   },
   lite: {
-    name: 'Facet',
-    description: 'Containers for Chrome: several accounts of the same site open side by side in one profile.',
+    name: 'SplitSession: Multiple Logins per Site',
+    description: 'Use several accounts of the same site side by side in one Chrome profile.',
   },
 } as const;
 
@@ -33,7 +33,7 @@ export default defineConfig({
   srcDir: 'src',
   // Full keeps `.output/chrome-mv3` (the folder loaded unpacked in Chrome); Lite builds into `.output/lite/chrome-mv3`.
   outDir: full ? '.output' : '.output/lite',
-  zip: { artifactTemplate: `facet-${edition}-{{version}}.zip` },
+  zip: { artifactTemplate: `splitsession-${edition}-{{version}}.zip` },
   vite: () => ({
     plugins: [
       preact(),
@@ -43,7 +43,7 @@ export default defineConfig({
         ? []
         : [
             {
-              name: 'facet-lite-drop-full-only-css',
+              name: 'splitsession-lite-drop-full-only-css',
               enforce: 'pre' as const,
               resolveId: (id: string) => (id.endsWith('/bridge-card.css') ? '\0facet-empty-css.css' : undefined),
               load: (id: string) => (id === '\0facet-empty-css.css' ? '' : undefined),
@@ -74,6 +74,7 @@ export default defineConfig({
   },
   manifest: {
     name: EDITIONS[edition].name,
+    short_name: 'SplitSession',
     description: EDITIONS[edition].description,
     ...(extensionKey ? { key: extensionKey } : {}),
     minimum_chrome_version: '119',
@@ -89,7 +90,7 @@ export default defineConfig({
       'alarms',
       // Container tabs that come back: which recently-closed tab or window was just reopened (docs/decisions.md).
       'sessions',
-      // Full only. Agent bridge (off by default): talk to the local native host `com.facet.bridge` (docs/agents.md).
+      // Full only. Agent bridge (off by default): talk to the local native host `com.splitsession.bridge` (docs/agents.md).
       ...(full ? ['nativeMessaging'] : []),
       // Full only. Agent bridge "full hands": trusted input, accessibility snapshots, screenshots of background tabs,
       // console and network capture through the Chrome DevTools Protocol. Attached only while the bridge is on and a tool runs.
@@ -101,7 +102,7 @@ export default defineConfig({
     // Full only: userScripts is for run_js on pages whose Content-Security-Policy forbids eval; asked for in the options page.
     optional_permissions: ['cookies', ...(full ? (['userScripts'] as const) : [])],
     icons: iconSet,
-    action: { default_title: 'Facet', default_icon: iconSet },
+    action: { default_title: 'SplitSession', default_icon: iconSet },
     // Static default answer for the beacon (`{}` = no container) so the content script never reaches the network,
     // even before the service worker has started. Per-tab (session) and managed-site (dynamic) rules override it.
     declarative_net_request: {

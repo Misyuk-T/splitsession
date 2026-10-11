@@ -46,7 +46,7 @@ export function startPageName(root: HTMLElement, initialName: string): void {
     if (wanted !== current) {
       if (!budgetLeft()) {
         enabled = false; // the page is fighting us
-        console.debug('[facet] title prefix disabled on this page: the page keeps rewriting its title');
+        console.debug('[splitsession] title prefix disabled on this page: the page keeps rewriting its title');
         return;
       }
       document.title = wanted;

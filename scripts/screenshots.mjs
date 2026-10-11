@@ -74,7 +74,7 @@ try {
   await mcp.connect(
     new StdioClientTransport({
       command: process.execPath,
-      args: [resolve(root, 'bridge/dist/facet-bridge.mjs'), 'mcp'],
+      args: [resolve(root, 'bridge/dist/splitsession-bridge.mjs'), 'mcp'],
       env: { ...process.env, FACET_BRIDGE_SOCKET: socketPath, FACET_BRIDGE_MANIFEST_DIRS: nativeHostsDir },
       stderr: 'pipe',
     }),

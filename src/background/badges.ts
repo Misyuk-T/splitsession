@@ -46,9 +46,9 @@ export class BadgeIndicator {
       }
       const notes = [
         ...(on ? ['agent bridge ON: an agent has full access to your tabs'] : []),
-        ...(held > 0 ? [`${held === 1 ? '1 tab is' : `${held} tabs are`} waiting for you to choose a container (open Facet)`] : []),
+        ...(held > 0 ? [`${held === 1 ? '1 tab is' : `${held} tabs are`} waiting for you to choose a container (open SplitSession)`] : []),
       ];
-      await this.action.setTitle?.({ title: notes.length > 0 ? `Facet — ${notes.join('; ')}` : 'Facet' });
+      await this.action.setTitle?.({ title: notes.length > 0 ? `SplitSession — ${notes.join('; ')}` : 'SplitSession' });
     } catch {
       /* the action API is unavailable (tests) */
     }
@@ -65,7 +65,7 @@ export class BadgeIndicator {
         await this.action.setBadgeText({ tabId, text: '!' });
         await this.action.setBadgeBackgroundColor({ tabId, color: HELD_COLOR });
         await this.action.setBadgeTextColor?.({ tabId, color: readableTextColor(HELD_COLOR) });
-        await this.action.setTitle?.({ tabId, title: 'Facet — this tab is waiting for you to choose its container' });
+        await this.action.setTitle?.({ tabId, title: 'SplitSession — this tab is waiting for you to choose its container' });
         return;
       }
       if (!container) {

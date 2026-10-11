@@ -97,7 +97,7 @@ describe('CDP sessions', () => {
     urls.set(2, 'chrome://settings/');
     await expect(cdp.use(2, async () => 0)).rejects.toThrow(/chrome:\/\/ pages belong to the browser/);
     urls.set(3, 'chrome-extension://abc/options.html');
-    await expect(cdp.use(3, async () => 0)).rejects.toThrow(/extension pages \(Facet's own included\)/);
+    await expect(cdp.use(3, async () => 0)).rejects.toThrow(/extension pages \(SplitSession's own included\)/);
     urls.set(4, 'https://chromewebstore.google.com/detail/x');
     await expect(cdp.use(4, async () => 0)).rejects.toThrow(/Web Store/);
     expect(dbg.attach).not.toHaveBeenCalled();
@@ -136,7 +136,7 @@ describe('CDP sessions', () => {
     await cdp.use(8, async () => 0);
     dbg.detachByChrome({ tabId: 8 }, 'canceled_by_user');
     expect(cdp.isAttached(8)).toBe(false);
-    await expect(cdp.use(8, async () => 0)).rejects.toThrow(/the user cancelled Facet's debugging of this tab.*60 s/);
+    await expect(cdp.use(8, async () => 0)).rejects.toThrow(/the user cancelled SplitSession's debugging of this tab.*60 s/);
     t += 61_000;
     await cdp.use(8, async () => 0);
     expect(dbg.attach).toHaveBeenCalledTimes(2);
@@ -189,9 +189,9 @@ describe('CDP sessions', () => {
     dbg.emit({ tabId: 1 }, 'Network.requestWillBeSent', { requestId: 'r2', type: 'Fetch', request: { method: 'POST', url: 'https://a.test/api', headers: { Authorization: 'Bearer x' } } });
     dbg.emit({ tabId: 1 }, 'Network.loadingFailed', { requestId: 'r2', errorText: 'net::ERR_FAILED' });
     const [first, second, third] = cdp.record(1).network;
-    expect(first).toMatchObject({ url: 'https://a.test/', status: 302, requestHeaders: { Cookie: '(hidden by Facet)', Accept: 'text/html' } });
-    expect(second).toMatchObject({ url: 'https://a.test/home', status: 200, bytes: 512, responseHeaders: { 'Set-Cookie': '(hidden by Facet)', 'content-type': 'text/html' } });
-    expect(third).toMatchObject({ method: 'POST', failed: 'net::ERR_FAILED', requestHeaders: { Authorization: '(hidden by Facet)' } });
+    expect(first).toMatchObject({ url: 'https://a.test/', status: 302, requestHeaders: { Cookie: '(hidden by SplitSession)', Accept: 'text/html' } });
+    expect(second).toMatchObject({ url: 'https://a.test/home', status: 200, bytes: 512, responseHeaders: { 'Set-Cookie': '(hidden by SplitSession)', 'content-type': 'text/html' } });
+    expect(third).toMatchObject({ method: 'POST', failed: 'net::ERR_FAILED', requestHeaders: { Authorization: '(hidden by SplitSession)' } });
     expect(JSON.stringify(cdp.record(1))).not.toMatch(/secret|sid=new|Bearer/);
     // Events of a tab that is not attached are ignored.
     dbg.emit({ tabId: 9 }, 'Network.requestWillBeSent', { requestId: 'x', request: { url: 'https://b.test/' } });
@@ -272,7 +272,7 @@ describe('CDP sessions', () => {
   it('turns Chrome\'s error JSON into a sentence, and console arguments into text', () => {
     expect(cdpMessage(new Error('{"code":-32000,"message":"No node with given id found"}'))).toBe('No node with given id found');
     expect(cdpMessage(new Error('plain'))).toBe('plain');
-    expect(redactHeaders({ 'X-CSRF-Token': 'abc', Accept: '*/*' })).toEqual({ 'X-CSRF-Token': '(hidden by Facet)', Accept: '*/*' });
+    expect(redactHeaders({ 'X-CSRF-Token': 'abc', Accept: '*/*' })).toEqual({ 'X-CSRF-Token': '(hidden by SplitSession)', Accept: '*/*' });
     expect(remoteText({ type: 'number', value: 3 })).toBe('3');
     expect(remoteText({ type: 'object', subtype: 'array', preview: { properties: [{ name: '0', value: '1' }], overflow: true } })).toBe('[1, …]');
     expect(remoteText({ type: 'function', description: 'function f() {}' })).toBe('function f() {}');

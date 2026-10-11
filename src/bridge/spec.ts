@@ -2,7 +2,7 @@ import { TOOL_TIMEOUT_MS } from './protocol';
 import type { Schema } from './validate';
 
 /**
- * The tools of the Facet agent bridge: one list for the MCP server (names, descriptions, input schemas) and the
+ * The tools of the SplitSession agent bridge: one list for the MCP server (names, descriptions, input schemas) and the
  * extension (validation). Every tool works on tab IDs as Chrome reports them; `list_tabs` is the starting point.
  */
 export interface ToolSpec {
@@ -50,7 +50,7 @@ export const TOOLS: readonly ToolSpec[] = [
     title: 'Which Chrome profile',
     readOnly: true,
     description:
-      'Which Chrome profile these tools are connected to: the profile label the user set in the Facet options (null when none), how many windows, tabs and containers it has, and the extension version. The user may have several Chrome profiles but only ONE holds the bridge at a time; when the tabs are not the ones you expected, check this and ask the user to switch the bridge off in the other profile.',
+      'Which Chrome profile these tools are connected to: the profile label the user set in the SplitSession options (null when none), how many windows, tabs and containers it has, and the extension version. The user may have several Chrome profiles but only ONE holds the bridge at a time; when the tabs are not the ones you expected, check this and ask the user to switch the bridge off in the other profile.',
     inputSchema: obj({}),
   },
   {
@@ -58,7 +58,7 @@ export const TOOLS: readonly ToolSpec[] = [
     title: 'List containers',
     readOnly: true,
     description:
-      'List the Facet containers (several logged-in accounts of one site in one Chrome profile). Returns id, name, colour and number of open tabs for each.',
+      'List the SplitSession containers (several logged-in accounts of one site in one Chrome profile). Returns id, name, colour and number of open tabs for each.',
     inputSchema: obj({}),
   },
   {
@@ -66,7 +66,7 @@ export const TOOLS: readonly ToolSpec[] = [
     title: 'List tabs',
     readOnly: true,
     description:
-      'List the open tabs of ALL Chrome windows with the Facet container each one belongs to (container is null for an ordinary tab). Titles of container tabs may carry a "[container] " prefix if the user enabled it. Use the returned tabId with every other tab tool.',
+      'List the open tabs of ALL Chrome windows with the SplitSession container each one belongs to (container is null for an ordinary tab). Titles of container tabs may carry a "[container] " prefix if the user enabled it. Use the returned tabId with every other tab tool.',
     inputSchema: obj({
       windowId: { type: 'integer', minimum: 0, description: 'Only the tabs of this window.' },
       containerId: { type: 'string', minLength: 1, maxLength: 64, description: 'Only the tabs of this container (name or ID).' },
@@ -77,7 +77,7 @@ export const TOOLS: readonly ToolSpec[] = [
     title: 'Open a page in a container',
     readOnly: false,
     description:
-      'Open an http(s) page in a NEW tab inside a Facet container. The tab is assigned to the container before its first request, so the page loads with that container\'s cookies (that account\'s logins) and nothing from the regular profile. An unknown container is an error unless createIfMissing is true.',
+      'Open an http(s) page in a NEW tab inside a SplitSession container. The tab is assigned to the container before its first request, so the page loads with that container\'s cookies (that account\'s logins) and nothing from the regular profile. An unknown container is an error unless createIfMissing is true.',
     inputSchema: obj(
       {
         url: { type: 'string', minLength: 1, maxLength: 8192, description: 'http or https address.' },
@@ -110,7 +110,7 @@ export const TOOLS: readonly ToolSpec[] = [
     title: 'Navigate a tab',
     readOnly: false,
     description:
-      'Navigate an existing tab to an address, keeping its container. A Facet domain rule can still move the tab to another container by replacing it with a new tab (new tabId): call list_tabs afterwards when the container matters.',
+      'Navigate an existing tab to an address, keeping its container. A SplitSession domain rule can still move the tab to another container by replacing it with a new tab (new tabId): call list_tabs afterwards when the container matters.',
     inputSchema: obj({ tabId, url: { type: 'string', minLength: 1, maxLength: 8192 }, wait }, ['tabId', 'url']),
   },
   {
@@ -350,7 +350,7 @@ export const TOOLS: readonly ToolSpec[] = [
         code: { type: 'string', minLength: 1, maxLength: 200000 },
         awaitPromise: { type: 'boolean', default: true },
         returnByValue: { type: 'boolean', default: true },
-        world: { type: 'string', enum: ['MAIN', 'ISOLATED'], default: 'MAIN', description: 'Only MAIN is supported (see the Facet docs).' },
+        world: { type: 'string', enum: ['MAIN', 'ISOLATED'], default: 'MAIN', description: 'Only MAIN is supported (see the SplitSession docs).' },
         maxChars: maxChars(20_000),
       },
       ['tabId', 'code'],
@@ -369,7 +369,7 @@ export const TOOLS: readonly ToolSpec[] = [
     title: 'Console messages',
     readOnly: true,
     description:
-      'Console output and uncaught errors of a tab, recorded while `watch` runs on it (Facet records the console only then: enabling it is visible to pages that look for debuggers). Browser messages (CSP violations, failed loads) are also recorded during other tools. Each entry has a seq; pass since = the last seq you saw to get only newer ones.',
+      'Console output and uncaught errors of a tab, recorded while `watch` runs on it (SplitSession records the console only then: enabling it is visible to pages that look for debuggers). Browser messages (CSP violations, failed loads) are also recorded during other tools. Each entry has a seq; pass since = the last seq you saw to get only newer ones.',
     inputSchema: obj(
       {
         tabId,
@@ -385,7 +385,7 @@ export const TOOLS: readonly ToolSpec[] = [
     title: 'Network requests',
     readOnly: true,
     description:
-      'Requests a tab made while Facet was attached to it (during any tool, the 5 s after it, and the whole time `watch` runs): method, url, type, status, size, timing, failure. Use watch first to record a whole flow. filter keeps the URLs containing that text. Cookie and authorization headers are never shown (includeHeaders shows the rest). Each entry has a seq for since.',
+      'Requests a tab made while SplitSession was attached to it (during any tool, the 5 s after it, and the whole time `watch` runs): method, url, type, status, size, timing, failure. Use watch first to record a whole flow. filter keeps the URLs containing that text. Cookie and authorization headers are never shown (includeHeaders shows the rest). Each entry has a seq for since.',
     inputSchema: obj(
       {
         tabId,
@@ -402,7 +402,7 @@ export const TOOLS: readonly ToolSpec[] = [
     title: 'Watch a tab (console and network)',
     readOnly: true,
     description:
-      'Keep Facet attached to a tab for some minutes (default 5, at most 30) and record its console and network for console_messages / network_requests, e.g. to debug the user\'s own site. Chrome shows its "started debugging this browser" bar while it lasts. stop: true ends it.',
+      'Keep SplitSession attached to a tab for some minutes (default 5, at most 30) and record its console and network for console_messages / network_requests, e.g. to debug the user\'s own site. Chrome shows its "started debugging this browser" bar while it lasts. stop: true ends it.',
     inputSchema: obj({ tabId, minutes: { type: 'integer', minimum: 1, maximum: 30, default: 5 }, stop: { type: 'boolean', default: false } }, ['tabId']),
   },
   {
@@ -410,7 +410,7 @@ export const TOOLS: readonly ToolSpec[] = [
     title: 'Resize the viewport',
     readOnly: false,
     description:
-      'Make the page think its viewport is width x height CSS pixels (e.g. 390 x 844 for a phone), without touching the window. It lasts until clear: true, the bridge is switched off, or the tab closes (Facet stays attached meanwhile).',
+      'Make the page think its viewport is width x height CSS pixels (e.g. 390 x 844 for a phone), without touching the window. It lasts until clear: true, the bridge is switched off, or the tab closes (SplitSession stays attached meanwhile).',
     inputSchema: obj(
       {
         tabId,

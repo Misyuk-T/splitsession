@@ -1,6 +1,6 @@
-/** Messages of the Facet agent bridge. Shared by the extension, the native host and the MCP server. */
+/** Messages of the SplitSession agent bridge. Shared by the extension, the native host and the MCP server. */
 
-export const HOST_NAME = 'com.facet.bridge';
+export const HOST_NAME = 'com.splitsession.bridge';
 /** Fixed by the manifest key (docs/development.md); pinned in the host manifest's `allowed_origins`. */
 export const EXTENSION_ID = 'hapfikidacgfgnnajkgnaednpgnhmffk';
 export const EXTENSION_ORIGIN = `chrome-extension://${EXTENSION_ID}/`;
@@ -12,7 +12,7 @@ export const TOOL_TIMEOUT_MS = 15_000;
 export const HOST_TIMEOUT_MS = TOOL_TIMEOUT_MS + 5_000;
 
 /** The error a tool gets when the switch was turned off (or the connection dropped) while it was still running. */
-export const SWITCHED_OFF = 'the Facet agent bridge was switched off; the action was not performed';
+export const SWITCHED_OFF = 'the SplitSession agent bridge was switched off; the action was not performed';
 
 /** What a tool returns: MCP content blocks, built by the extension. */
 export type ContentBlock = { type: 'text'; text: string } | { type: 'image'; data: string; mimeType: string };

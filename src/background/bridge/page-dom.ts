@@ -3,7 +3,7 @@
  * (ISOLATED world, one frame per call), so it must be SELF-CONTAINED like the functions in inject.ts: no imports, nothing
  * outside its own body, and no `instanceof` on page nodes (an iframe's nodes belong to another realm).
  *
- * Why not the debugger: Chrome shows a "Facet started debugging this browser" bar for as long as `chrome.debugger` is
+ * Why not the debugger: Chrome shows a "SplitSession started debugging this browser" bar for as long as `chrome.debugger` is
  * attached, and the page content jumps down and up with it. Reading a page (`snapshot`) and locating, focusing, scrolling to or
  * waiting for an element need nothing more than the DOM, so they live here; only trusted input, uploads, `run_js`,
  * background screenshots, dialogs, watch and the viewport override use the debugger (router.ts decides).

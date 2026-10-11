@@ -27,7 +27,7 @@ export class FacetEvents {
       try {
         listener(event);
       } catch (error) {
-        console.error('[facet] event listener failed', error);
+        console.error('[splitsession] event listener failed', error);
       }
     }
   }

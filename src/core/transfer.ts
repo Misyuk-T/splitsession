@@ -68,17 +68,17 @@ const fail = (error: string): ParseOutcome => ({ ok: false, error });
 export function parseExport(input: string | unknown): ParseOutcome {
   let data: unknown = input;
   if (typeof input === 'string') {
-    if (input.length > MAX_IMPORT_BYTES) return fail('The file is too large to be a Facet export.');
+    if (input.length > MAX_IMPORT_BYTES) return fail('The file is too large to be a SplitSession export.');
     try {
       data = JSON.parse(input);
     } catch {
       return fail('This is not valid JSON.');
     }
   }
-  if (typeof data !== 'object' || data === null || Array.isArray(data)) return fail('Not a Facet export file.');
+  if (typeof data !== 'object' || data === null || Array.isArray(data)) return fail('Not a SplitSession export file.');
   const d = data as Record<string, unknown>;
-  if (d.format !== EXPORT_FORMAT) return fail('Not a Facet export file (wrong "format").');
-  if (d.version !== EXPORT_VERSION) return fail(`Unsupported export version ${JSON.stringify(d.version)}; this Facet reads version ${EXPORT_VERSION}.`);
+  if (d.format !== EXPORT_FORMAT) return fail('Not a SplitSession export file (wrong "format").');
+  if (d.version !== EXPORT_VERSION) return fail(`Unsupported export version ${JSON.stringify(d.version)}; this SplitSession reads version ${EXPORT_VERSION}.`);
   if (!Array.isArray(d.containers)) return fail('The export has no "containers" list.');
   if (!Array.isArray(d.rules)) return fail('The export has no "rules" list.');
   if (d.containers.length > MAX_CONTAINERS) return fail(`Too many containers (more than ${MAX_CONTAINERS}).`);

@@ -4,7 +4,7 @@ import { facetApi } from '../../engine/api-client';
 import { describeError } from '../format';
 
 /**
- * state.html: what Facet knows, as plain text for AI agents (`get_page_text`) and for debugging: containers, the open
+ * state.html: what SplitSession knows, as plain text for AI agents (`get_page_text`) and for debugging: containers, the open
  * container tabs, and ready-to-copy ways to open a URL in a container.
  */
 
@@ -39,7 +39,7 @@ async function render(): Promise<void> {
     const sampleUrl = 'https://example.com/';
 
     const out: Node[] = [];
-    out.push(el('h1', 'Facet state'));
+    out.push(el('h1', 'SplitSession state'));
     out.push(el('p', `Extension ID: ${extensionId}. ${containers.length} containers, ${registry.length} open container tabs. Generated ${new Date().toISOString()}.`));
 
     out.push(el('h2', `Containers (${containers.length})`));
@@ -78,14 +78,14 @@ async function render(): Promise<void> {
     out.push(el('h2', 'How to open a page in a container'));
     out.push(el('p', 'Navigate a tab to this address. The tab is put in the container before its first request. An unknown container name creates the container.'));
     out.push(el('pre', `${open}?container=${encodeURIComponent(sample)}&url=${encodeURIComponent(sampleUrl)}`));
-    out.push(el('p', `Or add a marker to any address (the container must already exist; the marker is stripped, one request goes out before Facet sees it):`));
+    out.push(el('p', `Or add a marker to any address (the container must already exist; the marker is stripped, one request goes out before SplitSession sees it):`));
     out.push(el('pre', `${sampleUrl}#ctr=${encodeURIComponent(sample)}`));
     out.push(el('p', 'Container tabs show the container in three places: the page title starts with "[name] ", the top document has the attribute data-ctr="name" on <html>, and the toolbar badge shows its initials.'));
     out.push(el('p', `container = a container name or id. url = a full http(s) address, URL-encoded. ${open} is the open page.`, 'muted'));
 
     root.replaceChildren(...out);
   } catch (error) {
-    root.replaceChildren(el('h1', 'Facet state'), el('p', `Could not read Facet's state: ${describeError(error)}`));
+    root.replaceChildren(el('h1', 'SplitSession state'), el('p', `Could not read SplitSession's state: ${describeError(error)}`));
   }
 }
 

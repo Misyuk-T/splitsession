@@ -1,7 +1,7 @@
 import { homedir, platform } from 'node:os';
 import path from 'node:path';
 
-export const HOST_MANIFEST_FILE = 'com.facet.bridge.json';
+export const HOST_MANIFEST_FILE = 'com.splitsession.bridge.json';
 export const SOCKET_ENV = 'FACET_BRIDGE_SOCKET';
 /** Colon-separated directories searched for the host manifest (tests; default: every supported browser). */
 export const MANIFEST_DIRS_ENV = 'FACET_BRIDGE_MANIFEST_DIRS';
@@ -13,7 +13,7 @@ const appSupport = (home: string) => (platform() === 'darwin' ? path.join(home, 
 
 /** Directory of the Unix socket: private to the user (0700). */
 export function socketDir(home: string = homedir()): string {
-  return path.join(appSupport(home), 'Facet');
+  return path.join(appSupport(home), 'SplitSession');
 }
 
 /**

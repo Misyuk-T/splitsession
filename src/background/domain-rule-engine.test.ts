@@ -14,7 +14,7 @@ function setup(rules: DomainRule[]) {
     rules: () => rules,
     containerOf: (tabId) => tabs.get(tabId) ?? null,
     markerContainer: async ({ tabId, url }) => (url.includes('#ctr=work') && tabs.get(tabId) == null ? 'work' : null),
-    // What Facet does: a fresh tab, placed in the container (tab-assigned marks the placement), then the callback,
+    // What SplitSession does: a fresh tab, placed in the container (tab-assigned marks the placement), then the callback,
     // then the navigation; the old tab is closed.
     replaceTab: async (tabId, containerId, url, onCreated) => {
       const fresh = nextTabId++;
@@ -125,16 +125,16 @@ describe('DomainRuleEngine', () => {
     expect(await nav(1, 'https://github.com/')).toBe('moved');
   });
 
-  it('an explicit #ctr marker Facet honours is left to the engine and exempts the repeated navigation', async () => {
+  it('an explicit #ctr marker SplitSession honours is left to the engine and exempts the repeated navigation', async () => {
     const { nav, events, tabs } = setup([always, ask]);
     expect(await nav(1, 'https://www.reddit.com/#ctr=work')).toBe('skipped');
     expect(events).toEqual([]);
-    tabs.set(1, 'work'); // Facet assigned it and navigates to the clean URL
+    tabs.set(1, 'work'); // SplitSession assigned it and navigates to the clean URL
     expect(await nav(1, 'https://www.reddit.com/')).toBe('skipped');
     expect(events).toEqual([]);
   });
 
-  it('a #ctr marker Facet ignores (unknown name, tab already in a container, started by a page) is judged like any URL', async () => {
+  it('a #ctr marker SplitSession ignores (unknown name, tab already in a container, started by a page) is judged like any URL', async () => {
     const { nav, events, tabs } = setup([always, ask]);
     expect(await nav(2, 'https://www.reddit.com/#ctr=ghost')).toBe('asked');
     tabs.set(3, 'home');
@@ -148,7 +148,7 @@ describe('DomainRuleEngine', () => {
     engine.noteChildOfContainerTab(2, 1);
     // The child exists but is not assigned yet.
     expect(await nav(2, 'https://github.com/login/oauth')).toBe('skipped');
-    // Assigned (the registry says so before Facet's event fires): still not judged, and so are its next hops.
+    // Assigned (the registry says so before SplitSession's event fires): still not judged, and so are its next hops.
     tabs.set(2, 'home');
     expect(await nav(2, 'https://github.com/login/oauth')).toBe('skipped');
     expect(await nav(2, 'https://github.com/callback')).toBe('skipped');

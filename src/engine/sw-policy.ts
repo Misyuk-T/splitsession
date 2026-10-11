@@ -20,7 +20,7 @@ export interface ServiceWorkerPolicyOptions {
   now?: () => number;
   /** Minimum gap between two background service-worker removals for the same origin (default 30 s). */
   removalThrottleMs?: number;
-  /** Minimum gap between two removals before Facet itself navigates a container tab to the origin (default 2 s). */
+  /** Minimum gap between two removals before SplitSession itself navigates a container tab to the origin (default 2 s). */
   prepareThrottleMs?: number;
   log?: (level: 'info' | 'warn' | 'error', message: string, data?: unknown) => void;
   /** Called after the managed set grew (the engine recompiles its no-tab rule). */
@@ -37,7 +37,7 @@ export interface ServiceWorkerPolicyOptions {
  *    origin-filtered), and a dynamic DNR rule answers the beacon with `{m:1}` for these sites in tabs WITHOUT a
  *    container, so the shim there refuses `serviceWorker.register` and hides container-namespaced storage. The rule is
  *    dynamic so it survives browser restarts before the worker runs.
- *  - `prepare(origin)` is awaited before Facet itself navigates a container tab to an origin (open.html, popups,
+ *  - `prepare(origin)` is awaited before SplitSession itself navigates a container tab to an origin (open.html, popups,
  *    domain rules, `#ctr=`...): the origin's workers are gone before the first request.
  *  - Strict mode (after consent): `removeAll()` drops every worker of the profile and `setGuard(true)` installs a
  *    global `{g:1}` beacon answer, so the shim refuses registration on every site in every tab; the engine then also
@@ -102,7 +102,7 @@ export class ServiceWorkerPolicy {
   }
 
   /**
-   * Facet is about to navigate a container tab to `origin`: mark the site managed (and wait until plain tabs are told
+   * SplitSession is about to navigate a container tab to `origin`: mark the site managed (and wait until plain tabs are told
    * so), then remove the origin's service workers. Resolves when no worker of the origin can answer the navigation.
    */
   async prepare(origin: string): Promise<void> {

@@ -13,7 +13,7 @@ export interface RuleEngineDeps {
   /** Container of a tab, or null for a plain tab. */
   containerOf(tabId: number): ContainerId | null;
   /**
-   * The container a `#ctr=` marker of this navigation puts the tab in, or null when Facet ignores the marker (no such
+   * The container a `#ctr=` marker of this navigation puts the tab in, or null when SplitSession ignores the marker (no such
    * container, tab already in one, navigation started by a page). The engine handles honoured markers itself.
    */
   markerContainer(details: NavigationDetails): Promise<ContainerId | null>;
@@ -77,8 +77,8 @@ export class DomainRuleEngine {
     const site = ruleKeyOf(url);
     if (site === null) return 'skipped';
 
-    // An explicit `#ctr=` marker Facet honours wins over any rule, now and for the navigation Facet repeats without
-    // it. A marker Facet ignores is just part of the URL.
+    // An explicit `#ctr=` marker SplitSession honours wins over any rule, now and for the navigation SplitSession repeats without
+    // it. A marker SplitSession ignores is just part of the URL.
     if (hasCtrMarker(url)) {
       const container = await this.deps.markerContainer(details);
       if (container !== null) {

@@ -65,7 +65,7 @@ test.describe('agent bridge', () => {
     mcp = await startMcp(facet);
     const off = await mcp.call('list_tabs');
     expect(off.isError).toBe(true);
-    expect(off.text).toMatch(/bridge is off — turn it on in the Facet popup/);
+    expect(off.text).toMatch(/bridge is off — turn it on in the SplitSession popup/);
 
     const empty = await startMcp(facet, '/nonexistent-native-hosts');
     const missing = await empty.call('list_tabs');
@@ -509,7 +509,7 @@ test.describe('agent bridge', () => {
   });
 });
 
-/** The Playwright page of a tab that Facet or the bridge opened (so the test closes it afterwards). */
+/** The Playwright page of a tab that SplitSession or the bridge opened (so the test closes it afterwards). */
 async function pageFor(facet: Facet, tabId: number): Promise<Page> {
   for (let i = 0; i < 50; i++) {
     for (const page of facet.ctx.pages()) {

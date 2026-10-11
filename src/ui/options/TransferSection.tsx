@@ -30,7 +30,7 @@ export function TransferSection({ onChanged }: { onChanged(): void }) {
       const blob = new Blob([JSON.stringify(file, null, 2)], { type: 'application/json' });
       const link = document.createElement('a');
       link.href = URL.createObjectURL(blob);
-      link.download = `facet-${includeJars ? 'with-cookies-' : ''}${new Date().toISOString().slice(0, 10)}.json`;
+      link.download = `splitsession-${includeJars ? 'with-cookies-' : ''}${new Date().toISOString().slice(0, 10)}.json`;
       document.body.append(link);
       link.click();
       link.remove();
@@ -49,7 +49,7 @@ export function TransferSection({ onChanged }: { onChanged(): void }) {
     setPending(null);
     if (!file) return;
     if (file.size > 20 * 1024 * 1024) {
-      setProblem('That file is too large to be a Facet export.');
+      setProblem('That file is too large to be a SplitSession export.');
       return;
     }
     const parsed = parseExport(await file.text());
@@ -122,7 +122,7 @@ export function TransferSection({ onChanged }: { onChanged(): void }) {
           type="file"
           accept=".json,application/json"
           tabIndex={-1}
-          aria-label="Facet export file"
+          aria-label="SplitSession export file"
           data-testid="import-file"
           onChange={(event) => {
             const input = event.currentTarget;

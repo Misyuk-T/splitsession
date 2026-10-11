@@ -186,7 +186,7 @@ describe('matchRestoredTab', () => {
       expect(matchRestoredTab(t, c)).toEqual({ kind: 'ambiguous', candidates: ['work'] });
     });
 
-    it('the other evidence still works: the restored recently-closed entry, a Facet group marker', () => {
+    it('the other evidence still works: the restored recently-closed entry, a SplitSession group marker', () => {
       const c = ctx([t], [closed], { windows: [{ sig, at: 1 }], consumed: new Set(['s1']) });
       expect(matchRestoredTab(t, c)).toMatchObject({ kind: 'container', containerId: 'work', evidence: 'session' });
       const grouped = tab(4242, U('a'), 777, 0, 40);
@@ -264,7 +264,7 @@ describe('matchRestoredTab', () => {
     expect(matchRestoredTab(t, ctx([t], one)).kind).toBe('plain');
   });
 
-  it('group: a Facet group of the container with a closed record of the address; a look-alike title is not', () => {
+  it('group: a SplitSession group of the container with a closed record of the address; a look-alike title is not', () => {
     const t = tab(1, U('a'), 1, 0, 40);
     const records = [rec({ containerId: 'work', url: U('a'), closedAt: 1, savedGroup: true })];
     expect(matchRestoredTab(t, ctx([t], records, { groupTitles: new Map([[40, groupTitle('Work', 'work')]]) }))).toMatchObject({ kind: 'container', containerId: 'work', evidence: 'group' });

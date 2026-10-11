@@ -97,7 +97,7 @@ export interface DnrHeaderOperation {
   value?: string;
 }
 
-/** Structural subset of chrome.declarativeNetRequest.Rule that Facet emits. */
+/** Structural subset of chrome.declarativeNetRequest.Rule that SplitSession emits. */
 export interface DnrRule {
   id: number;
   priority: number;
@@ -398,7 +398,7 @@ export function beaconDataUrl(payload: object): string {
 }
 
 /**
- * Global answer for frames on origins Facet has seen inside containers, in tabs WITHOUT a container: tells the
+ * Global answer for frames on origins SplitSession has seen inside containers, in tabs WITHOUT a container: tells the
  * shim to keep service workers away and to hide container-namespaced storage. Not tab-scoped; dynamic rule.
  */
 export function compileManagedBeaconRule(id: number, managedSites: readonly string[]): DnrRule | null {

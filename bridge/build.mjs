@@ -1,5 +1,5 @@
 // Bundles the agent bridge into bridge/dist/ (no node_modules needed at runtime):
-//   facet-bridge.mjs   `host` and `mcp` modes
+//   splitsession-bridge.mjs   `host` and `mcp` modes
 //   paths.mjs          socket and host-manifest locations, imported by scripts/bridge-install.mjs
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
@@ -10,7 +10,7 @@ const version = JSON.parse(readFileSync(new URL('../package.json', import.meta.u
 
 await build({
   absWorkingDir: root,
-  entryPoints: { 'facet-bridge': 'bridge/src/main.ts', paths: 'bridge/src/paths.ts' },
+  entryPoints: { 'splitsession-bridge': 'bridge/src/main.ts', paths: 'bridge/src/paths.ts' },
   outdir: 'bridge/dist',
   outExtension: { '.js': '.mjs' },
   bundle: true,
@@ -22,4 +22,4 @@ await build({
   banner: { js: "import { createRequire as __facetCreateRequire } from 'node:module'; const require = __facetCreateRequire(import.meta.url);" },
   logLevel: 'warning',
 });
-console.log('bridge built: bridge/dist/facet-bridge.mjs');
+console.log('bridge built: bridge/dist/splitsession-bridge.mjs');

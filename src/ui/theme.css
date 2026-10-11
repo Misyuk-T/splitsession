@@ -1,4 +1,4 @@
-/* Facet UI tokens. Light and dark follow prefers-color-scheme. Main text is 16px, secondary 14px: nothing is smaller. */
+/* SplitSession UI tokens. Light and dark follow prefers-color-scheme. Main text is 16px, secondary 14px: nothing is smaller. */
 :root {
   color-scheme: light dark;
 

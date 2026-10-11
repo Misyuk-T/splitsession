@@ -124,7 +124,7 @@ describe('bridge router with the debugger', () => {
     expect(t.methods()).not.toContain('Runtime.evaluate');
   });
 
-  it('run_js falls back to an injected script on a page Facet may not debug', async () => {
+  it('run_js falls back to an injected script on a page SplitSession may not debug', async () => {
     const t = setup({ url: 'chrome://version/' });
     expect(await t.run('run_js', { tabId: 1, code: 'return 1' })).toEqual(['"via executeScript"']);
     expect(t.methods()).toEqual([]);
@@ -166,7 +166,7 @@ describe('bridge router with the debugger', () => {
     await expect(t.run('snapshot', { tabId: 1 })).rejects.toThrow(/a JavaScript alert is open on this tab: "Hi there"\. Answer it with handle_dialog/);
     expect(JSON.parse((await t.run('handle_dialog', { tabId: 1, accept: true }))[0]!)).toEqual({ tabId: 1, answered: 'alert', message: 'Hi there', accepted: true });
     expect(t.calls.find((c) => c.method === 'Page.handleJavaScriptDialog')!.params).toEqual({ accept: true });
-    await expect(t.run('handle_dialog', { tabId: 1, accept: true })).rejects.toThrow(/no JavaScript dialog that Facet saw/);
+    await expect(t.run('handle_dialog', { tabId: 1, accept: true })).rejects.toThrow(/no JavaScript dialog that SplitSession saw/);
   });
 
   it('snapshot reads the DOM, renders the tree with refs, and click can use them: no debugger for the read', async () => {
@@ -323,7 +323,7 @@ describe('bridge router with the debugger', () => {
     const plain = JSON.parse((await t.run('network_requests', { tabId: 1, filter: '/api' }))[0]!);
     expect(plain.requests[0]).not.toHaveProperty('requestHeaders');
     const withHeaders = JSON.parse((await t.run('network_requests', { tabId: 1, includeHeaders: true }))[0]!);
-    expect(withHeaders.requests[0].requestHeaders).toEqual({ Cookie: '(hidden by Facet)' });
+    expect(withHeaders.requests[0].requestHeaders).toEqual({ Cookie: '(hidden by SplitSession)' });
     expect(JSON.parse((await t.run('watch', { tabId: 1, stop: true }))[0]!)).toEqual({ tabId: 1, watchingUntil: null });
   });
 

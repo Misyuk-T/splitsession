@@ -30,7 +30,7 @@ const api = <T = unknown>(method: string, ...args: unknown[]): Promise<T> =>
   ) as Promise<T>;
 
 test.beforeAll(async () => {
-  userDataDir = mkdtempSync(path.join(tmpdir(), 'facet-lite-e2e-'));
+  userDataDir = mkdtempSync(path.join(tmpdir(), 'splitsession-lite-e2e-'));
   context = await chromium.launchPersistentContext(userDataDir, {
     channel: 'chromium',
     headless: !process.env.HEADED,
@@ -61,7 +61,7 @@ test.describe('Lite edition', () => {
     const all = [...(manifest.permissions ?? []), ...(manifest.optional_permissions ?? [])];
     for (const forbidden of ['nativeMessaging', 'debugger', 'userScripts']) expect(all).not.toContain(forbidden);
     for (const kept of ['sessions', 'tabGroups', 'webNavigation', 'declarativeNetRequest']) expect(manifest.permissions).toContain(kept);
-    expect(manifest.name).toBe('Facet');
+    expect(manifest.name).toBe('SplitSession: Multiple Logins per Site');
     expect(manifest.key).toBeUndefined();
     // Chrome does not even define the APIs those permissions would give.
     const apis = await worker.evaluate(() => {

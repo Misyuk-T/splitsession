@@ -5,7 +5,7 @@ import type { FullApi } from '../background/full-api';
 /** Calls the background API from an extension page. Rejects with the background's error message. */
 export async function callApi<M extends keyof FullApi>(method: M, ...args: Parameters<FullApi[M]>): Promise<Awaited<ReturnType<FullApi[M]>>> {
   const reply = (await browser.runtime.sendMessage({ type: 'facet/api', method, args })) as ApiReply | undefined;
-  if (!reply) throw new Error('no reply from the Facet background');
+  if (!reply) throw new Error('no reply from the SplitSession background');
   if (!reply.ok) throw new Error(reply.error);
   return reply.value as Awaited<ReturnType<FullApi[M]>>;
 }

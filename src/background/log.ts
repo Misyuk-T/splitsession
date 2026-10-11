@@ -19,8 +19,8 @@ export function createLogger(capacity = 300): Logger {
     buffer.push({ at: Date.now(), level, message, data });
     if (buffer.length > capacity) buffer.splice(0, buffer.length - capacity);
     const method = level === 'error' ? console.error : level === 'warn' ? console.warn : console.debug;
-    if (data === undefined) method(`[facet] ${message}`);
-    else method(`[facet] ${message}`, data);
+    if (data === undefined) method(`[splitsession] ${message}`);
+    else method(`[splitsession] ${message}`, data);
   }) as Logger;
   log.entries = () => buffer.map((e) => ({ ...e }));
   return log;

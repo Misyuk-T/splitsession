@@ -12,7 +12,7 @@ const openOptions = async (facet: { ctx: import('@playwright/test').BrowserConte
   const page = await facet.ctx.newPage();
   await page.setViewportSize({ width: 1000, height: 900 });
   await page.goto(ext('options.html'));
-  await expect(page.getByRole('heading', { name: 'Facet settings' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'SplitSession settings' })).toBeVisible();
   return page;
 };
 
@@ -122,7 +122,7 @@ test.describe('options page', () => {
     const plainDownload = page.waitForEvent('download');
     await page.getByRole('button', { name: 'Export', exact: true }).click();
     const download = await plainDownload;
-    expect(download.suggestedFilename()).toMatch(/^facet-\d{4}-\d\d-\d\d\.json$/);
+    expect(download.suggestedFilename()).toMatch(/^splitsession-\d{4}-\d\d-\d\d\.json$/);
     const body = readFileSync((await download.path())!, 'utf8');
     const plain = JSON.parse(body);
     expect(plain).toMatchObject({ format: 'facet-export', version: 1 });

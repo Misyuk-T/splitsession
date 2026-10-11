@@ -13,7 +13,7 @@ import { HOST_MANIFEST_FILE, manifestSearchDirs, socketPath } from './paths';
 declare const __VERSION__: string;
 
 const INSTRUCTIONS =
-  'Tools to see and operate the user\'s Chrome tabs across all windows, with Facet containers (several logged-in accounts of one site side by side). ' +
+  'Tools to see and operate the user\'s Chrome tabs across all windows, with SplitSession containers (several logged-in accounts of one site side by side). ' +
   'Start with list_tabs (bridge_info says which Chrome profile you are connected to). A tab\'s "container" says which account it is. ' +
   'To work with a page: snapshot (accessibility tree with refs), then click / type / press_key / select_option by ref; snapshot again after the page changes. Screenshots for what the tree cannot tell. ' +
   'These tools act inside the user\'s real, logged-in browser: do only what the user asked for.';
@@ -22,8 +22,8 @@ const INSTRUCTIONS =
 export function unreachableMessage(env: NodeJS.ProcessEnv = process.env, exists: (p: string) => boolean = existsSync): string {
   const installed = manifestSearchDirs(env).some((dir) => exists(path.join(dir, HOST_MANIFEST_FILE)));
   return installed
-    ? 'Facet agent bridge is off — turn it on in the Facet popup (the "Agent bridge" switch).'
-    : 'Facet agent bridge host is not installed — run `pnpm bridge:install` in the Facet repository, then turn on the "Agent bridge" switch in the Facet popup.';
+    ? 'SplitSession agent bridge is off — turn it on in the SplitSession popup (the "Agent bridge" switch).'
+    : 'SplitSession agent bridge host is not installed — run `pnpm bridge:install` in the SplitSession repository, then turn on the "Agent bridge" switch in the SplitSession popup.';
 }
 
 class Unreachable extends Error {}
@@ -49,7 +49,7 @@ export function callHost(tool: string, args: unknown, timeoutMs: number = HOST_T
       socket.destroy();
       fn();
     };
-    const timer = setTimeout(() => done(() => reject(new Error(`the Facet bridge did not answer ${tool} within ${Math.round(timeoutMs / 1000)} seconds`))), timeoutMs);
+    const timer = setTimeout(() => done(() => reject(new Error(`the SplitSession bridge did not answer ${tool} within ${Math.round(timeoutMs / 1000)} seconds`))), timeoutMs);
     socket.setEncoding('utf8');
     socket.on('connect', () => socket.write(encodeLine({ id: 1, tool, args })));
     socket.on('data', (chunk: string) => {
@@ -66,7 +66,7 @@ export function callHost(tool: string, args: unknown, timeoutMs: number = HOST_T
       if (error.code === 'ENOENT' || error.code === 'ECONNREFUSED' || error.code === 'ENOTSOCK') return done(() => reject(new Unreachable(error.code)));
       done(() => reject(error));
     });
-    socket.on('close', () => done(() => reject(new Error('the Facet bridge closed the connection (it was probably switched off)'))));
+    socket.on('close', () => done(() => reject(new Error('the SplitSession bridge closed the connection (it was probably switched off)'))));
   });
 }
 
@@ -107,7 +107,7 @@ const failure = (text: string): CallToolResult => ({ isError: true, content: [{ 
 
 export async function runMcp(): Promise<void> {
   const presence = keepPresence();
-  const server = new Server({ name: 'facet', version: __VERSION__ }, { capabilities: { tools: {} }, instructions: INSTRUCTIONS });
+  const server = new Server({ name: 'splitsession', version: __VERSION__ }, { capabilities: { tools: {} }, instructions: INSTRUCTIONS });
 
   server.setRequestHandler(ListToolsRequestSchema, async () => ({
     tools: TOOLS.map((tool) => ({

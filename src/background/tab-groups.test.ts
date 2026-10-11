@@ -271,7 +271,7 @@ describe('TabGroupProjection', () => {
     expect(chrome.tabs.get(1)!.groupId).toBe(500);
     expect(chrome.tabs.get(2)!.groupId).toBe(500);
     expect(projection.ownedGroups()).toEqual([[500, 'work']]);
-    // The user's own group called "Home", without the marker: the tab leaves it for Facet's own group.
+    // The user's own group called "Home", without the marker: the tab leaves it for SplitSession's own group.
     chrome.groups.set(600, { id: 600, windowId: 1, title: 'Home', color: 'cyan' });
     chrome.addTab(3, 1, { groupId: 600 });
     await assign(3, 'home');

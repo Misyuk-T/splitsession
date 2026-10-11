@@ -45,11 +45,11 @@ export async function migrateStrictMode(area: StorageAreaLike): Promise<void> {
 
 /**
  * Strict mode (setting `strictMode`, default off): a real-profile service worker can answer a container tab's first
- * request on a site before Facet gets to remove it (removal is asynchronous, the navigation is not). On: Facet removes
+ * request on a site before SplitSession gets to remove it (removal is asynchronous, the navigation is not). On: SplitSession removes
  * every service worker of the profile once and refuses new registrations on every site in every tab (the shim's guard
  * mode), so no such worker exists. It costs push notifications and offline mode of every site in this profile, which
  * is why it is off by default; the interface says so next to the switch. Off: the per-site policy only (workers are
- * removed on sites used in containers, and every navigation Facet starts waits for that removal).
+ * removed on sites used in containers, and every navigation SplitSession starts waits for that removal).
  */
 export class StrictMode {
   private enabled = false;
@@ -96,7 +96,7 @@ export class StrictMode {
   }
 
   /**
-   * Browser start: pages restored before Facet's content scripts were registered (or tabs open since before the
+   * Browser start: pages restored before SplitSession's content scripts were registered (or tabs open since before the
    * install) could have registered workers without the shim. Sweep again.
    */
   async startup(): Promise<void> {

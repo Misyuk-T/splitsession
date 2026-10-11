@@ -138,7 +138,7 @@ describe('bridge router', () => {
     await expect(run(router, 'assign_tab', { tabId: 1, container: 'Ghost' })).rejects.toThrow(/no container "Ghost".*existing: "Work".*createIfMissing/);
   });
 
-  it('open_in_container uses Facet\'s own open path and only http(s)', async () => {
+  it('open_in_container uses SplitSession\'s own open path and only http(s)', async () => {
     const { router, facet } = setup([tab({ id: 99, url: 'https://a.test/' })]);
     await run(router, 'open_in_container', { url: 'https://a.test/', container: 'Work', wait: false });
     expect(facet.openInContainer).toHaveBeenCalledWith('https://a.test/', 'c1', { active: false });

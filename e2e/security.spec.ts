@@ -56,7 +56,7 @@ async function restoreStrict(facet: Facet): Promise<void> {
 }
 
 test.describe('service workers of the real profile', () => {
-  test('without strict mode, Facet removes the site’s worker before a container tab’s first request (open.html, new-tab link)', async ({ facet }) => {
+  test('without strict mode, SplitSession removes the site’s worker before a container tab’s first request (open.html, new-tab link)', async ({ facet }) => {
     await facet.api('updateSettings', { strictMode: false });
     const host = freshHost('sw');
     const real = await realProfileWithWorker(facet, host);
@@ -73,7 +73,7 @@ test.describe('service workers of the real profile', () => {
     expect(await realUser(facet, host)).toBe('real');
     expect(await registrations(real.page)).toBe(0);
 
-    // A target=_blank link from a container page: Facet opens the child itself, after removing the target's workers.
+    // A target=_blank link from a container page: SplitSession opens the child itself, after removing the target's workers.
     const other = freshHost('swlink');
     const real2 = await realProfileWithWorker(facet, other);
     const linker = await facet.openIn(A.name, at('b.localhost', `/link?target=_blank&to=${encodeURIComponent(at(other, '/login?user=alice2'))}`));
@@ -100,7 +100,7 @@ test.describe('service workers of the real profile', () => {
     await expect.poll(() => registrations(real.page)).toBe(0);
     expect(await facet.api('getStrictMode')).toMatchObject({ enabled: true, active: true });
 
-    // A plain link in a container tab: the navigation is the page's own (Facet cannot prepare it), and there is no
+    // A plain link in a container tab: the navigation is the page's own (SplitSession cannot prepare it), and there is no
     // worker left to answer it.
     const pa = await facet.openIn(A.name, at('b.localhost', `/link?to=${encodeURIComponent(at(host, '/login?user=alice'))}`));
     await facet.clearLog();
@@ -208,7 +208,7 @@ test.describe('service workers of the real profile', () => {
     const options = await facet.ctx.newPage();
     await options.setViewportSize({ width: 1000, height: 900 });
     await options.goto(ext('options.html'));
-    await expect(options.getByRole('heading', { name: 'Facet settings' })).toBeVisible();
+    await expect(options.getByRole('heading', { name: 'SplitSession settings' })).toBeVisible();
     await expect(options.getByRole('alertdialog')).toHaveCount(0);
     const strict = options.getByRole('switch', { name: /Strict mode/ });
     await expect(strict).toHaveAttribute('aria-checked', 'false');
@@ -403,7 +403,7 @@ test.describe('beacon', () => {
     const pa = await facet.openIn(A.name, at(site, '/blank'));
     await pa.evaluate(() => localStorage.setItem('shared', 'top'));
     const tabId = await facet.tabIdOf(pa);
-    // Take the site's answer away behind Facet's back (as if an update of the rules had been lost).
+    // Take the site's answer away behind SplitSession's back (as if an update of the rules had been lost).
     await facet.inWorker(
       async ({ tabId, site }) => {
         const dnr = (globalThis as any).chrome.declarativeNetRequest;
@@ -607,7 +607,7 @@ test.describe('frames whose scripts are disabled', () => {
     });
     expect(viaFrames).toEqual(['src/own: SecurityError', 'src/borrowed: SecurityError', 'srcdoc/own: SecurityError', 'srcdoc/borrowed: SecurityError']);
 
-    // A realm Facet never patched at all (a CDP isolated world stands in for one): the network layer refuses the
+    // A realm SplitSession never patched at all (a CDP isolated world stands in for one): the network layer refuses the
     // worker's script, because in strict mode no script request outside tabs is allowed.
     const cdp = await facet.ctx.newCDPSession(page);
     const { frameTree } = (await cdp.send('Page.getFrameTree')) as { frameTree: { frame: { id: string } } };

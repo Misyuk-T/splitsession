@@ -12,7 +12,7 @@ export function Options() {
     <div class="opt-page">
       <header class="opt-head">
         <Logo size={32} />
-        <h1>Facet settings</h1>
+        <h1>SplitSession settings</h1>
       </header>
       <nav class="opt-nav" aria-label="Sections">
         <a href="#general">General</a>
@@ -21,7 +21,7 @@ export function Options() {
         <a href="#transfer">Export and import</a>
         <a href="#diagnostics">Diagnostics</a>
       </nav>
-      {error && <p class="fx-notice fx-notice--error" role="alert">Facet could not load its containers: {error}</p>}
+      {error && <p class="fx-notice fx-notice--error" role="alert">SplitSession could not load its containers: {error}</p>}
       <main>
         <GeneralSection />
         {__FULL__ && <BridgeSection />}

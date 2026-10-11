@@ -45,7 +45,7 @@ function deferred(): Deferred {
 }
 
 /**
- * Owns Facet's declarativeNetRequest session rules.
+ * Owns SplitSession's declarativeNetRequest session rules.
  *
  * - Callers `invalidate(key)` whenever the inputs of a key change (jar, tab set, top-level site). All invalidations
  *   made before the scheduled flush runs are coalesced into ONE `updateSessionRules` call that atomically removes

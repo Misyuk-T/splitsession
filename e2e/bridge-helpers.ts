@@ -10,8 +10,8 @@ import { EXTENSION_ID, EXTENSION_PATH } from './env';
 import { expect, ext, type Facet } from './fixtures';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const bridgeEntry = path.join(root, 'bridge', 'dist', 'facet-bridge.mjs');
-export const MANIFEST = 'com.facet.bridge.json';
+const bridgeEntry = path.join(root, 'bridge', 'dist', 'splitsession-bridge.mjs');
+export const MANIFEST = 'com.splitsession.bridge.json';
 
 /** Builds the bridge and registers the native host with THIS run's browser profile only (no system directory is touched). */
 let built = false;
@@ -92,7 +92,7 @@ export function hostPids(facet: Facet): number[] {
   }
 }
 
-/** A second Chrome profile with Facet loaded, its own host manifest, and the SAME bridge socket as `facet`'s profile. */
+/** A second Chrome profile with SplitSession loaded, its own host manifest, and the SAME bridge socket as `facet`'s profile. */
 export interface SecondProfile {
   ctx: BrowserContext;
   api<T = unknown>(method: string, ...args: unknown[]): Promise<T>;

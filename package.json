@@ -1,8 +1,8 @@
 {
-  "name": "facet",
+  "name": "splitsession",
   "version": "0.1.0",
   "private": true,
-  "description": "Firefox-style containers for Chrome: several accounts of the same site open side by side in one profile.",
+  "description": "Same site, separate logins: several accounts of one site open side by side in one Chrome profile.",
   "license": "MIT",
   "author": "Taras Misiuk",
   "type": "module",

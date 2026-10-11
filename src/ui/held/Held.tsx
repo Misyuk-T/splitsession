@@ -8,14 +8,14 @@ import { Logo } from '../components/Logo';
 import { describeError } from '../format';
 import { useContainers } from '../useContainers';
 
-/** The address this page stands for: `held.html?u=<address>` (set by Facet; only http(s) is accepted). */
+/** The address this page stands for: `held.html?u=<address>` (set by SplitSession; only http(s) is accepted). */
 function addressOf(search: string): string | null {
   const u = new URLSearchParams(search).get('u');
   return u && /^https?:\/\//i.test(u) ? u : null;
 }
 
 /**
- * What a tab shows while Facet is not sure which container it belongs to (docs/decisions.md, "Container tabs that come
+ * What a tab shows while SplitSession is not sure which container it belongs to (docs/decisions.md, "Container tabs that come
  * back"): Chrome's "blocked by an extension" says nothing. The page makes no request. Same choices as the popup banner.
  */
 export function Held() {
@@ -30,7 +30,7 @@ export function Held() {
   const list = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    document.title = 'Facet: choose a container';
+    document.title = 'SplitSession: choose a container';
     void (async () => {
       const tab = await browser.tabs.getCurrent();
       setTabId(tab?.id ?? null);
@@ -47,8 +47,8 @@ export function Held() {
   if (!address) {
     return (
       <main class="held">
-        <header class="held__head"><Logo size={28} /><h1>Facet</h1></header>
-        <p class="fx-notice fx-notice--info" role="status">This page shows a tab that Facet is holding back after a restart. It was opened without an address, so there is nothing to choose.</p>
+        <header class="held__head"><Logo size={28} /><h1>SplitSession</h1></header>
+        <p class="fx-notice fx-notice--info" role="status">This page shows a tab that SplitSession is holding back after a restart. It was opened without an address, so there is nothing to choose.</p>
       </main>
     );
   }
@@ -61,7 +61,7 @@ export function Held() {
     setError(null);
     try {
       if (entry) {
-        // Facet puts the tab where it was chosen and sends it to its address.
+        // SplitSession puts the tab where it was chosen and sends it to its address.
         await facetApi.assignTab(tabId, containerId, { reload: true });
       } else if (containerId === null) {
         // The tab may still belong to a container (the hold ended after "Open in A", then Back): take it out first,
@@ -81,13 +81,13 @@ export function Held() {
   const candidates = entry ? entry.candidates.filter((id) => containers?.some((c) => c.id === id)) : [];
   return (
     <main class="held">
-      <header class="held__head"><Logo size={28} /><h1>Facet</h1></header>
+      <header class="held__head"><Logo size={28} /><h1>SplitSession</h1></header>
       <section class="held__card" aria-labelledby="held-title">
         <h2 id="held-title">{entry ? 'This tab is waiting for you' : 'This tab is no longer on hold'}</h2>
         <p>
           {entry
-            ? 'Chrome brought this page back, and Facet is not sure which container it belongs to. Nothing has been sent to the site yet.'
-            : 'Facet held this page back before the browser closed. Choose how to open it.'}
+            ? 'Chrome brought this page back, and SplitSession is not sure which container it belongs to. Nothing has been sent to the site yet.'
+            : 'SplitSession held this page back before the browser closed. Choose how to open it.'}
         </p>
         <p class="fx-secondary held__url" data-testid="held-url">{address}</p>
         {!entry && current !== undefined && (
@@ -120,7 +120,7 @@ export function Held() {
           </button>
         </div>
         {error && <p class="fx-notice fx-notice--error" role="alert">{error}</p>}
-        {entry && <p class="fx-secondary">The Facet button in the toolbar offers the same choices for every waiting tab at once.</p>}
+        {entry && <p class="fx-secondary">The SplitSession button in the toolbar offers the same choices for every waiting tab at once.</p>}
       </section>
     </main>
   );

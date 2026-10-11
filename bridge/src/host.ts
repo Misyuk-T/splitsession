@@ -8,7 +8,7 @@ import { probeSocket } from './probe';
 import { Relay } from './relay';
 
 /**
- * `host` mode: launched by Chrome (`runtime.connectNative('com.facet.bridge')`). stdin/stdout speak Chrome's native
+ * `host` mode: launched by Chrome (`runtime.connectNative('com.splitsession.bridge')`). stdin/stdout speak Chrome's native
  * messaging framing; a Unix socket (0600, in a 0700 directory) takes the MCP servers. Chrome closes stdin when the
  * extension drops the port (the bridge is switched off, or Chrome quits): the host then removes the socket and exits.
  * Nothing but frames may ever be written to stdout.
@@ -40,7 +40,7 @@ export async function runHost(args: string[]): Promise<void> {
     mkdirSync(dir, { recursive: true, mode: 0o700 });
     if (existsSync(logFile) && statSync(logFile).size > 200_000) truncateSync(logFile, 0);
     note(`start args=${args.join(' ')}`);
-    // Only tighten a directory this program owns (the default `.../Facet`); a test-chosen path may be a shared tmp dir.
+    // Only tighten a directory this program owns (the default `.../SplitSession`); a test-chosen path may be a shared tmp dir.
     if (!process.env.FACET_BRIDGE_SOCKET) chmodSync(dir, 0o700);
   } catch (error) {
     return fatal(send, note, `cannot create ${dir}: ${errorText(error)}`);
@@ -112,13 +112,13 @@ export async function runHost(args: string[]): Promise<void> {
       for (const message of reader.push(chunk)) relay.handleExtension(message);
     } catch (error) {
       note(`bad frame from Chrome: ${errorText(error)}`);
-      stop(1, 'the Facet bridge host received a malformed message from Chrome');
+      stop(1, 'the SplitSession bridge host received a malformed message from Chrome');
     }
   });
-  process.stdin.on('end', () => stop(0, 'Facet agent bridge was switched off'));
-  process.stdin.on('close', () => stop(0, 'Facet agent bridge was switched off'));
-  process.stdout.on('error', () => stop(0, 'Facet agent bridge was switched off'));
-  for (const signal of ['SIGTERM', 'SIGINT', 'SIGHUP'] as const) process.on(signal, () => stop(0, 'Facet agent bridge host was stopped'));
+  process.stdin.on('end', () => stop(0, 'SplitSession agent bridge was switched off'));
+  process.stdin.on('close', () => stop(0, 'SplitSession agent bridge was switched off'));
+  process.stdout.on('error', () => stop(0, 'SplitSession agent bridge was switched off'));
+  for (const signal of ['SIGTERM', 'SIGINT', 'SIGHUP'] as const) process.on(signal, () => stop(0, 'SplitSession agent bridge host was stopped'));
 
   send({ type: 'ready', version: PROTOCOL_VERSION, socket: sockPath });
   note(`ready on ${sockPath}`);

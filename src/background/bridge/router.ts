@@ -374,7 +374,7 @@ export class BridgeRouter {
     const url = checkUrl(a.url, OPEN_SCHEMES);
     await this.tab(a.tabId, meta);
     meta.host = url.host || undefined;
-    // Same as every navigation Facet starts itself: no service worker of the target may answer a container's request.
+    // Same as every navigation SplitSession starts itself: no service worker of the target may answer a container's request.
     if (this.d.facet.getTabContainer(a.tabId) !== null && (url.protocol === 'http:' || url.protocol === 'https:')) await this.d.facet.prepareNavigation(url.href);
     live(meta);
     await this.b.tabs.update(a.tabId, { url: url.href });
@@ -411,7 +411,7 @@ export class BridgeRouter {
     return json(await this.summary(a.tabId));
   }
 
-  /** A JavaScript dialog Facet saw on the tab freezes the page: a script in it would never answer. */
+  /** A JavaScript dialog SplitSession saw on the tab freezes the page: a script in it would never answer. */
   private noDialog(tabId: number): void {
     const dialog = this.d.cdp?.current(tabId)?.dialog;
     if (dialog) throw new ToolError(dialogBlocks(dialog));
@@ -468,7 +468,7 @@ export class BridgeRouter {
   /** Why the agent may not operate this tab (the same pages the debugger refuses), as a ToolError. */
   private operable(url: string | undefined): void {
     const refused = refusedUrl(url);
-    if (refused) throw new ToolError(`Facet cannot operate this tab: ${refused}`);
+    if (refused) throw new ToolError(`SplitSession cannot operate this tab: ${refused}`);
   }
 
   /**
@@ -603,7 +603,7 @@ export class BridgeRouter {
     } catch (error) {
       if (error instanceof ToolError && /cannot operate this tab|busy/.test(error.message) && !meta.signal?.aborted) {
         await this.d.activity?.unhide(a.tabId);
-        return this.takeScreenshot(a, meta, tab); // a page Facet may not debug: the old way (activates the tab for a moment)
+        return this.takeScreenshot(a, meta, tab); // a page SplitSession may not debug: the old way (activates the tab for a moment)
       }
       throw error;
     } finally {
@@ -799,7 +799,7 @@ export class BridgeRouter {
     await this.tab(a.tabId, meta);
     if (a.world === 'ISOLATED') {
       throw new ToolError(
-        'run_js runs only in the page\'s own (MAIN) world. An isolated world would read the regular profile\'s cookies of a container tab\'s site (Facet\'s cookie shim lives in the MAIN world), so Facet does not offer it.',
+        'run_js runs only in the page\'s own (MAIN) world. An isolated world would read the regular profile\'s cookies of a container tab\'s site (SplitSession\'s cookie shim lives in the MAIN world), so SplitSession does not offer it.',
       );
     }
     if (this.d.cdp) {
@@ -807,7 +807,7 @@ export class BridgeRouter {
       try {
         outcome = await this.onPage(a.tabId, meta, (s) => hands.evaluate(s, a.code, { awaitPromise: a.awaitPromise, returnByValue: a.returnByValue, maxChars: a.maxChars }));
       } catch (error) {
-        // A tab Facet may not debug, or one that is busy: the injected-script way (needs eval in the page) is next.
+        // A tab SplitSession may not debug, or one that is busy: the injected-script way (needs eval in the page) is next.
         if (!(error instanceof ToolError) || !/cannot operate this tab|busy|could not attach/.test(error.message) || meta.signal?.aborted) throw error;
       }
       if (outcome) {
@@ -828,7 +828,7 @@ export class BridgeRouter {
     if (!r.ok) {
       if (r.kind === 'csp') {
         throw new ToolError(
-          'this page\'s Content-Security-Policy forbids evaluating code strings (no unsafe-eval), and Facet could not use the debugger here, so run_js cannot run. Use get_tab_text, get_tab_html, click and type instead, or ask the user to allow the userScripts fallback in the Facet settings.',
+          'this page\'s Content-Security-Policy forbids evaluating code strings (no unsafe-eval), and SplitSession could not use the debugger here, so run_js cannot run. Use get_tab_text, get_tab_html, click and type instead, or ask the user to allow the userScripts fallback in the SplitSession settings.',
         );
       }
       throw new ToolError(`${r.name}: ${r.message}`);
@@ -851,7 +851,7 @@ export class BridgeRouter {
       const entry = h.entries[h.currentIndex + step];
       if (!entry) throw new ToolError(step < 0 ? 'there is no previous page in this tab\'s history' : 'there is no next page in this tab\'s history');
       meta.host = hostOf(entry.url) ?? meta.host;
-      // Same as every navigation Facet starts: no service worker of the target may answer a container's request.
+      // Same as every navigation SplitSession starts: no service worker of the target may answer a container's request.
       if (inContainer && /^https?:/.test(entry.url)) await this.d.facet.prepareNavigation(entry.url);
       live(meta);
       // The exact entry (the Back button would skip pages the user never interacted with).
@@ -863,7 +863,7 @@ export class BridgeRouter {
       if (!this.d.cdp) throw new ToolError('no debugger');
       await this.onPage(a.tabId, meta, go, { dialogOk: true });
     } catch (error) {
-      // Without the debugger (a page Facet may not debug): Chrome's own Back/Forward, never for a container tab.
+      // Without the debugger (a page SplitSession may not debug): Chrome's own Back/Forward, never for a container tab.
       if (inContainer || meta.signal?.aborted || !(error instanceof ToolError) || /no (previous|next) page/.test(error.message)) throw error;
       const tabs = this.b.tabs as unknown as { goBack(id: number): Promise<void>; goForward(id: number): Promise<void> };
       live(meta);
@@ -894,7 +894,7 @@ export class BridgeRouter {
     const session = this.cdp.current(a.tabId);
     const dialog = session?.dialog;
     if (!session || !dialog) {
-      throw new ToolError('no JavaScript dialog that Facet saw is open on this tab (Facet sees dialogs that open while it works on the tab; one that was already open must be answered by the user)');
+      throw new ToolError('no JavaScript dialog that SplitSession saw is open on this tab (SplitSession sees dialogs that open while it works on the tab; one that was already open must be answered by the user)');
     }
     live(meta);
     try {
@@ -916,7 +916,7 @@ export class BridgeRouter {
       watching: this.watchInfo(a.tabId),
       next: record.seq,
       ...(entries.length > shown.length ? { omitted: entries.length - shown.length } : {}),
-      ...(this.cdp.watchingUntil(a.tabId) ? {} : { note: 'console.log output is recorded only while watch runs on this tab; browser messages are recorded whenever Facet is attached' }),
+      ...(this.cdp.watchingUntil(a.tabId) ? {} : { note: 'console.log output is recorded only while watch runs on this tab; browser messages are recorded whenever SplitSession is attached' }),
       messages: shown.map((e) => ({ ...e, at: new Date(e.at).toISOString() })),
     });
   }

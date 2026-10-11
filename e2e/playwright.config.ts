@@ -2,7 +2,7 @@ import { defineConfig } from '@playwright/test';
 import { TEST_PORT } from './env';
 
 /**
- * Facet e2e: Chromium with the built extension (.output/chrome-mv3) in a persistent context, against the local
+ * SplitSession e2e: Chromium with the built extension (.output/chrome-mv3) in a persistent context, against the local
  * multi-host stand in test-server/. `pnpm e2e` builds first. HEADED=1 to watch.
  */
 export default defineConfig({

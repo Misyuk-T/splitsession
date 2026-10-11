@@ -1,4 +1,4 @@
-// Generates the key pair that pins Facet's extension ID.
+// Generates the key pair that pins SplitSession's extension ID.
 //
 //   node scripts/keygen.mjs          create keys/facet.pem + extension-key.pub (refuses to overwrite)
 //   node scripts/keygen.mjs --force  replace an existing key pair (changes the extension ID!)

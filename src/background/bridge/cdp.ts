@@ -7,8 +7,8 @@
  *   viewport override keep it attached longer (30 min at most each), and so does an open JavaScript dialog (10 min at
  *   most): only this session can answer it, so letting go would lose it. When the agent's MCP process is gone, the bridge
  *   calls `release()`: viewport overrides cleared, everything detached.
- * - Never attached: chrome:// and other browser pages, extension pages (Facet's own included: the agent does not get to
- *   flip Facet's switches) and the Web Store. Chrome refuses most of them anyway; this gives the agent a clear sentence.
+ * - Never attached: chrome:// and other browser pages, extension pages (SplitSession's own included: the agent does not get to
+ *   flip SplitSession's switches) and the Web Store. Chrome refuses most of them anyway; this gives the agent a clear sentence.
  * - The user pressing "Cancel" on Chrome's "started debugging this browser" bar detaches us (`canceled_by_user`): that
  *   tab is not attached again for `REVOKE_MS`, and the agent is told why.
  * - Switching the bridge off detaches everything at once (`detachAll`), and an attach that was under way when it happened
@@ -59,7 +59,7 @@ export class CdpError extends Error {}
  */
 export const IDLE_MS = 60_000;
 export const REVOKE_MS = 60_000;
-/** A session with a JavaScript dialog open stays attached (only Facet can answer it) for this long, then lets go. */
+/** A session with a JavaScript dialog open stays attached (only SplitSession can answer it) for this long, then lets go. */
 export const DIALOG_MAX_MS = 10 * 60_000;
 /** A viewport override pins its session for this long at most (like `watch`), unless it is refreshed or cleared. */
 export const PIN_MAX_MS = 30 * 60_000;
@@ -103,7 +103,7 @@ export interface NetworkEntry {
   responseHeaders?: Record<string, string>;
 }
 
-/** What a tab recorded while Facet was attached to it; kept across detaches until the tab closes or the bridge goes off. */
+/** What a tab recorded while SplitSession was attached to it; kept across detaches until the tab closes or the bridge goes off. */
 export interface TabRecord {
   console: ConsoleEntry[];
   network: NetworkEntry[];
@@ -116,11 +116,11 @@ const SECRET_HEADERS = /^(cookie|set-cookie|set-cookie2|authorization|proxy-auth
 export function redactHeaders(headers: Record<string, unknown> | undefined): Record<string, string> | undefined {
   if (!headers) return undefined;
   const out: Record<string, string> = {};
-  for (const [name, value] of Object.entries(headers)) out[name] = SECRET_HEADERS.test(name) ? '(hidden by Facet)' : String(value).slice(0, 500);
+  for (const [name, value] of Object.entries(headers)) out[name] = SECRET_HEADERS.test(name) ? '(hidden by SplitSession)' : String(value).slice(0, 500);
   return out;
 }
 
-/** Why Facet will not attach to this address, or null when it may. */
+/** Why SplitSession will not attach to this address, or null when it may. */
 export function refusedUrl(url: string | undefined): string | null {
   if (!url) return null;
   let u: URL;
@@ -129,7 +129,7 @@ export function refusedUrl(url: string | undefined): string | null {
   } catch {
     return null;
   }
-  if (u.protocol === 'chrome-extension:') return 'extension pages (Facet\'s own included) are not operated by the agent';
+  if (u.protocol === 'chrome-extension:') return 'extension pages (SplitSession\'s own included) are not operated by the agent';
   if (/^(chrome|chrome-untrusted|chrome-search|devtools|view-source|edge|brave|opera|vivaldi):$/.test(u.protocol)) return `${u.protocol}// pages belong to the browser; Chrome does not let extensions debug them`;
   if (u.hostname === 'chromewebstore.google.com' || (u.hostname === 'chrome.google.com' && u.pathname.startsWith('/webstore'))) return 'Chrome does not let extensions debug the Chrome Web Store';
   return null;
@@ -168,7 +168,7 @@ export class TabSession {
 
   /** One CDP command (`sessionId`: a child target). Rejects with the protocol's message, on detach, or after `timeoutMs`. */
   send<T = any>(method: string, params: object = {}, sessionId?: string, timeoutMs = COMMAND_MS): Promise<T> {
-    if (this.detached) return Promise.reject(new CdpError('Facet is no longer attached to this tab; try again'));
+    if (this.detached) return Promise.reject(new CdpError('SplitSession is no longer attached to this tab; try again'));
     return new Promise<T>((resolve, reject) => {
       let done = false;
       const finish = (fn: () => void) => {
@@ -178,7 +178,7 @@ export class TabSession {
         this.onGone.delete(gone);
         fn();
       };
-      const gone = () => finish(() => reject(new CdpError('Facet was detached from this tab while it worked (the tab closed, navigated to a page it cannot debug, or debugging was cancelled)')));
+      const gone = () => finish(() => reject(new CdpError('SplitSession was detached from this tab while it worked (the tab closed, navigated to a page it cannot debug, or debugging was cancelled)')));
       const timer = setTimeout(
         () =>
           finish(() =>
@@ -495,14 +495,14 @@ export class CdpSessions {
     if (until !== undefined) {
       if (until > this.now()) {
         throw new CdpError(
-          `the user cancelled Facet's debugging of this tab (the "Cancel" button on Chrome's "started debugging this browser" bar); Facet will not attach to it again for ${Math.ceil((until - this.now()) / 1000)} s. Ask the user before trying again.`,
+          `the user cancelled SplitSession's debugging of this tab (the "Cancel" button on Chrome's "started debugging this browser" bar); SplitSession will not attach to it again for ${Math.ceil((until - this.now()) / 1000)} s. Ask the user before trying again.`,
         );
       }
       this.revoked.delete(tabId);
     }
     const url = await this.d.tabUrl(tabId);
     const refused = refusedUrl(url);
-    if (refused) throw new CdpError(`Facet cannot operate this tab: ${refused}`);
+    if (refused) throw new CdpError(`SplitSession cannot operate this tab: ${refused}`);
     const generation = this.generation;
     try {
       await this.d.dbg.attach({ tabId }, '1.3');
@@ -517,7 +517,7 @@ export class CdpSessions {
           throw new CdpError(`the tab is busy: another debugger is attached and Chrome refuses a second one (${cdpMessage(again)}). Close DevTools or the other debugging tool on that tab, or use another tab.`);
         }
       } else if (/cannot access|cannot attach|chrome:\/\/|extensions gallery|webstore|not allowed/i.test(message)) {
-        throw new CdpError(`Facet cannot operate this tab: Chrome refuses to let extensions debug it (${message})`);
+        throw new CdpError(`SplitSession cannot operate this tab: Chrome refuses to let extensions debug it (${message})`);
       } else if (/no tab with/i.test(message)) {
         throw new CdpError(`no tab with id ${tabId} (it may have been closed; call list_tabs)`);
       } else {
@@ -528,7 +528,7 @@ export class CdpSessions {
     if (generation !== this.generation) {
       // Switched off while attaching.
       await this.d.dbg.detach({ tabId }).catch(() => {});
-      throw new CdpError('the Facet agent bridge was switched off; the action was not performed');
+      throw new CdpError('the SplitSession agent bridge was switched off; the action was not performed');
     }
     const slot = this.slot(tabId);
     slot.session = session;
@@ -543,11 +543,11 @@ export class CdpSessions {
         const lost = this.abandoned.get(tabId);
         if (lost) {
           throw new CdpError(
-            `a JavaScript ${lost.type}${lost.message ? ` ("${lost.message.slice(0, 200)}")` : ''} has been open on this tab for more than ${Math.round(this.dialogMaxMs / 60_000)} minutes, nobody answered it, and Facet let go of the tab; Facet cannot answer it now. Ask the user to close the dialog, then try again.`,
+            `a JavaScript ${lost.type}${lost.message ? ` ("${lost.message.slice(0, 200)}")` : ''} has been open on this tab for more than ${Math.round(this.dialogMaxMs / 60_000)} minutes, nobody answered it, and SplitSession let go of the tab; SplitSession cannot answer it now. Ask the user to close the dialog, then try again.`,
           );
         }
         throw new CdpError(
-          'the page does not respond: it is busy, or a JavaScript dialog (alert / confirm / prompt) opened while Facet was not attached, which Facet cannot answer. Ask the user to close the dialog, then try again.',
+          'the page does not respond: it is busy, or a JavaScript dialog (alert / confirm / prompt) opened while SplitSession was not attached, which SplitSession cannot answer. Ask the user to close the dialog, then try again.',
         );
       }
       await session.send('Page.enable');

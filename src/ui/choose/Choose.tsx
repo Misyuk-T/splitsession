@@ -24,7 +24,7 @@ export function Choose() {
   const list = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    document.title = site ? `Facet: open ${site} in…` : 'Facet';
+    document.title = site ? `SplitSession: open ${site} in…` : 'SplitSession';
   }, [site]);
   useEffect(() => {
     if (containers) list.current?.querySelector<HTMLElement>('button')?.focus();
@@ -33,7 +33,7 @@ export function Choose() {
   if (!params.url || !site) {
     return (
       <main class="choose">
-        <header class="choose__head"><Logo size={28} /><h1>Facet</h1></header>
+        <header class="choose__head"><Logo size={28} /><h1>SplitSession</h1></header>
         <p class="fx-notice fx-notice--info" role="status">
           This page opens when a domain rule asks where a site should open. It was opened without an address, so there is nothing to choose.
         </p>
@@ -77,7 +77,7 @@ export function Choose() {
     <main class="choose">
       <header class="choose__head">
         <Logo size={28} />
-        <h1>Facet</h1>
+        <h1>SplitSession</h1>
       </header>
       <section class="choose__card" aria-labelledby="choose-title">
         <h2 id="choose-title">Open {site} in which container?</h2>

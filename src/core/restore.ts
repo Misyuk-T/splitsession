@@ -3,7 +3,7 @@ import type { DnrRule } from './dnr/rule-compiler';
 
 /**
  * Container tabs that come back: browser restart with session restore, Ctrl/Cmd+Shift+T and History's "Recently
- * closed", a closed (saved) Facet tab group opened again. Pure part: what Facet remembers about container tabs, how a
+ * closed", a closed (saved) SplitSession tab group opened again. Pure part: what SplitSession remembers about container tabs, how a
  * tab that appears is matched to that memory, the group-title marker, and the declarativeNetRequest gate that keeps
  * such a tab from sending anything before it is matched. The stateful part is `src/background/restore.ts`; the
  * reasoning is in docs/decisions.md ("Container tabs that come back").
@@ -17,13 +17,13 @@ export const MAX_GATE_RULES = 500;
 /**
  * Priority of the gate (dynamic `block`) and of the session `allow` rules that open it for known tabs. At equal
  * priority `allow` beats `block`; an `allow` also cancels every `modifyHeaders` rule of the same or lower priority,
- * which is why every cookie rule of Facet sits at 2 or above (`CATCH_ALL_PRIORITY`). Measured in Chromium 156.
+ * which is why every cookie rule of SplitSession sits at 2 or above (`CATCH_ALL_PRIORITY`). Measured in Chromium 156.
  */
 export const GATE_PRIORITY = 1;
 export const MAX_RECORDS = 400;
 /** A closed tab whose recently-closed entry has not been found yet stays restorable this long. */
 export const CLOSED_GRACE_MS = 60_000;
-/** A whole Facet group that was closed (Chrome keeps it as a saved group) stays restorable this long. */
+/** A whole SplitSession group that was closed (Chrome keeps it as a saved group) stays restorable this long. */
 export const SAVED_GROUP_TTL_MS = 30 * 24 * 3600_000;
 export const WINDOW_TTL_MS = 7 * 24 * 3600_000;
 /**
@@ -35,7 +35,7 @@ export const STARTUP_GRACE_MS = 5 * 60_000;
 // ---------------------------------------------------------------- group-title marker
 
 /**
- * Facet's groups carry the container ID in their title as invisible characters: `name` + U+2063 + three of four
+ * SplitSession's groups carry the container ID in their title as invisible characters: `name` + U+2063 + three of four
  * zero-width characters per ID character + U+2063. Chrome keeps the title as it is through session restore and saved
  * groups, the user sees only the name, and a group the user made (or renamed by retyping it) has no marker, so its
  * title never decides a container.
@@ -116,7 +116,7 @@ export function compileGateRules(keys: Iterable<string>): DnrRule[] {
 }
 
 /**
- * Session `allow` rules that open the gate: for every tab Facet already knows (`clearedTabs`), and for every tab on
+ * Session `allow` rules that open the gate: for every tab SplitSession already knows (`clearedTabs`), and for every tab on
  * the URLs that are gated only for the next browser start (`openKeys`: URLs of container tabs that are open now, not
  * of tabs that could come back from "recently closed"). IDs from `next()`.
  */
@@ -202,7 +202,7 @@ export interface RestoreRecord {
   /** Its window's signature and its position among that window's http(s) tabs, at the last snapshot. */
   windowSig?: string;
   pos?: number;
-  /** It sat in a Facet group (marker) of its own container. */
+  /** It sat in a SplitSession group (marker) of its own container. */
   inGroup?: boolean;
   /** Last snapshot that saw the tab open (epoch ms). */
   at: number;
@@ -210,7 +210,7 @@ export interface RestoreRecord {
   closedAt?: number;
   /** Closed together with its window. */
   viaWindow?: boolean;
-  /** Its whole Facet group closed with it: Chrome keeps such a group (saved tab groups) and can open it again. */
+  /** Its whole SplitSession group closed with it: Chrome keeps such a group (saved tab groups) and can open it again. */
   savedGroup?: boolean;
   /** Its entry in `chrome.sessions.getRecentlyClosed` (valid in this browser session only). */
   sessionId?: string;
@@ -451,7 +451,7 @@ function decide(records: readonly RestoreRecord[], evidence: Evidence): MatchRes
  *     recently-closed entry of such a window was restored just now. A window with a single web page is never evidence:
  *     a link from another app, "open bookmark in new window" and the like produce exactly that;
  *  3. `session`: the tab's recently-closed entry was restored just now (Ctrl/Cmd+Shift+T, History);
- *  4. `group`: the tab sits in a group whose title carries Facet's marker for a container that has a closed record
+ *  4. `group`: the tab sits in a group whose title carries SplitSession's marker for a container that has a closed record
  *     with this URL (a saved group opened again).
  * Only the URL in common: plain, except at browser start for URLs of tabs open in a container at the end of the
  * previous session (ambiguous: the user decides).

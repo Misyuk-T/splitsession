@@ -78,7 +78,7 @@ export interface PendingBeaconAnswer {
   n?: string;
 }
 
-/** Answer in a tab WITHOUT a container on an origin Facet has seen inside containers ("managed"). */
+/** Answer in a tab WITHOUT a container on an origin SplitSession has seen inside containers ("managed"). */
 export interface ManagedBeaconAnswer {
   m: 1;
 }

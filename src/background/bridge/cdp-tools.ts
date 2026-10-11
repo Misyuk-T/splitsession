@@ -5,7 +5,7 @@
  * cannot do). Finding elements, focusing, scrolling and waiting are DOM work (page-dom.ts, dom-tools.ts) and need no session.
  *
  * Isolation: nothing here reads or writes cookies or storage, sets headers or intercepts requests, and code from the
- * agent runs only in the page's MAIN world (where Facet's shim answers `document.cookie` with the container's jar). Our
+ * agent runs only in the page's MAIN world (where SplitSession's shim answers `document.cookie` with the container's jar). Our
  * own helper functions run in a CDP isolated world: they only look at the DOM.
  */
 import { CdpError, type TabSession } from './cdp';
@@ -187,13 +187,13 @@ export async function setFilesByMarker(s: TabSession, marker: string, paths: str
     objectGroup: 'facet-agent',
   });
   const objectId = found.result.subtype === 'null' ? undefined : found.result.objectId;
-  if (!objectId) throw new CdpError('that file input is inside a frame of another site, which Facet cannot hand files to; use the frame\'s page directly');
+  if (!objectId) throw new CdpError('that file input is inside a frame of another site, which SplitSession cannot hand files to; use the frame\'s page directly');
   try {
     await s.send('DOM.setFileInputFiles', { files: paths, objectId });
   } catch (error) {
     const message = (error as Error).message;
     if (/not allowed/i.test(message)) {
-      throw new CdpError('Chrome lets an extension hand local files to a page only when "Allow access to file URLs" is on for it: chrome://extensions > Facet > Details. Ask the user to switch it on.');
+      throw new CdpError('Chrome lets an extension hand local files to a page only when "Allow access to file URLs" is on for it: chrome://extensions > SplitSession > Details. Ask the user to switch it on.');
     }
     throw new CdpError(`could not set the files: ${message}`);
   } finally {

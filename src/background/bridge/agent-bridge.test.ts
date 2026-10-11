@@ -71,10 +71,10 @@ describe('AgentBridge', () => {
     expect(bridge.state().status).toBe('off');
   });
 
-  it('connects to com.facet.bridge and is connected when the host says ready', async () => {
+  it('connects to com.splitsession.bridge and is connected when the host says ready', async () => {
     const { bridge, b, ports, alarms } = setup();
     await bridge.sync(true, true);
-    expect(b.runtime.connectNative).toHaveBeenCalledWith('com.facet.bridge');
+    expect(b.runtime.connectNative).toHaveBeenCalledWith('com.splitsession.bridge');
     expect(bridge.state().status).toBe('connecting');
     expect(alarms.create).toHaveBeenCalledWith(BRIDGE_ALARM, { periodInMinutes: 1 });
     ports[0]!.receive({ type: 'ready', version: 1, socket: '/s' });

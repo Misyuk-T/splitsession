@@ -64,7 +64,7 @@ const IDLE: BridgeState = { status: 'off', error: null, actions: 0, lastTool: nu
 
 /**
  * The extension's end of the agent bridge. While the setting is on it keeps a Native Messaging port to the host
- * (`com.facet.bridge`), answers the host's tool requests through the router, and publishes its state (`storage.session`
+ * (`com.splitsession.bridge`), answers the host's tool requests through the router, and publishes its state (`storage.session`
  * key `bridgeState`) for the popup and the options page. Off: no port, no host process.
  */
 export class AgentBridge {
@@ -212,7 +212,7 @@ export class AgentBridge {
     const meta: ActionMeta = { signal: this.abort.signal };
     let reply: ExtensionToHost;
     try {
-      if (!this.runner) throw new Error('the Facet background is still starting; try again');
+      if (!this.runner) throw new Error('the SplitSession background is still starting; try again');
       // Switched off (or reconnecting) between the request arriving and now: do nothing at all.
       if (!this.enabled || this.port !== port || meta.signal!.aborted) throw new Error(SWITCHED_OFF);
       const result = await this.runner.run(String(tool), args, meta);

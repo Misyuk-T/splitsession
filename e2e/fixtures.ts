@@ -37,7 +37,7 @@ export interface Facet {
   /** New tab without a container. */
   plain(url: string): Promise<Page>;
   tabIdOf(page: Page): Promise<number>;
-  /** Closes `page` with the test (a tab the test did not open itself, e.g. one Facet created). */
+  /** Closes `page` with the test (a tab the test did not open itself, e.g. one SplitSession created). */
   adopt(page: Page): void;
   /** Requests the stand received; `clearLog` first to scope them. */
   serverLog(): Promise<LogEntry[]>;
@@ -48,7 +48,7 @@ export interface Facet {
   serviceWorkerTargets(via: Page): Promise<number>;
   /** Tab and tab-group facts as Chrome reports them (asked through the extension worker). */
   tabInfo(tabId: number): Promise<{ id: number; title: string; url: string; groupId: number; windowId: number; badge: string; badgeColor: number[] }>;
-  /** `title` without Facet's invisible container marker; `marker`: the container ID it names (null: none). */
+  /** `title` without SplitSession's invisible container marker; `marker`: the container ID it names (null: none). */
   groupInfo(groupId: number): Promise<{ id: number; title: string; color: string; windowId: number; marker: string | null } | null>;
   /** Runs `fn` in the extension worker (use the global `chrome` inside it). */
   inWorker<T, A>(fn: (arg: A) => Promise<T> | T, arg: A): Promise<T>;
@@ -127,7 +127,7 @@ export const test = base.extend<{ facet: Facet }, { profile: Profile; extContext
       async plain(url) {
         const page = await context.newPage();
         opened.push(page);
-        // The restore gate holds a brand-new tab on the address of a just-closed container tab until Facet has seen
+        // The restore gate holds a brand-new tab on the address of a just-closed container tab until SplitSession has seen
         // the tab; a person cannot type that fast, a test can.
         await api('flushRestore');
         await page.goto(url);

@@ -15,7 +15,7 @@ async function run(): Promise<void> {
   const fail = (message: string) => {
     status.textContent = message;
     status.className = 'error';
-    document.title = 'Facet: cannot open';
+    document.title = 'SplitSession: cannot open';
   };
   let url: URL;
   try {

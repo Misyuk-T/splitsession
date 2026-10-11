@@ -395,7 +395,7 @@ export class Facet {
   }
 
   /**
-   * Facet is about to navigate a container tab to `url` itself: the origin's service workers are removed first, so
+   * SplitSession is about to navigate a container tab to `url` itself: the origin's service workers are removed first, so
    * none of the real profile can answer the first request (its fetches would carry no tab ID, outside the rules).
    */
   async prepareNavigation(url: string | undefined): Promise<void> {
@@ -456,7 +456,7 @@ export class Facet {
       await this.assign(tabId, containerId);
     }
     if (options.reload) {
-      // A waiting tab shows Facet's own page: it goes to the address it stood for.
+      // A waiting tab shows SplitSession's own page: it goes to the address it stood for.
       if (containerId !== null) await this.prepareNavigation(heldAddress ?? (await this.b.tabs.get(tabId).catch(() => null))?.url);
       if (heldAddress !== undefined) await this.b.tabs.update(tabId, { url: heldAddress });
       else await this.b.tabs.reload(tabId);
@@ -569,7 +569,7 @@ export class Facet {
    * popup parent, a frame that kept a reference), and a document that stays alive keeps that link: the opener of a
    * tab that a domain rule moves into a container would read the container's cookies and storage through its
    * `WindowProxy`. The new tab is created with `tabs.create` (no `window.opener`; `openerTabId` is not passed). Done
-   * for every such move, whether Facet can see an opener or not (a popup's opener is not always visible). Nothing is
+   * for every such move, whether SplitSession can see an opener or not (a popup's opener is not always visible). Nothing is
    * created when the tab is gone or the container rules cannot be installed.
    */
   async replaceTab(tabId: number, containerId: ContainerId | null, url: string, onCreated?: (newTabId: number) => void): Promise<number> {
@@ -952,7 +952,7 @@ export class Facet {
         return null;
       }
       // No initiator: the browser itself (address bar, bookmark, CDP). An extension origin: an extension's
-      // tabs.update (agents such as Claude in Chrome, Facet's own pages); pages cannot borrow that origin.
+      // tabs.update (agents such as Claude in Chrome, SplitSession's own pages); pages cannot borrow that origin.
       if (start.initiator !== undefined && !start.initiator.startsWith('chrome-extension://')) {
         this.log('warn', `#ctr marker ignored: the navigation was started by ${start.initiator}, not by the browser`);
         return null;

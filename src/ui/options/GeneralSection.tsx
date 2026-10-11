@@ -55,7 +55,7 @@ export function GeneralSection() {
         />
         <Switch
           label="Restore container tabs after restart"
-          description="When Chrome brings tabs back (restarting with “Continue where you left off”, Reopen closed tab, History, a closed tab group opened again), container tabs return to their container before they load. Facet keeps the addresses of container tabs on this computer for that. A tab it cannot match with certainty waits unloaded, and the popup asks you. Off: such tabs come back as ordinary tabs."
+          description="When Chrome brings tabs back (restarting with “Continue where you left off”, Reopen closed tab, History, a closed tab group opened again), container tabs return to their container before they load. SplitSession keeps the addresses of container tabs on this computer for that. A tab it cannot match with certainty waits unloaded, and the popup asks you. Off: such tabs come back as ordinary tabs."
           checked={value.restoreTabs}
           disabled={settings === null}
           onChange={(next) => void change({ restoreTabs: next })}

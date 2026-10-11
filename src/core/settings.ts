@@ -21,7 +21,7 @@ export interface Settings {
   showNameToPages: boolean;
   /**
    * Agent bridge: one all-or-nothing switch. On: the extension connects to the local native-messaging host
-   * (`com.facet.bridge`) and the user's own AI agent (an MCP server on the same machine) can list, read and operate
+   * (`com.splitsession.bridge`) and the user's own AI agent (an MCP server on the same machine) can list, read and operate
    * every tab of every window. Off (default): no connection, no host process, nothing reachable. Docs: docs/agents.md.
    */
   agentBridge: boolean;
@@ -33,7 +33,7 @@ export interface Settings {
   agentActivity: boolean;
   /**
    * Container tabs that come back (browser restart with "Continue where you left off", Ctrl/Cmd+Shift+T, History's
-   * "Recently closed", a closed tab group opened again) return to their container before their first request. Facet
+   * "Recently closed", a closed tab group opened again) return to their container before their first request. SplitSession
    * keeps the addresses of container tabs in `storage.local` for that and holds such tabs until it has matched them.
    * Off: they come back as ordinary tabs. Default on.
    */

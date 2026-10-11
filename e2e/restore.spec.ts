@@ -42,12 +42,12 @@ test.describe('container tabs that come back', () => {
     expect(sent.every((c) => c === 'who=alice')).toBe(true);
   });
 
-  test('a closed Facet group opened again (saved group, simulated) comes back in its container; a look-alike group of the user’s does not', async ({ facet }) => {
+  test('a closed SplitSession group opened again (saved group, simulated) comes back in its container; a look-alike group of the user’s does not', async ({ facet }) => {
     const A = await facet.container('A');
     await facet.plain(setCookie('a.localhost', 'who=real'));
     const one = await containerTab(facet, A.name, 'who=alice', at('a.localhost', '/whoami?g=1'));
     const two = await containerTab(facet, A.name, 'who=alice', at('a.localhost', '/whoami?g=2'));
-    // Both in Facet's group of A (the projection groups them a moment after they are assigned).
+    // Both in SplitSession's group of A (the projection groups them a moment after they are assigned).
     await expect.poll(async () => (await facet.tabInfo(one.tabId)).groupId).toBeGreaterThanOrEqual(0);
     const { groupId, windowId } = await facet.tabInfo(one.tabId);
     await expect.poll(async () => (await facet.tabInfo(two.tabId)).groupId).toBe(groupId);
@@ -88,7 +88,7 @@ test.describe('container tabs that come back', () => {
       expect(sent.length).toBeGreaterThan(0);
       expect(sent.every((c) => c === 'who=alice')).toBe(true);
     }
-    // Facet took the restored group over: no second group for the container.
+    // SplitSession took the restored group over: no second group for the container.
     expect((await facet.tabInfo(reopened[0]!)).groupId).toBe((await facet.tabInfo(reopened[1]!)).groupId);
 
     // The user's own group with the container's name (no marker) on a gated address: an ordinary tab.
@@ -336,7 +336,7 @@ test('browser restart: container tabs return before their first request, groups 
       await loaded(sw, id, new URL(url).search);
       return id;
     };
-    /** The user drags the tab out of its group (Facet does not pull it back): no group tells what it is. */
+    /** The user drags the tab out of its group (SplitSession does not pull it back): no group tells what it is. */
     const ungroup = async (tabId: number) => {
       await expect.poll(() => sw.evaluate(async (id) => (await (globalThis as any).chrome.tabs.get(id)).groupId as number, tabId)).toBeGreaterThanOrEqual(0);
       await sw.evaluate((id) => (globalThis as any).chrome.tabs.ungroup(id), tabId);
@@ -391,7 +391,7 @@ test('browser restart: container tabs return before their first request, groups 
     await expect.poll(() => cookiesFor(log, '/whoami?w=b1')).toEqual(['who=bob']);
     // The active tab of a window: Chromium loads it while restoring, before the extension's rules exist (with the
     // extension loaded from the command line, as here), so that one request may have gone out as the real profile.
-    // Facet still matches the tab and loads it again in its container.
+    // SplitSession still matches the tab and loads it again in its container.
     await expect.poll(async () => (await cookiesFor(log, '/whoami?w=act')).at(-1), { timeout: 10_000 }).toBe('who=alice');
     // The restored group of A in the main window was taken over (one group with both tabs), not doubled.
     const a1Now = located.find((t) => t.search === '?w=a1')!.tabId;
@@ -418,7 +418,7 @@ test('browser restart: container tabs return before their first request, groups 
     expect(await cookiesFor(log, '/whoami?w=x')).toEqual([]);
     expect(await cookiesFor(log, '/whoami?w=y')).toEqual([]);
 
-    // Each waiting tab shows Facet's page, not Chrome's "blocked" page, with a bright badge; the button says so for every
+    // Each waiting tab shows SplitSession's page, not Chrome's "blocked" page, with a bright badge; the button says so for every
     // other tab. The page makes no request (the stand saw none, above).
     const heldPages = () => ctx.pages().filter((p) => p.url().startsWith(ext('held.html')));
     await expect.poll(() => heldPages().length, { timeout: 10_000 }).toBe(4);
@@ -429,7 +429,7 @@ test('browser restart: container tabs return before their first request, groups 
     }, `${ext('held.html')}*`)).toEqual(['!', '!', '!', '!']);
     expect(await sw.evaluate(async () => [(await (globalThis as any).chrome.action.getBadgeText({})) as string, (await (globalThis as any).chrome.action.getTitle({})) as string])).toEqual([
       '!',
-      'Facet — 4 tabs are waiting for you to choose a container (open Facet)',
+      'SplitSession — 4 tabs are waiting for you to choose a container (open SplitSession)',
     ]);
     // One of B's look-alike tabs is settled from its own page: "Open in Restart B" (the choices of the popup banner).
     const heldY = heldPages().find((p) => p.url().includes(encodeURIComponent('?w=y')))!;
@@ -455,7 +455,7 @@ test('browser restart: container tabs return before their first request, groups 
     await expect(banner).toHaveCount(0);
     expect((await api<unknown[]>('listTabs')).length).toBe(6);
     // Nothing waits any more: the button is back to normal.
-    await expect.poll(() => sw.evaluate(async () => [(await (globalThis as any).chrome.action.getBadgeText({})) as string, (await (globalThis as any).chrome.action.getTitle({})) as string])).toEqual(['', 'Facet']);
+    await expect.poll(() => sw.evaluate(async () => [(await (globalThis as any).chrome.action.getBadgeText({})) as string, (await (globalThis as any).chrome.action.getTitle({})) as string])).toEqual(['', 'SplitSession']);
     await ctx.close();
   } finally {
     rmSync(dir, { recursive: true, force: true });

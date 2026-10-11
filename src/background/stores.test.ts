@@ -170,12 +170,12 @@ describe('BadgeIndicator', () => {
       'text 4 "!"',
       'bg 4 #ef2d2d',
       'fg 4 #ffffff',
-      'title 4 Facet — this tab is waiting for you to choose its container',
+      'title 4 SplitSession — this tab is waiting for you to choose its container',
       'text 5 ""',
       'text undefined "!"',
       'bg undefined #ef2d2d',
       'fg undefined #ffffff',
-      'title undefined Facet — 2 tabs are waiting for you to choose a container (open Facet)',
+      'title undefined SplitSession — 2 tabs are waiting for you to choose a container (open SplitSession)',
     ]);
   });
 

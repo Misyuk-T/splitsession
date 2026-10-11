@@ -120,7 +120,7 @@ export function RulesSection({ containers }: { containers: ContainerInfo[] | nul
                 options={list.map((c) => ({ value: c.id, label: c.name, dot: CONTAINER_HEX[c.color] }))}
                 onChange={setContainerId}
                 placeholder={list.length === 0 ? 'No containers yet' : 'Choose a container'}
-                emptyText="Create a container in the Facet popup first."
+                emptyText="Create a container in the SplitSession popup first."
                 invalid={touched && chosen === null}
               />
             </div>

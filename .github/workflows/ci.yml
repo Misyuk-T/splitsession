@@ -1,4 +1,4 @@
-# Facet CI: typecheck, unit tests and both editions on every push and pull request (no e2e here: it needs a headed
+# SplitSession CI: typecheck, unit tests and both editions on every push and pull request (no e2e here: it needs a headed
 # Chromium and the native bridge host, see docs/development.md). A tag `v*` also publishes a GitHub Release with both zips.
 name: CI
 
@@ -46,15 +46,15 @@ jobs:
         run: |
           pnpm zip:full
           pnpm zip:lite
-          ls -l .output/facet-full-*.zip .output/lite/facet-lite-*.zip
+          ls -l .output/splitsession-full-*.zip .output/lite/splitsession-lite-*.zip
 
       - uses: actions/upload-artifact@v4
         with:
-          name: facet-zips
+          name: splitsession-zips
           if-no-files-found: error
           path: |
-            .output/facet-full-*.zip
-            .output/lite/facet-lite-*.zip
+            .output/splitsession-full-*.zip
+            .output/lite/splitsession-lite-*.zip
 
   release:
     if: startsWith(github.ref, 'refs/tags/v')
@@ -75,7 +75,7 @@ jobs:
 
       - uses: actions/download-artifact@v4
         with:
-          name: facet-zips
+          name: splitsession-zips
           path: zips
 
       - name: Create the GitHub Release
@@ -84,7 +84,7 @@ jobs:
         run: |
           find zips -name '*.zip' | sort
           gh release create "${GITHUB_REF_NAME}" \
-            "$(find zips -name 'facet-lite-*.zip')" \
-            "$(find zips -name 'facet-full-*.zip')" \
-            --title "Facet ${GITHUB_REF_NAME}" \
+            "$(find zips -name 'splitsession-lite-*.zip')" \
+            "$(find zips -name 'splitsession-full-*.zip')" \
+            --title "SplitSession ${GITHUB_REF_NAME}" \
             --generate-notes

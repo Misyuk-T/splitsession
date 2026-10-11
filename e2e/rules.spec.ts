@@ -82,7 +82,7 @@ test.describe('domain rules', () => {
     await expect(parent.locator('#submit')).toBeVisible();
     await facet.api('setDomainRule', { domain: 'a.localhost', action: 'always', containerId: W.id });
     const opened = facet.ctx.waitForEvent('page');
-    await parent.click('#submit'); // <form target=_blank>: Facet's own fallback inheritance races the rule engine
+    await parent.click('#submit'); // <form target=_blank>: SplitSession's own fallback inheritance races the rule engine
     const child = await opened;
     await expect(child.locator('#user')).toHaveText('former');
     expect(await facet.api('getTabContainer', await facet.tabIdOf(child))).toBe(A.id);

@@ -1,14 +1,17 @@
-// Installs (or with --uninstall removes) the Facet agent bridge's Native Messaging host.
+// Installs (or with --uninstall removes) the SplitSession agent bridge's Native Messaging host.
 //
 //   pnpm bridge:install                      build the bridge, register the host with Google Chrome, print the `claude mcp add` command
 //   pnpm bridge:install --browser chromium   ... with Chromium instead (chrome | chromium | brave | edge | all)
 //   pnpm bridge:install --dir <path>         ... into an explicit NativeMessagingHosts directory (tests)
-//   --host-dir <path>                        where the host program is copied (default ~/Library/Application Support/Facet/host)
+//   --host-dir <path>                        where the host program is copied (default ~/Library/Application Support/SplitSession/host)
 //   pnpm bridge:uninstall                    remove the host registration (every browser unless --browser/--dir is given)
 //
-// It writes only: bridge/dist/ (build output), the host program + launcher in ~/Library/Application Support/Facet/host
+// It writes only: bridge/dist/ (build output), the host program + launcher in ~/Library/Application Support/SplitSession/host
 // (a copy, because a program Chrome starts must not live in ~/Documents: macOS privacy prompts), and
-// com.facet.bridge.json in the browser's NativeMessagingHosts directory. It does not touch Claude's configuration: it prints the command for you to run.
+// com.splitsession.bridge.json in the browser's NativeMessagingHosts directory. It does not touch Claude's configuration: it prints the command for you to run.
+//
+// Migration from the product's old name (Facet, renamed 2026-10-11): install AND uninstall also remove the old
+// com.facet.bridge.json manifest and the old host copy in ~/Library/Application Support/Facet/host, if present.
 import { spawnSync } from 'node:child_process';
 import { chmodSync, copyFileSync, existsSync, mkdirSync, rmSync, rmdirSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
@@ -16,9 +19,11 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const root = fileURLToPath(new URL('..', import.meta.url));
 const dist = path.join(root, 'bridge', 'dist');
-const entry = path.join(dist, 'facet-bridge.mjs');
+const entry = path.join(dist, 'splitsession-bridge.mjs');
 
-const HOST_NAME = 'com.facet.bridge';
+const HOST_NAME = 'com.splitsession.bridge';
+const OLD_HOST_MANIFEST_FILE = 'com.facet.bridge.json'; // before the rename to SplitSession
+const OLD_MCP_NAME = 'facet';
 const EXTENSION_ID = 'hapfikidacgfgnnajkgnaednpgnhmffk'; // fixed by the manifest key (docs/development.md)
 
 const args = process.argv.slice(2);
@@ -64,10 +69,37 @@ if (value('--dir')) {
 }
 
 const hostDir = path.resolve(value('--host-dir') ?? paths.hostDir());
-const hostEntry = path.join(hostDir, 'facet-bridge.mjs');
-const launcher = path.join(hostDir, 'facet-bridge-host');
+const hostEntry = path.join(hostDir, 'splitsession-bridge.mjs');
+const launcher = path.join(hostDir, 'splitsession-bridge-host');
 
-const claudeAdd = `claude mcp add --scope user facet -- ${sh(process.execPath)} ${sh(entry)} mcp`;
+const claudeAdd = `claude mcp add --scope user splitsession -- ${sh(process.execPath)} ${sh(entry)} mcp`;
+const claudeRemoveOld = `claude mcp remove --scope user ${OLD_MCP_NAME}`;
+
+// Old (Facet) leftovers. The old host copy lives next to the new one's parent: <Application Support>/Facet/host. With an
+// explicit --host-dir (tests) only that directory's old-named files are looked at, never the real user directory.
+const oldHostDir = value('--host-dir') ? hostDir : path.join(path.dirname(paths.socketDir()), 'Facet', 'host');
+function removeOld() {
+  for (const { dir } of targets) {
+    const file = path.join(dir, OLD_HOST_MANIFEST_FILE);
+    if (existsSync(file)) {
+      rmSync(file);
+      console.log(`removed old ${file}`);
+    }
+  }
+  const gone = [path.join(oldHostDir, 'facet-bridge-host'), path.join(oldHostDir, 'facet-bridge.mjs')].filter((f) => existsSync(f));
+  for (const f of gone) rmSync(f, { force: true });
+  if (gone.length > 0) console.log(`removed old host copy in ${oldHostDir}`);
+  if (oldHostDir !== hostDir) {
+    rmSync(path.join(path.dirname(oldHostDir), 'bridge.sock'), { force: true }); // a stale socket of the old host
+    for (const d of [oldHostDir, path.dirname(oldHostDir)]) {
+      try {
+        rmdirSync(d); // only when empty
+      } catch {
+        /* not empty, or already gone */
+      }
+    }
+  }
+}
 
 if (uninstall) {
   for (const { name, dir } of targets) {
@@ -86,7 +118,8 @@ if (uninstall) {
   } catch {
     /* not empty, or already gone */
   }
-  console.log('\nTo forget the agent in Claude Code too, run:\n\n  claude mcp remove --scope user facet\n');
+  removeOld();
+  console.log(`\nTo forget the agent in Claude Code too, run:\n\n  claude mcp remove --scope user splitsession\n\nand, if you registered it under the old name:\n\n  ${claudeRemoveOld}\n`);
   process.exit(0);
 }
 
@@ -99,7 +132,7 @@ console.log(`host: ${launcher}`);
 
 const manifest = {
   name: HOST_NAME,
-  description: 'Facet agent bridge: lets your own AI agent see and operate your Chrome tabs (only while the switch in Facet is on).',
+  description: 'SplitSession agent bridge: lets your own AI agent see and operate your Chrome tabs (only while the switch in SplitSession is on).',
   path: launcher,
   type: 'stdio',
   allowed_origins: [`chrome-extension://${EXTENSION_ID}/`],
@@ -111,6 +144,8 @@ for (const { name, dir } of targets) {
   console.log(`${name}: wrote ${file}`);
 }
 
+removeOld();
+
 console.log(`
 Host installed. Next:
 
@@ -118,7 +153,9 @@ Host installed. Next:
 
      ${claudeAdd}
 
-  2. In Chrome, open the Facet popup and turn on "Agent bridge" (Chrome picks the host up the moment you do).
+     (If you used this agent under its old name "Facet", also run: ${claudeRemoveOld})
+
+  2. In Chrome, open the SplitSession popup and turn on "Agent bridge" (Chrome picks the host up the moment you do).
      Turning the switch off closes the connection; nothing is reachable while it is off.
 
 Remove everything later with: pnpm bridge:uninstall

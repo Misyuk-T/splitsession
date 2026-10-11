@@ -81,7 +81,7 @@ describe('parseExport', () => {
       if (!r.ok) expect(r.error).toMatch(message);
     });
 
-  bad('wrong format', (f) => (f.format = 'other'), /Not a Facet export/);
+  bad('wrong format', (f) => (f.format = 'other'), /Not a SplitSession export/);
   bad('unknown version', (f) => (f.version = 2), /Unsupported export version/);
   bad('containers missing', (f) => delete f.containers, /containers/);
   bad('rules missing', (f) => delete f.rules, /rules/);

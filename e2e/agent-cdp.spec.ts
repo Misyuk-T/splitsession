@@ -8,7 +8,7 @@ import { hostPids, installHost, openPopup, startMcp, type Mcp } from './bridge-h
 /**
  * The agent bridge's "full hands": snapshot with refs (read from the DOM, no debugger), trusted input, dialogs, console and
  * network, background screenshots (chrome.debugger / CDP), and the isolation checks that make sure the debugger is not a
- * way around containers. Chrome shows "started debugging this browser" (and moves the page) while Facet is attached, so
+ * way around containers. Chrome shows "started debugging this browser" (and moves the page) while SplitSession is attached, so
  * the debugger is used only where nothing else can do the job, and one attach serves a whole burst of actions.
  *
  * Playwright drives this Chromium over CDP itself, and Chrome lets several debugger clients share a tab, so the
@@ -359,7 +359,7 @@ test.describe('agent bridge: full hands (CDP)', () => {
       await mcp.call('click', { tabId, selector: '#prompt' });
       await mcp.json('handle_dialog', { tabId, accept: true, promptText: 'Taras' });
       await expect.poll(() => textOf(mcp!, tabId, 'dialog-out')).toContain('prompt=Taras');
-      expect((await mcp.call('handle_dialog', { tabId, accept: true })).text).toMatch(/no JavaScript dialog that Facet saw is open/);
+      expect((await mcp.call('handle_dialog', { tabId, accept: true })).text).toMatch(/no JavaScript dialog that SplitSession saw is open/);
     } finally {
       facet.ctx.off('dialog', leaveOpen);
     }
@@ -490,7 +490,7 @@ test.describe('agent bridge: full hands (CDP)', () => {
     await mcp.json('watch', { tabId, stop: true });
   });
 
-  test('switching the bridge off detaches the debugger at once; Facet takes back a session it forgot', async ({ facet }) => {
+  test('switching the bridge off detaches the debugger at once; SplitSession takes back a session it forgot', async ({ facet }) => {
     const popup = await turnOn(facet);
     mcp = await startMcp(facet);
     const tabId = await openPlain(mcp, at('a.localhost', '/cdp'));
@@ -504,7 +504,7 @@ test.describe('agent bridge: full hands (CDP)', () => {
     expect(await facet.inWorker(async (id: number) => (globalThis as any).facetCdp.isAttached(id), tabId)).toBe(false);
 
     // On again. The extension holds a session the bridge does not know about (as after a worker restart): Chrome
-    // refuses a second attach by the same extension, Facet detaches its own and goes on.
+    // refuses a second attach by the same extension, SplitSession detaches its own and goes on.
     await popup.getByRole('switch', { name: /Agent bridge/ }).click();
     await expect(popup.getByTestId('bridge-card')).toHaveAttribute('data-status', 'connected', { timeout: 15_000 });
     await setIdle(facet, 5_000);
@@ -515,13 +515,13 @@ test.describe('agent bridge: full hands (CDP)', () => {
     await expect.poll(() => facet.inWorker(async (id: number) => (globalThis as any).facetCdp.isAttached(id), tabId), { timeout: 12_000 }).toBe(false);
   });
 
-  test('pages Facet does not debug: browser pages, extension pages', async ({ facet }) => {
+  test('pages SplitSession does not debug: browser pages, extension pages', async ({ facet }) => {
     await turnOn(facet);
     mcp = await startMcp(facet);
     const chromePage = await openPlain(mcp, 'chrome://version/');
     expect((await mcp.call('snapshot', { tabId: chromePage })).text).toMatch(/cannot operate this tab: chrome:\/\/ pages belong to the browser/);
     const own = await openPlain(mcp, ext('options.html'));
-    expect((await mcp.call('click', { tabId: own, selector: 'body' })).text).toMatch(/extension pages \(Facet's own included\) are not operated by the agent/);
+    expect((await mcp.call('click', { tabId: own, selector: 'body' })).text).toMatch(/extension pages \(SplitSession's own included\) are not operated by the agent/);
   });
 
   test('wait_for, history, reload, viewport size, and frames', async ({ facet }) => {
@@ -546,7 +546,7 @@ test.describe('agent bridge: full hands (CDP)', () => {
     expect(await mcp.json('resize_viewport', { tabId, width: 500, height: 400 })).toEqual({ tabId, width: 500, height: 400 });
     expect(await js(mcp, tabId, 'return [innerWidth, innerHeight]')).toBe('[500,400]');
     expect(await mcp.json('resize_viewport', { tabId, clear: true })).toEqual({ tabId, cleared: true });
-    // The override no longer keeps Facet attached. (That the page gets its real size back is checked against plain
+    // The override no longer keeps SplitSession attached. (That the page gets its real size back is checked against plain
     // Chromium in docs/decisions.md: under Playwright, whose own viewport emulation sits on the same tab, it keeps 500.)
     expect(await facet.inWorker(async (id: number) => (globalThis as any).facetCdp.isPinned(id), tabId)).toBe(false);
 

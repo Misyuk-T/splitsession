@@ -39,7 +39,7 @@ export class SettingsStore {
       try {
         listener({ ...next }, { ...previous });
       } catch (error) {
-        console.error('[facet] settings listener failed', error);
+        console.error('[splitsession] settings listener failed', error);
       }
     }
     return this.get();

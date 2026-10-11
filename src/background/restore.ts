@@ -122,7 +122,7 @@ interface SessionState {
 
 export interface RestoreStatus {
   enabled: boolean;
-  /** Tabs Facet could not match with certainty: they wait (their address is not loaded) until the user decides. */
+  /** Tabs SplitSession could not match with certainty: they wait (their address is not loaded) until the user decides. */
   held: Array<{ tabId: number; url: string; title: string; candidates: ContainerId[] }>;
   /** How many of them "Restore container tabs" puts back in one click. */
   oneClick: number;
@@ -151,10 +151,10 @@ function parseSession(raw: unknown): SessionState | null {
  * Brings container tabs back into their containers when Chrome brings the tabs back (docs/decisions.md, "Container
  * tabs that come back").
  *
- * The gate: a dynamic declarativeNetRequest `block` rule (priority 1, main frames) for every address Facet may have to
+ * The gate: a dynamic declarativeNetRequest `block` rule (priority 1, main frames) for every address SplitSession may have to
  * restore: those of open container tabs (for the next browser start, when no session rule exists yet and the service
  * worker may not run) and of closed ones that Chrome can reopen. Dynamic rules survive the browser restart and apply
- * before any extension code runs. Session `allow` rules at the same priority open it for every tab Facet already
+ * before any extension code runs. Session `allow` rules at the same priority open it for every tab SplitSession already
  * knows ("cleared" tabs: all tabs that existed when the worker started, every new tab once seen, every container tab),
  * and for everyone on the addresses that only matter at the next start. A tab that appears with a gated address
  * (restored, reopened) thus sends nothing until it is matched: into its container (and reloaded there), plain (and
@@ -367,7 +367,7 @@ export class TabRestore {
     return address;
   }
 
-  /** The address a waiting tab stands for (it shows Facet's page), or undefined. */
+  /** The address a waiting tab stands for (it shows SplitSession's page), or undefined. */
   heldAddress(tabId: number): string | undefined {
     return this.held.get(tabId)?.url;
   }
@@ -384,7 +384,7 @@ export class TabRestore {
     return [...this.held.keys()];
   }
 
-  /** The address a tab shows or stands for: a waiting tab sits on Facet's own page, which carries the address. */
+  /** The address a tab shows or stands for: a waiting tab sits on SplitSession's own page, which carries the address. */
   private addressOf(tab: TabLike): string {
     const url = urlOf(tab);
     return heldPageTarget(url, this.deps.heldPage) ?? url;
@@ -402,7 +402,7 @@ export class TabRestore {
     this.considerNew(tab, true);
   }
 
-  /** A tab Facet has not seen: held for matching when its address is gated now, known otherwise. */
+  /** A tab SplitSession has not seen: held for matching when its address is gated now, known otherwise. */
   private considerNew(tab: TabLike, live: boolean): void {
     const id = tab.id!;
     if (this.cleared.has(id) || this.pending.has(id) || this.held.has(id)) return;
@@ -613,7 +613,7 @@ export class TabRestore {
       if (tab.status !== 'unloaded' && !tab.discarded) {
         this.reloadedAt.set(tabId, Date.now());
         await this.deps.prepareNavigation(url);
-        // A waiting tab shows Facet's page: it goes to the address it stood for.
+        // A waiting tab shows SplitSession's page: it goes to the address it stood for.
         await (onHeldPage ? this.deps.b.tabs.update(tabId, { url }) : this.deps.b.tabs.reload(tabId)).catch(() => {});
       }
       this.scheduleSnapshot();
@@ -624,7 +624,7 @@ export class TabRestore {
       this.deps.log('warn', `tab ${tabId} may belong to ${result.candidates.join(' or ')}: waiting for the user`, url);
       this.persistSession();
       this.deps.heldChanged([tabId]);
-      // Chrome's "blocked by an extension" says nothing: the tab shows Facet's page with the choices instead (no request).
+      // Chrome's "blocked by an extension" says nothing: the tab shows SplitSession's page with the choices instead (no request).
       if (!onHeldPage) await this.deps.b.tabs.update(tabId, { url: heldPageUrl(this.deps.heldPage, url) }).catch(() => {});
       return false;
     }
@@ -647,7 +647,7 @@ export class TabRestore {
     await this.deps.b.tabs.reload(tabId).catch(() => {});
   }
 
-  /** A waiting tab, now an ordinary one: it goes from Facet's page to its address (nothing is blocked any more). */
+  /** A waiting tab, now an ordinary one: it goes from SplitSession's page to its address (nothing is blocked any more). */
   private async openAsPlain(tabId: number, url: string): Promise<void> {
     this.blocked.delete(tabId);
     this.reloadedAt.set(tabId, Date.now());
@@ -661,7 +661,7 @@ export class TabRestore {
 
   async status(): Promise<RestoreStatus> {
     const held = [...this.held.values()];
-    // The title of Facet's own page says nothing about the address.
+    // The title of SplitSession's own page says nothing about the address.
     const titles = await Promise.all(
       held.map((h) =>
         this.deps.b.tabs.get(h.tabId).then(

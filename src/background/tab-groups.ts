@@ -48,7 +48,7 @@ const RETRY_DELAY_MS = 150;
  * Chrome deletes a group when its last tab leaves, which removes empty groups for us.
  * Titles carry an invisible marker with the container ID (`groupTitle`, `core/restore.ts`): a group Chrome brings back
  * (session restore, a saved group opened again) is recognised as this container's and taken over instead of a second
- * group being made, and the restore matcher can tell Facet's groups from the user's.
+ * group being made, and the restore matcher can tell SplitSession's groups from the user's.
  */
 export class TabGroupProjection {
   /** groupId -> container it was made for. */

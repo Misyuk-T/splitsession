@@ -1,4 +1,4 @@
-// Facet e2e stand: one plain-Node HTTP server answering for several hosts on loopback.
+// SplitSession e2e stand: one plain-Node HTTP server answering for several hosts on loopback.
 // Chrome resolves every *.localhost name to 127.0.0.1 without DNS, so a.localhost, sub.a.localhost, b.localhost,
 // sso.localhost and cdn.localhost are distinct sites (registrable domains) on one port.
 //
@@ -260,7 +260,7 @@ const server = createServer(async (req, res) => {
         ),
       );
     case '/form':
-      // target=_blank form: not intercepted by the shim, so the new tab takes Facet's fallback path.
+      // target=_blank form: not intercepted by the shim, so the new tab takes SplitSession's fallback path.
       return send(
         res,
         200,
