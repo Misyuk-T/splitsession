@@ -60,11 +60,14 @@ export function createExtrasApi(facet: Facet, extras: Extras, b: typeof browser 
 
   return {
     assignTab: async (tabId, containerId, options) => {
+      // A tab waiting for its restore decision shows Facet's own page: "reload" sends it to the address it stands for.
+      const heldAddress = facet.restore.heldAddress(tabId);
       await place(tabId, containerId);
       if (options?.reload) {
         // "Reopen in": the reload is Facet's navigation, so no service worker of the page's origin may answer it.
-        if (containerId !== null) await facet.prepareNavigation((await b.tabs.get(tabId).catch(() => undefined))?.url);
-        await b.tabs.reload(tabId);
+        if (containerId !== null) await facet.prepareNavigation(heldAddress ?? (await b.tabs.get(tabId).catch(() => undefined))?.url);
+        if (heldAddress !== undefined) await b.tabs.update(tabId, { url: heldAddress });
+        else await b.tabs.reload(tabId);
       }
     },
 

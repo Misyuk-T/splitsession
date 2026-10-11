@@ -48,7 +48,8 @@ export interface Facet {
   serviceWorkerTargets(via: Page): Promise<number>;
   /** Tab and tab-group facts as Chrome reports them (asked through the extension worker). */
   tabInfo(tabId: number): Promise<{ id: number; title: string; url: string; groupId: number; windowId: number; badge: string; badgeColor: number[] }>;
-  groupInfo(groupId: number): Promise<{ id: number; title: string; color: string; windowId: number } | null>;
+  /** `title` without Facet's invisible container marker; `marker`: the container ID it names (null: none). */
+  groupInfo(groupId: number): Promise<{ id: number; title: string; color: string; windowId: number; marker: string | null } | null>;
   /** Runs `fn` in the extension worker (use the global `chrome` inside it). */
   inWorker<T, A>(fn: (arg: A) => Promise<T> | T, arg: A): Promise<T>;
   /** Cookies in the real profile (what an ordinary tab would send). */
@@ -126,6 +127,9 @@ export const test = base.extend<{ facet: Facet }, { profile: Profile; extContext
       async plain(url) {
         const page = await context.newPage();
         opened.push(page);
+        // The restore gate holds a brand-new tab on the address of a just-closed container tab until Facet has seen
+        // the tab; a person cannot type that fast, a test can.
+        await api('flushRestore');
         await page.goto(url);
         return page;
       },
@@ -213,7 +217,18 @@ export const test = base.extend<{ facet: Facet }, { profile: Profile; extContext
             const c = (globalThis as any).chrome;
             try {
               const g = await c.tabGroups.get(id);
-              return { id: g.id, title: g.title ?? '', color: g.color, windowId: g.windowId };
+              const raw: string = g.title ?? '';
+              const m = /\u2063([\u200b\u200c\u200d\u2060]+)\u2063$/.exec(raw);
+              let marker: string | null = null;
+              if (m) {
+                const digits = ['\u200b', '\u200c', '\u200d', '\u2060'];
+                marker = '';
+                for (let i = 0; i < m[1]!.length; i += 3) {
+                  const n = (digits.indexOf(m[1]![i]!) << 4) | (digits.indexOf(m[1]![i + 1]!) << 2) | digits.indexOf(m[1]![i + 2]!);
+                  marker += '0123456789abcdefghijklmnopqrstuvwxyz'[n];
+                }
+              }
+              return { id: g.id, title: m ? raw.slice(0, m.index) : raw, color: g.color, windowId: g.windowId, marker };
             } catch {
               return null;
             }
@@ -230,7 +245,9 @@ export const test = base.extend<{ facet: Facet }, { profile: Profile; extContext
     await context.clearCookies(); // real profile starts empty for every test
     // Rules and settings outlive a test in the shared browser: start from the defaults.
     for (const rule of await api<Array<{ domain: string }>>('listDomainRules')) await api('removeDomainRule', rule.domain);
-    await api('updateSettings', { tabGroups: true, titlePrefix: true, strictMode: true, showNameToPages: true, agentBridge: false, agentActivity: true });
+    await api('updateSettings', { tabGroups: true, titlePrefix: true, strictMode: true, showNameToPages: true, agentBridge: false, agentActivity: true, restoreTabs: true });
+    // Container tabs closed by earlier tests are not reopened by this one.
+    await api('forgetClosedTabs');
     // Steady state of a user who said yes to strict mode (tests of the other states change it themselves).
     if (!(await api<{ active: boolean }>('getStrictMode')).active) await api('grantStrictMode');
     await use(facet);

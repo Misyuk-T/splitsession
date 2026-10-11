@@ -9,6 +9,8 @@ export interface ActionApi {
 
 /** The badge colour while the agent bridge is on (the popup's amber). */
 export const BRIDGE_ON_COLOR = '#f59e0b';
+/** The badge of a tab that waits for the user to choose its container (restore): bright, on purpose. */
+export const HELD_COLOR = '#ef2d2d';
 
 /**
  * Per-tab toolbar badge: the container's initials on its colour; cleared for plain tabs. Chrome resets tab-specific
@@ -25,19 +27,28 @@ export class BadgeIndicator {
       container(id: ContainerId): Container | undefined;
       /** The agent bridge switch. */
       bridgeOn?(): boolean;
+      /** Tabs waiting for the user to choose a container after a restore. */
+      isHeld?(tabId: number): boolean;
+      heldCount?(): number;
     },
   ) {}
 
   /** The default for tabs without their own badge, and the button's tooltip. */
   async applyGlobal(): Promise<void> {
     const on = this.lookup.bridgeOn?.() ?? false;
+    const held = this.lookup.heldCount?.() ?? 0;
     try {
-      await this.action.setBadgeText({ text: on ? 'ON' : '' });
-      if (on) {
-        await this.action.setBadgeBackgroundColor({ color: BRIDGE_ON_COLOR });
-        await this.action.setBadgeTextColor?.({ color: readableTextColor(BRIDGE_ON_COLOR) });
+      const color = on ? BRIDGE_ON_COLOR : held > 0 ? HELD_COLOR : null;
+      await this.action.setBadgeText({ text: on ? 'ON' : held > 0 ? '!' : '' });
+      if (color) {
+        await this.action.setBadgeBackgroundColor({ color });
+        await this.action.setBadgeTextColor?.({ color: readableTextColor(color) });
       }
-      await this.action.setTitle?.({ title: on ? 'Facet — agent bridge ON: an agent has full access to your tabs' : 'Facet' });
+      const notes = [
+        ...(on ? ['agent bridge ON: an agent has full access to your tabs'] : []),
+        ...(held > 0 ? [`${held === 1 ? '1 tab is' : `${held} tabs are`} waiting for you to choose a container (open Facet)`] : []),
+      ];
+      await this.action.setTitle?.({ title: notes.length > 0 ? `Facet — ${notes.join('; ')}` : 'Facet' });
     } catch {
       /* the action API is unavailable (tests) */
     }
@@ -50,6 +61,13 @@ export class BadgeIndicator {
     const container = id === null ? undefined : this.lookup.container(id);
     const on = this.lookup.bridgeOn?.() ?? false;
     try {
+      if (!container && this.lookup.isHeld?.(tabId)) {
+        await this.action.setBadgeText({ tabId, text: '!' });
+        await this.action.setBadgeBackgroundColor({ tabId, color: HELD_COLOR });
+        await this.action.setBadgeTextColor?.({ tabId, color: readableTextColor(HELD_COLOR) });
+        await this.action.setTitle?.({ tabId, title: 'Facet — this tab is waiting for you to choose its container' });
+        return;
+      }
       if (!container) {
         await this.action.setBadgeText({ tabId, text: on ? 'ON' : '' });
         if (on) {

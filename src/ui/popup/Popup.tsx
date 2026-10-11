@@ -9,6 +9,7 @@ import { ContainerForm } from '../components/ContainerForm';
 import { ConfirmDialog } from '../components/Dialog';
 import { StrictConsentDialog, StrictWarning } from '../components/StrictMode';
 import type { StrictModeStatus } from '../../engine/strict-mode';
+import type { RestoreStatus } from '../../background/restore';
 import { describeError, hostOf, isWebUrl, tabsLabel } from '../format';
 import { Logo } from '../components/Logo';
 import { MenuButton, type MenuItem } from '../components/Menu';
@@ -25,6 +26,18 @@ interface Status {
 }
 
 const NONE = '__none__';
+/** Waiting tabs listed by name in the banner; the rest are counted. */
+const HELD_ROWS = 3;
+
+/** "github.com/org/repo?tab=1" for a waiting tab (its title is the address while nothing has loaded). */
+function shortAddress(url: string): string {
+  try {
+    const u = new URL(url);
+    return `${u.hostname}${u.pathname === '/' ? '' : u.pathname}${u.search}`;
+  } catch {
+    return url;
+  }
+}
 
 /** The tab the popup acts on: the active tab of this window (a `?tab=<id>` override exists for tests). */
 async function currentTab(): Promise<TabInfo | null> {
@@ -47,6 +60,7 @@ export function Popup() {
   const [consentOpen, setConsentOpen] = useState(false);
   const [consentBusy, setConsentBusy] = useState(false);
   const [consentError, setConsentError] = useState<string | null>(null);
+  const [restore, setRestore] = useState<RestoreStatus | null>(null);
   const statusTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const say = (text: string, error = false) => {
@@ -57,13 +71,15 @@ export function Popup() {
 
   const refresh = useCallback(async () => {
     try {
-      const [list, active, prefs, strictStatus] = await Promise.all([
+      const [list, active, prefs, strictStatus, restoreStatus] = await Promise.all([
         facetApi.listContainers(),
         currentTab(),
         facetApi.getSettings(),
         facetApi.getStrictMode(),
+        facetApi.getRestoreStatus(),
       ]);
       setContainers(list);
+      setRestore(restoreStatus);
       setTab(active);
       setSettings(prefs);
       setStrict(strictStatus);
@@ -140,6 +156,21 @@ export function Popup() {
     { id: 'delete', label: 'Delete…', danger: true, separatorBefore: true },
   ];
 
+  const held = restore?.held ?? [];
+  const nameOf = (id: string) => containers.find((c) => c.id === id)?.name ?? id;
+  const resolveHeld = (action: 'restore' | 'plain') =>
+    run(async () => {
+      const count = await facetApi.resolveHeldTabs(action);
+      await refresh();
+      say(action === 'restore' ? `${tabsLabel(count)} back in their containers.` : `${tabsLabel(count)} opened as ordinary tabs.`);
+    }, 'Could not open the tabs');
+  const chooseHeld = (tabId: number, choice: string) =>
+    run(async () => {
+      await facetApi.assignTab(tabId, choice === NONE ? null : choice, { reload: true });
+      await refresh();
+      say(choice === NONE ? 'Opened as an ordinary tab.' : `Opened in “${nameOf(choice)}”.`);
+    }, 'Could not open the tab');
+
   const editing = mode.kind === 'edit' ? containers.find((c) => c.id === mode.id) : undefined;
 
   const acceptStrict = async () => {
@@ -192,6 +223,55 @@ export function Popup() {
       {strict?.needsConsent && <StrictWarning onReview={() => setConsentOpen(true)} />}
 
       <BridgeCard layout="popup" />
+
+      {held.length > 0 && (
+        <section class="fx-notice fx-notice--warn popup__restore" aria-labelledby="restore-title" data-testid="restore-banner">
+          <p id="restore-title" class="popup__restoretext">
+            <strong>{held.length === 1 ? '1 tab' : `${held.length} tabs`} from before the restart may belong to a container.</strong> Facet is
+            not sure which, so {held.length === 1 ? 'it has' : 'they have'} not loaded yet.
+          </p>
+          <ul class="popup__heldrows">
+            {held.slice(0, HELD_ROWS).map((h) => (
+              <li key={h.tabId} class="popup__heldrow" data-testid="held-tab">
+                <span class="popup__heldtext">
+                  <span class="popup__heldname" title={h.url}>
+                    {h.title && h.title !== h.url ? h.title : shortAddress(h.url)}
+                  </span>
+                  <span class="fx-secondary popup__heldname">Maybe {h.candidates.map(nameOf).join(' or ')}</span>
+                </span>
+                <MenuButton
+                  ariaLabel={`Open ${h.title && h.title !== h.url ? h.title : shortAddress(h.url)} in`}
+                  menuLabel="Open this tab in"
+                  items={[
+                    ...h.candidates.map((id) => {
+                      const c = containers.find((x) => x.id === id);
+                      return { id, label: c?.name ?? id, ...(c ? { dot: CONTAINER_HEX[c.color] } : {}) };
+                    }),
+                    { id: NONE, label: 'Ordinary tab', separatorBefore: true },
+                  ]}
+                  onSelect={(id) => void chooseHeld(h.tabId, id)}
+                  align="end"
+                  small
+                >
+                  <span>Open in…</span>
+                  <span aria-hidden="true">▾</span>
+                </MenuButton>
+              </li>
+            ))}
+            {held.length > HELD_ROWS && <li class="fx-secondary">and {held.length - HELD_ROWS} more</li>}
+          </ul>
+          <div class="popup__restoreactions">
+            {restore!.oneClick > 0 && (
+              <Button small variant="primary" disabled={busy} onClick={() => void resolveHeld('restore')}>
+                Restore {restore!.oneClick === 1 ? '1 container tab' : `${restore!.oneClick} container tabs`}
+              </Button>
+            )}
+            <Button small disabled={busy} onClick={() => void resolveHeld('plain')}>
+              {restore!.oneClick > 0 ? 'Open the rest as ordinary tabs' : 'Open as ordinary tabs'}
+            </Button>
+          </div>
+        </section>
+      )}
 
       <section class="popup__tab" aria-label="This tab" data-testid="current-container">
         {current ? <Dot color={CONTAINER_HEX[current.color]} /> : <span class="popup__nodot" aria-hidden="true" />}

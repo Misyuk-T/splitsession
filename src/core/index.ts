@@ -10,3 +10,4 @@ export * from './indicators';
 export * from './domain-rules';
 export * from './exemptions';
 export * from './transfer';
+export * from './restore';

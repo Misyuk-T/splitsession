@@ -28,6 +28,16 @@ html, body { width: 420px; min-height: 120px; }
 .popup__rowname { flex: 1; min-width: 0; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .popup__rowtabs { flex: none; white-space: nowrap; }
 
+/* Tabs from before a restart that Facet could not match with certainty. */
+.popup__restore { display: flex; flex-direction: column; gap: 6px; }
+.popup__restoretext { margin: 0; line-height: 1.35; }
+.popup__heldrows { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }
+.popup__heldrow { display: flex; align-items: center; gap: 8px; min-height: 40px; }
+.popup__heldtext { flex: 1; min-width: 0; display: flex; flex-direction: column; line-height: 1.3; }
+.popup__heldname { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--fx-text); }
+.popup__heldname.fx-secondary { color: var(--fx-warn-text); opacity: 0.85; }
+.popup__restoreactions { display: flex; flex-wrap: wrap; gap: 6px; }
+
 /* A short message over the bottom edge instead of a reserved line: it must not change the popup's height. */
 .popup .popup__status { position: fixed; left: 12px; right: 12px; bottom: 10px; z-index: 800; margin: 0; min-height: 0; pointer-events: none; }
 .popup .popup__status--on { padding: 8px 12px; border: 1px solid var(--fx-border-strong); border-radius: var(--fx-radius); background: var(--fx-surface-raised); box-shadow: var(--fx-shadow); color: var(--fx-text); pointer-events: auto; }

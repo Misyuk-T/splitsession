@@ -5,7 +5,7 @@ import type { DnrRule } from './rule-compiler';
  * Test helper: a small model of declarativeNetRequest matching for the rule shapes Facet emits. Supports `tabIds`,
  * `resourceTypes`, `requestDomains`, `initiatorDomains`, `domainType` (request vs initiator site; no initiator counts as
  * third-party, as measured in Chrome 156), `requestMethods`, `urlFilter` (`||`, `|`, `^`, `*`) and `regexFilter`; picks
- * the highest-priority match (redirect beats modifyHeaders at equal priority, as in Chrome). Not a full
+ * the deciding allow/block/redirect rule by priority and Chrome's precedence, then the modifyHeaders rules an allow does not cancel. Not a full
  * implementation: good enough to assert which `Cookie` header a request ends up with.
  */
 export interface SimulatedRequest {
@@ -22,7 +22,9 @@ export type SimulatedOutcome =
   | { kind: 'none' }
   | { kind: 'cookie'; value: string | null; rule: DnrRule }
   | { kind: 'redirect'; url: string; rule: DnrRule }
-  | { kind: 'block'; rule: DnrRule };
+  | { kind: 'block'; rule: DnrRule }
+  /** An allow rule decided and no modifyHeaders rule above it: the request goes out untouched. */
+  | { kind: 'allow'; rule: DnrRule };
 
 const hostOf = (url: string): string => new URL(url).hostname.replace(/^\[|\]$/g, '');
 const domainListMatches = (host: string, domains: readonly string[]): boolean =>
@@ -76,12 +78,16 @@ export function ruleMatches(rule: DnrRule, req: SimulatedRequest): boolean {
 export function simulate(rules: readonly DnrRule[], req: SimulatedRequest): SimulatedOutcome {
   const matching = rules.filter((r) => ruleMatches(r, req));
   if (matching.length === 0) return { kind: 'none' };
-  // Same priority: block, then redirect, then modifyHeaders (Chrome's action precedence).
-  const rank = (r: DnrRule) => (r.action.type === 'block' ? 0 : r.action.type === 'redirect' ? 1 : 2);
-  matching.sort((a, b) => b.priority - a.priority || rank(a) - rank(b));
-  const top = matching[0]!;
-  if (top.action.type === 'block') return { kind: 'block', rule: top };
-  if (top.action.type === 'redirect') return { kind: 'redirect', url: top.action.redirect.url, rule: top };
+  // The deciding action: highest priority among allow/block/redirect; at equal priority allow, then block, then
+  // redirect (Chrome's precedence). Block and redirect end the request; allow cancels modifyHeaders rules of its
+  // priority or below.
+  const rank = (r: DnrRule) => (r.action.type === 'allow' ? 0 : r.action.type === 'block' ? 1 : 2);
+  const deciding = matching.filter((r) => r.action.type !== 'modifyHeaders').sort((a, b) => b.priority - a.priority || rank(a) - rank(b))[0];
+  if (deciding?.action.type === 'block') return { kind: 'block', rule: deciding };
+  if (deciding?.action.type === 'redirect') return { kind: 'redirect', url: deciding.action.redirect.url, rule: deciding };
+  const floor = deciding?.action.type === 'allow' ? deciding.priority : -Infinity;
+  const top = matching.filter((r) => r.action.type === 'modifyHeaders' && r.priority > floor).sort((a, b) => b.priority - a.priority)[0];
+  if (!top || top.action.type !== 'modifyHeaders') return deciding ? { kind: 'allow', rule: deciding } : { kind: 'none' };
   const op = top.action.requestHeaders?.find((h) => h.header === 'cookie');
   return { kind: 'cookie', value: op?.operation === 'set' ? (op.value ?? '') : null, rule: top };
 }
@@ -89,7 +95,7 @@ export function simulate(rules: readonly DnrRule[], req: SimulatedRequest): Simu
 /** Cookie header a request would carry under `rules` (null = header removed, undefined = no rule matched). */
 export function cookieHeaderFor(rules: readonly DnrRule[], req: SimulatedRequest): string | null | undefined {
   const outcome = simulate(rules, req);
-  if (outcome.kind === 'none') return undefined;
+  if (outcome.kind === 'none' || outcome.kind === 'allow') return undefined;
   if (outcome.kind === 'redirect' || outcome.kind === 'block') throw new Error(`unexpected ${outcome.kind} for ${req.url}`);
   return outcome.value;
 }

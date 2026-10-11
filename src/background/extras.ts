@@ -49,6 +49,8 @@ export class Extras {
       containerOf: (tabId) => facet.getTabContainer(tabId),
       container: (id) => facet.containers.get(id),
       bridgeOn: () => this.settings.get().agentBridge,
+      isHeld: (tabId) => facet.restore.isHeld(tabId),
+      heldCount: () => facet.restore.heldCount(),
     });
     this.engine = new DomainRuleEngine(this.exemptions, {
       rules: () => this.rules.all(),
@@ -80,7 +82,8 @@ export class Extras {
   start(facetReady: Promise<void>): Promise<void> {
     this.ready = facetReady.then(async () => {
       await Promise.all([this.settings.load(), this.exemptions.load(), this.groups.load(), this.rules.load()]);
-      const tabIds = this.facet.tabs.entries().map(([id]) => id);
+      const tabIds = [...this.facet.tabs.entries().map(([id]) => id), ...this.facet.restore.heldIds()];
+      await this.badges.applyGlobal();
       await this.badges.applyMany(tabIds);
       if (this.settings.get().agentBridge) await this.refreshAllBadges();
     });
@@ -127,6 +130,13 @@ export class Extras {
           }
         });
         break;
+      case 'restore-held':
+        // Waiting tabs: their badge, and the hint on the button for every other tab.
+        void this.ready.then(async () => {
+          await this.badges.applyGlobal();
+          await this.badges.applyMany(event.tabIds);
+        });
+        break;
       case 'container-deleted':
         void this.ready.then(async () => {
           await this.groups.containerDeleted(event.id);
@@ -155,7 +165,9 @@ export class Extras {
 
   /** Re-applies the badge after navigation, which resets tab-specific action state. */
   handleTabRefresh(tabId: number): void {
-    void this.ready.then(() => (this.facet.getTabContainer(tabId) !== null || this.settings.get().agentBridge ? this.badges.apply(tabId) : undefined));
+    void this.ready.then(() =>
+      this.facet.getTabContainer(tabId) !== null || this.settings.get().agentBridge || this.facet.restore.isHeld(tabId) ? this.badges.apply(tabId) : undefined,
+    );
   }
 
   handleTabAttached(tabId: number): void {

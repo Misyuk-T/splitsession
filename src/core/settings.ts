@@ -30,14 +30,21 @@ export interface Settings {
    * Off: nothing is injected or changed for the sake of showing. Default on.
    */
   agentActivity: boolean;
+  /**
+   * Container tabs that come back (browser restart with "Continue where you left off", Ctrl/Cmd+Shift+T, History's
+   * "Recently closed", a closed tab group opened again) return to their container before their first request. Facet
+   * keeps the addresses of container tabs in `storage.local` for that and holds such tabs until it has matched them.
+   * Off: they come back as ordinary tabs. Default on.
+   */
+  restoreTabs: boolean;
 }
 
 /** `chrome.storage.local` key holding the settings object. */
 export const SETTINGS_KEY = 'settings';
 
-export const DEFAULT_SETTINGS: Readonly<Settings> = Object.freeze({ tabGroups: true, titlePrefix: true, strictMode: true, showNameToPages: false, agentBridge: false, agentActivity: true });
+export const DEFAULT_SETTINGS: Readonly<Settings> = Object.freeze({ tabGroups: true, titlePrefix: true, strictMode: true, showNameToPages: false, agentBridge: false, agentActivity: true, restoreTabs: true });
 
-export const SETTING_KEYS = ['tabGroups', 'titlePrefix', 'strictMode', 'showNameToPages', 'agentBridge', 'agentActivity'] as const satisfies readonly (keyof Settings)[];
+export const SETTING_KEYS = ['tabGroups', 'titlePrefix', 'strictMode', 'showNameToPages', 'agentBridge', 'agentActivity', 'restoreTabs'] as const satisfies readonly (keyof Settings)[];
 
 export type SettingKey = (typeof SETTING_KEYS)[number];
 
@@ -54,7 +61,7 @@ export interface StoredSettings extends Settings {
  * cannot be told apart from a default. Every default was `true` then: a `false` was the user's choice, a `true` is
  * read as "never set" (the one that matters: `showNameToPages`, whose default is now off).
  */
-const LEGACY_DEFAULTS: Readonly<Settings> = Object.freeze({ tabGroups: true, titlePrefix: true, strictMode: true, showNameToPages: true, agentBridge: false, agentActivity: true });
+const LEGACY_DEFAULTS: Readonly<Settings> = Object.freeze({ tabGroups: true, titlePrefix: true, strictMode: true, showNameToPages: true, agentBridge: false, agentActivity: true, restoreTabs: true });
 
 export interface ReadSettings {
   settings: Settings;

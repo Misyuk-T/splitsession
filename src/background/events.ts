@@ -7,7 +7,9 @@ export type FacetEvent =
   | { type: 'tab-unassigned'; tabId: number; containerId: ContainerId }
   | { type: 'tab-replaced'; added: number; removed: number }
   | { type: 'container-updated'; container: Container; renamed: boolean; recolored: boolean }
-  | { type: 'container-deleted'; id: ContainerId };
+  | { type: 'container-deleted'; id: ContainerId }
+  /** Tabs waiting for the user's choice (restore) were added or removed; `tabIds` are the tabs concerned. */
+  | { type: 'restore-held'; tabIds: number[] };
 
 export type FacetEventListener = (event: FacetEvent) => void;
 

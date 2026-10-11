@@ -1,0 +1,16 @@
+.held { max-width: 560px; margin: 0 auto; padding: 48px 20px; display: flex; flex-direction: column; gap: 16px; }
+.held__head { display: flex; align-items: center; gap: 10px; }
+.held__head h1 { font-size: 22px; font-weight: 700; }
+.held__card { display: flex; flex-direction: column; gap: 12px; padding: 20px; border: 1px solid var(--fx-border); border-radius: 12px; background: var(--fx-surface); }
+.held__card h2 { font-size: 20px; font-weight: 700; }
+.held__url { overflow-wrap: anywhere; padding: 8px 10px; border-radius: var(--fx-radius-sm); background: var(--fx-bg); border: 1px solid var(--fx-border); }
+.held__options { display: flex; flex-direction: column; gap: 6px; }
+.held__option {
+  display: flex; align-items: center; gap: 12px; width: 100%; min-height: 44px; padding: 8px 12px;
+  border: 1px solid var(--fx-border-strong); border-radius: var(--fx-radius); background: var(--fx-bg); text-align: left; font-size: var(--fx-text-main);
+}
+.held__option:hover:not(:disabled) { background: var(--fx-surface-hover); }
+.held__option:disabled { opacity: 0.6; cursor: wait; }
+.held__name { flex: 1; font-weight: 600; overflow-wrap: anywhere; }
+.held__option .fx-dot, .held__nodot { width: 18px; height: 18px; }
+.held__nodot { flex: none; border-radius: 50%; border: 2px dashed var(--fx-border-strong); }

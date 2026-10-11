@@ -26,9 +26,23 @@ export function registerListeners(facet: Facet, api: FullApi, b: typeof browser 
   on(wr.onErrorOccurred, (d) => facet.handleRequestDone(d), FRAMES);
 
   on(b.tabs.onCreated, (tab) => facet.handleTabCreated(tab));
-  on(b.tabs.onRemoved, (tabId) => facet.handleTabRemoved(tabId));
+  on(b.tabs.onRemoved, (tabId, info) => facet.handleTabRemoved(tabId, info));
   on(b.tabs.onReplaced, (added, removed) => facet.handleTabReplaced(added, removed));
-  on(b.tabs.onAttached, (tabId, info) => facet.handleTabAttached(tabId, info.newWindowId));
+  on(b.tabs.onAttached, (tabId, info) => {
+    facet.handleTabAttached(tabId, info.newWindowId);
+    facet.handleLayoutChanged();
+  });
+  // Restore snapshot: where container tabs sit (window, position, group) and what they show.
+  on(b.tabs.onUpdated, (_tabId, change) => {
+    if (change.url !== undefined || change.groupId !== undefined || change.pinned !== undefined) facet.handleLayoutChanged();
+  });
+  on(b.tabs.onMoved, () => facet.handleLayoutChanged());
+  on(b.tabs.onDetached, () => facet.handleLayoutChanged());
+  on(b.tabGroups.onCreated, () => facet.handleLayoutChanged());
+  on(b.tabGroups.onUpdated, () => facet.handleLayoutChanged());
+  on(b.tabGroups.onRemoved, (group) => facet.handleGroupRemoved(group.id));
+  // Recently closed tabs and windows: which entry was restored just now.
+  on(b.sessions.onChanged, () => facet.handleSessionsChanged());
 
   const nav = b.webNavigation;
   on(nav.onCreatedNavigationTarget, (d) => facet.handleCreatedNavigationTarget(d));

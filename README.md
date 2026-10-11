@@ -24,6 +24,7 @@ Chrome profiles isolate everything, but they are separate windows with separate 
 - **Popup**: shows which container the current tab is in, reopens it in another container (or none), opens a new tab in a container, manages the list.
 - **Domain rules** (like Firefox's "Always open in"): per site, "always open in container X" or "ask me". The ask page can remember your choice.
 - **Tab groups**: containers are shown as Chrome tab groups with the container's name and colour (optional; a group is only a view, dragging a tab out of it never changes its container).
+- **Container tabs survive a restart**: with Chrome's "Continue where you left off", Reopen closed tab, History or a closed tab group opened again, container tabs come back in their container, held back until Facet has matched them. Tabs it cannot match with certainty wait for you in the popup.
 - **Indicators**: a toolbar badge with the container's initials on its colour, the page title prefixed with `[name]`, `data-ctr="name"` on the page's `<html>` (the last two only while "Show the container name to pages" is on; it is off by default, AI agents need it on).
 - **Strict mode** (default on, asks first): removes every service worker of the profile and stops sites from installing new ones, so none can answer a container tab with your regular logins.
 - **Export and import** of containers and rules as JSON. Cookies are left out unless you tick a clearly marked box.
@@ -69,7 +70,7 @@ The design is in [docs/PLAN.md](docs/PLAN.md) (Ukrainian), the decisions taken w
 | Switched off in containers | `SharedWorker`; service workers. Strict mode (after your OK): service workers removed and refused in the whole profile, their scripts blocked at the network level, and requests outside tabs to container sites sent without cookies |
 | Not isolated | The **first request** of a tab Facet did not open itself (context-menu "open in new tab", `#ctr=`, a domain rule that moves a tab); without strict mode, a site's service worker of the real profile may answer a container tab's first visit through a plain link; **a site that deliberately polls its own same-origin iframe while it navigates can read the real profile's cookies and that origin's storage of other containers in the instant before Facet's scripts run in the new document** (no extension API closes this; it links accounts on that site only); `SameSite=None` cookies on cross-site requests made with `credentials: 'omit'`; HTTP cache, HTTP auth, client certificates, fingerprint, saved passwords, history, state inside dedicated workers, `Path` of cookies |
 | Seen by pages | An opaque per-site key (never the container ID); the container name only while "Show the container name to pages" is on (off by default; AI agents need it on) |
-| After a browser restart | Tab assignments are lost: restored tabs come back as ordinary tabs |
+| After a browser restart | Container tabs come back in their containers, background tabs before their first request; the tab that was active in each window (and pinned tabs) may send one request as the real profile first, because Chrome loads them before extension rules apply; uncertain matches wait for your choice in the popup |
 
 The complete, honest list, with the mechanism behind each item, is [docs/limits.md](docs/limits.md).
 

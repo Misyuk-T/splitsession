@@ -8,7 +8,7 @@ import { isPotentiallyTrustworthyHost, isSameOrSubdomain, labelCount, registrabl
  * Rules carry `tabIds: [...group]`, so the rule count grows with containers and hosts, not with tabs.
  *
  * Emitted, in this order:
- *  1. catch-all (priority 1): drop request `Cookie` and response `Set-Cookie`, so the real profile's cookies never
+ *  1. catch-all (priority 2): drop request `Cookie` and response `Set-Cookie`, so the real profile's cookies never
  *     reach the container and container cookies never leak into the real profile;
  *  2. per cookie host `h` (longer host = higher priority):
  *     - WIDE  (`requestDomains: [h]`): the Domain cookies that match `h`. `requestDomains` also matches subdomains,
@@ -44,7 +44,11 @@ export const SESSION_RULE_HARD_LIMIT = 5000;
 export const REGEX_RULE_LIMIT = 1000;
 export const REGEX_RULE_BUDGET = 900;
 
-export const CATCH_ALL_PRIORITY = 1;
+/**
+ * 2, not 1: the restore gate (`core/restore.ts`) uses priority 1 for its `block` and `allow` rules, and an `allow`
+ * cancels every modifyHeaders rule of the same priority or lower (measured), so no cookie rule may sit at 1.
+ */
+export const CATCH_ALL_PRIORITY = 2;
 export const HOST_PRIORITY_BASE = 10;
 /** Above the highest secure-band priority (10 + 4*63 + 3 = 265). */
 export const INSECURE_PRIORITY_BASE = 300;
@@ -112,7 +116,9 @@ export interface DnrRule {
   action:
     | { type: 'modifyHeaders'; requestHeaders?: DnrHeaderOperation[]; responseHeaders?: DnrHeaderOperation[] }
     | { type: 'redirect'; redirect: { url: string } }
-    | { type: 'block' };
+    | { type: 'block' }
+    /** Only the restore gate's openers (`core/restore.ts`); it cancels modifyHeaders rules of its priority and below. */
+    | { type: 'allow' };
 }
 
 /** Hands out rule IDs; the engine implements it on top of its ID pool. */

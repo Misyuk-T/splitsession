@@ -1,6 +1,7 @@
 import type { Container, ContainerColor, ContainerId, Cookie } from '../core';
 import type { StrictModeStatus } from '../engine/strict-mode';
 import type { ContainerInfo, Facet, OpenOptions } from './facet';
+import type { RestoreStatus } from './restore';
 
 /**
  * Programmatic API of the background, for extension pages (Stage C UI, `open.html`) via `runtime.sendMessage`
@@ -33,7 +34,19 @@ export interface FacetApi {
   grantStrictMode(): Promise<StrictModeStatus>;
   /** "Not now" in the consent dialog: the warning stays, the dialog no longer opens by itself. */
   dismissStrictModePrompt(): Promise<StrictModeStatus>;
+  /** Container tabs that came back but could not be matched with certainty (the popup's banner). */
+  getRestoreStatus(): Promise<RestoreStatus>;
+  /**
+   * The banner's answer for the waiting tabs (all, or `tabIds`): `restore` puts each one that has a single, certain
+   * container back into it and loads it; `plain` loads them as ordinary tabs. Returns how many were handled.
+   */
+  resolveHeldTabs(action: 'restore' | 'plain', tabIds?: number[]): Promise<number>;
+  /** Forgets closed container tabs: reopening them later gives ordinary tabs. */
+  forgetClosedTabs(): Promise<void>;
+  /** Tests: waits until every tab is matched and the restore records and gate are written. */
+  flushRestore(): Promise<void>;
   /** Diagnostics. */
+  getRestoreDebug(): Promise<unknown>;
   getJar(containerId: ContainerId): Promise<Cookie[]>;
   getSessionRules(): Promise<unknown[]>;
   getManagedSites(): Promise<string[]>;
@@ -56,6 +69,11 @@ export const API_METHODS = [
   'getStrictMode',
   'grantStrictMode',
   'dismissStrictModePrompt',
+  'getRestoreStatus',
+  'resolveHeldTabs',
+  'forgetClosedTabs',
+  'flushRestore',
+  'getRestoreDebug',
   'getJar',
   'getSessionRules',
   'getManagedSites',
@@ -79,6 +97,15 @@ export function createApi(facet: Facet, getSessionRules: () => Promise<unknown[]
     getStrictMode: async () => (await facet.ready, facet.strict.status()),
     grantStrictMode: async () => (await facet.ready, facet.strict.grant()),
     dismissStrictModePrompt: async () => (await facet.ready, facet.strict.dismissPrompt()),
+    getRestoreStatus: async () => (await facet.ready, facet.restore.status()),
+    resolveHeldTabs: async (action, tabIds) => {
+      await facet.ready;
+      if (action !== 'restore' && action !== 'plain') throw new Error('action must be "restore" or "plain"');
+      return facet.restore.resolveHeld(action, Array.isArray(tabIds) ? tabIds.map(Number) : undefined);
+    },
+    forgetClosedTabs: async () => (await facet.ready, facet.restore.forgetClosed()),
+    flushRestore: async () => (await facet.ready, facet.restore.flush()),
+    getRestoreDebug: async () => (await facet.ready, facet.restore.debugState()),
     getJar: async (id) => (await facet.ready, facet.getJar(id)),
     getSessionRules,
     getManagedSites: async () => (await facet.ready, facet.swPolicy.sites()),

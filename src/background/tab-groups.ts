@@ -1,4 +1,4 @@
-import { GROUP_COLOR, type Container, type ContainerId, type Settings } from '../core';
+import { decodeGroupMarker, GROUP_COLOR, groupTitle, type Container, type ContainerId, type Settings } from '../core';
 import type { StorageAreaLike } from '../engine/storage/storage-area';
 
 /** `chrome.storage.session` key: Chrome tab-group IDs this module created, with the container each one stands for. */
@@ -46,6 +46,9 @@ const RETRY_DELAY_MS = 150;
  * its container (and is NOT pulled back: the view is re-applied only when the tab is assigned or moved to another
  * window, when a container is renamed or recoloured, when the setting is switched on, or on "Re-group").
  * Chrome deletes a group when its last tab leaves, which removes empty groups for us.
+ * Titles carry an invisible marker with the container ID (`groupTitle`, `core/restore.ts`): a group Chrome brings back
+ * (session restore, a saved group opened again) is recognised as this container's and taken over instead of a second
+ * group being made, and the restore matcher can tell Facet's groups from the user's.
  */
 export class TabGroupProjection {
   /** groupId -> container it was made for. */
@@ -96,7 +99,7 @@ export class TabGroupProjection {
     return this.enqueue(async () => {
       for (const [groupId, containerId] of [...this.owned]) {
         if (containerId !== container.id) continue;
-        await this.deps.tabGroups.update(groupId, { title: container.name, color: GROUP_COLOR[container.color] }).catch(() => this.forget(groupId));
+        await this.deps.tabGroups.update(groupId, { title: groupTitle(container.name, container.id), color: GROUP_COLOR[container.color] }).catch(() => this.forget(groupId));
       }
     });
   }
@@ -162,7 +165,17 @@ export class TabGroupProjection {
       return; // closed meanwhile
     }
     if (tab.pinned) return; // Chrome cannot group pinned tabs
-    const wanted = { title: container.name, color: GROUP_COLOR[container.color] };
+    const wanted = { title: groupTitle(container.name, container.id), color: GROUP_COLOR[container.color] };
+
+    if (tab.groupId >= 0 && !this.owned.has(tab.groupId)) {
+      // A group Chrome brought back with this container's marker (session restore, a saved group opened again).
+      const group = await this.deps.tabGroups.get(tab.groupId).catch(() => null);
+      if (group && decodeGroupMarker(group.title) === containerId) {
+        this.owned.set(tab.groupId, containerId);
+        await this.persist();
+        force = true;
+      }
+    }
 
     if (tab.groupId >= 0 && this.owned.get(tab.groupId) === containerId) {
       if (force) await this.deps.tabGroups.update(tab.groupId, wanted).catch(() => {});

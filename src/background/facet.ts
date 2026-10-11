@@ -42,6 +42,7 @@ import { StrictMode } from '../engine/strict-mode';
 import { ServiceWorkerPolicy, type BrowsingDataApi, type DnrDynamicApi } from '../engine/sw-policy';
 import { FacetEvents } from './events';
 import { createLogger, type Logger } from './log';
+import { RESTORE_KEY, TabRestore, type RestoreBrowser } from './restore';
 
 export const PURGE_ALARM = 'facet-purge';
 /** `about:blank#facet-<nonce>`: how the shim marks the blank child it opens before navigating it. */
@@ -61,6 +62,8 @@ const READY_CHILD_TTL_MS = 2_000;
 const SETTLE_WAIT_MS = 60;
 /** How long after `updateSessionRules` resolved a request may still have been set up with the previous rules. */
 const ASSIGNMENT_LAG_MS = 1_000;
+/** Browser start: matching the previous session's tabs may hold `ready` this long at most. */
+const STARTUP_PASS_LIMIT_MS = 10_000;
 
 type WebRequestDetails = {
   requestHeaders?: Array<{ name: string; value?: string }>;
@@ -74,6 +77,8 @@ type WebRequestDetails = {
   frameId: number;
   timeStamp: number;
   statusCode?: number;
+  /** onErrorOccurred only. */
+  error?: string;
   responseHeaders?: Array<{ name: string; value?: string; binaryValue?: ArrayLike<number> }>;
 };
 
@@ -170,6 +175,8 @@ export class Facet {
   readonly swPolicy: ServiceWorkerPolicy;
   readonly strict: StrictMode;
   readonly detector: StaleNavigationDetector;
+  /** Container tabs that come back (browser restart, reopened tabs and groups): `restore.ts`. */
+  readonly restore: TabRestore;
   readonly log: Logger;
   /** Assignment and container changes, for the Stage C modules (tab groups, badges, domain rules). */
   readonly events = new FacetEvents();
@@ -230,6 +237,22 @@ export class Facet {
     );
     this.strict = new StrictMode(local, this.swPolicy, () => this.containers.list().length);
     this.detector = new StaleNavigationDetector({ containerOf: (tabId) => this.tabs.containerOf(tabId) });
+    this.restore = new TabRestore({
+      b: b as unknown as RestoreBrowser,
+      local: local as never,
+      session: session as never,
+      log: this.log,
+      containerTabs: () => this.tabs.entries().map(([tabId, rec]) => [tabId, rec.containerId]),
+      hasContainer: (id) => this.containers.get(id) !== undefined,
+      isContainerTab: (tabId) => this.tabs.has(tabId),
+      assign: async (tabId, containerId) => void (await this.assign(tabId, containerId)),
+      invalidate: () => this.rules.invalidate(RESTORE_KEY),
+      prepareNavigation: (url) => this.prepareNavigation(url),
+      heldPage: b.runtime.getURL('/held.html' as never),
+      heldChanged: (tabIds) => this.events.emit({ type: 'restore-held', tabIds }),
+    });
+    // Where container tabs are (and what they show) is what a restore has to recognise.
+    this.events.on(() => this.restore.scheduleSnapshot());
   }
 
   start(): Promise<void> {
@@ -250,24 +273,38 @@ export class Facet {
     await Promise.all([this.containers.load(), this.tabs.load()]);
     // Managed sites and the strict state first: the no-tab rule compiled below depends on both.
     await this.swPolicy.load(await this.strict.load(this.settings.strictMode)).catch((error) => this.log('error', 'service-worker policy failed to load', String(error)));
-    const liveTabs = new Set((await this.b.tabs.query({})).map((t) => t.id).filter((id): id is number => id !== undefined));
+    const liveTabList = await this.b.tabs.query({});
+    const liveTabs = new Set(liveTabList.map((t) => t.id).filter((id): id is number => id !== undefined));
     const now = Date.now();
     for (const [tabId, rec] of this.tabs.entries()) {
       if (!liveTabs.has(tabId) || !this.containers.get(rec.containerId)) void this.tabs.delete(tabId);
       else if (rec.activeSince === null) void this.tabs.update(tabId, { activeSince: now });
     }
-    const ok = await this.rules.reset([...this.tabs.containerIds(), NO_TAB_KEY]);
+    // Before the session rules: the gate's openers are compiled from what this decides.
+    const startup = await this.restore.load(liveTabList, this.settings.restoreTabs).catch((error) => {
+      this.log('error', 'restore state failed to load', String(error));
+      return false;
+    });
+    const ok = await this.rules.reset([...this.tabs.containerIds(), NO_TAB_KEY, RESTORE_KEY]);
     if (!ok) this.log('error', 'could not reinstall session rules after start');
     await Promise.allSettled([
       ensureContentScripts(this.b.scripting as unknown as ScriptingApi).then((r) => this.log('info', `content scripts ${r}`)),
       this.b.alarms.create(PURGE_ALARM, { periodInMinutes: 1 }),
     ]);
+    if (startup) {
+      // Browser start (or an extension update): tabs with the address of a container tab wait, blocked, until matched.
+      const pass = this.restore.startupPass().catch((error) => this.log('error', 'restoring container tabs failed', String(error)));
+      await Promise.race([pass, sleep(STARTUP_PASS_LIMIT_MS)]);
+    } else {
+      this.restore.afterLoad();
+    }
     this.log('info', `ready: ${this.containers.list().length} containers, ${this.tabs.entries().length} tabs`);
   }
 
   // ---------------------------------------------------------------- rule compilation
 
   private compileContainer(containerId: ContainerId, allocator: RuleIdAllocator, regexBudget: number): CompiledRules | null {
+    if (containerId === RESTORE_KEY) return this.restore.compile(allocator);
     if (containerId === NO_TAB_KEY) {
       const addRules: DnrRule[] = [];
       const cookies = this.settings.strictMode ? compileNoTabRule(allocator.next(), this.swPolicy.sites()) : null;
@@ -350,6 +387,7 @@ export class Facet {
         await this.strict.setEnabled(next.strictMode);
         await this.rules.invalidate(NO_TAB_KEY);
       }
+      if (previous.restoreTabs !== next.restoreTabs) await this.restore.setEnabled(next.restoreTabs);
     });
     return this.settingsWork;
   }
@@ -407,6 +445,8 @@ export class Facet {
    */
   async assignTab(tabId: number, containerId: ContainerId | null, options: { reload?: boolean } = {}): Promise<void> {
     await this.ready;
+    // A tab waiting for its restore decision: this is the user's (or an agent's) decision.
+    const heldAddress = await this.restore.release(tabId);
     if (containerId === null) {
       await this.unassign(tabId);
     } else {
@@ -414,8 +454,10 @@ export class Facet {
       await this.assign(tabId, containerId);
     }
     if (options.reload) {
-      if (containerId !== null) await this.prepareNavigation((await this.b.tabs.get(tabId).catch(() => null))?.url);
-      await this.b.tabs.reload(tabId);
+      // A waiting tab shows Facet's own page: it goes to the address it stood for.
+      if (containerId !== null) await this.prepareNavigation(heldAddress ?? (await this.b.tabs.get(tabId).catch(() => null))?.url);
+      if (heldAddress !== undefined) await this.b.tabs.update(tabId, { url: heldAddress });
+      else await this.b.tabs.reload(tabId);
     }
   }
 
@@ -434,6 +476,8 @@ export class Facet {
       url: tab.url,
     });
     const keys = prev && prev.containerId !== containerId ? [containerId, prev.containerId] : [containerId];
+    // A container tab is always known to the restore gate; opened in the same batch as its cookie rules.
+    if (this.restore.clearSync(tabId)) keys.push(RESTORE_KEY);
     const ok = await this.rules.invalidate(...keys);
     if (!ok || !this.rules.isInstalled(containerId)) {
       await this.tabs.delete(tabId);
@@ -447,6 +491,7 @@ export class Facet {
     if (origin) void this.swPolicy.noteContainerOrigin(origin);
     this.log('info', `tab ${tabId} -> ${containerId}`);
     this.events.emit({ type: 'tab-assigned', tabId, containerId });
+    this.restore.afterAssign(tabId);
     return activeAt;
   }
 
@@ -538,6 +583,7 @@ export class Facet {
     if (containerId !== null) return this.openInContainer(url, containerId, { ...place, ...(onCreated ? { onAssigned: onCreated } : {}) });
     const tab = await this.createBlankTab(place);
     if (tab.id === undefined) throw new ContainerError('tab creation failed');
+    await this.restore.clear(tab.id);
     onCreated?.(tab.id);
     await this.b.tabs.update(tab.id, { url });
     return tab.id;
@@ -557,6 +603,7 @@ export class Facet {
   handleBeforeRequest(details: WebRequestDetails): void {
     if (details.tabId < 0) return;
     if (details.type === 'main_frame') {
+      void this.ready.then(() => this.restore.mainFrameRequest(details.tabId, details.url));
       const list = (this.mainFrameStarts.get(details.tabId) ?? []).filter((s) => details.timeStamp - s.at < 10_000);
       list.push({ url: withoutFragment(details.url), initiator: details.initiator, at: details.timeStamp });
       this.mainFrameStarts.set(details.tabId, list.slice(-8));
@@ -618,8 +665,12 @@ export class Facet {
     return pairs.every(([name, value]) => jar.some((c) => c.name === name && c.value === value));
   }
 
-  handleRequestDone(details: { requestId: string }): void {
+  handleRequestDone(details: { requestId: string; tabId?: number; url?: string; type?: string; error?: string }): void {
     this.sends.delete(details.requestId);
+    if (details.error !== undefined && details.tabId !== undefined && details.url !== undefined) {
+      const failed = { tabId: details.tabId, url: details.url, type: details.type, error: details.error };
+      void this.ready.then(() => this.restore.requestFailed(failed));
+    }
     const deferred = this.deferredRenavs.get(details.requestId);
     if (deferred) {
       this.deferredRenavs.delete(details.requestId);
@@ -748,6 +799,7 @@ export class Facet {
    * navigations a page started.
    */
   handleTabCreated(tab: Browser.tabs.Tab): void {
+    void this.ready.then(() => this.restore.tabCreated(tab));
     if (tab.id === undefined || tab.openerTabId === undefined) return;
     const url = tab.pendingUrl ?? tab.url ?? '';
     if (!CHILD_NONCE.test(url)) return;
@@ -769,7 +821,11 @@ export class Facet {
     }
     if (this.inheriting.has(child)) return;
     const parentRec = this.tabs.get(parent);
-    if (!parentRec) return;
+    if (!parentRec) {
+      // A plain page opened it: not a restored tab, whatever its address.
+      this.restore.pageOpened(child);
+      return;
+    }
     if (url && /^(chrome|chrome-extension|devtools):/i.test(url)) return;
     this.inheriting.add(child);
     try {
@@ -821,7 +877,8 @@ export class Facet {
     });
   }
 
-  handleTabRemoved(tabId: number): void {
+  handleTabRemoved(tabId: number, info: { isWindowClosing?: boolean } = {}): void {
+    void this.ready.then(() => this.restore.tabRemoved(tabId, info.isWindowClosing === true));
     this.childNonces.delete(tabId);
     this.recentResponses.delete(tabId);
     this.frameSites.delete(tabId);
@@ -832,6 +889,7 @@ export class Facet {
 
   handleTabReplaced(addedTabId: number, removedTabId: number): void {
     void this.ready.then(async () => {
+      this.restore.tabReplaced(addedTabId, removedTabId);
       const rec = this.tabs.get(removedTabId);
       if (!rec) return;
       await this.tabs.delete(removedTabId);
@@ -949,6 +1007,7 @@ export class Facet {
     }
     void this.ready.then(async () => {
       const rec = this.tabs.get(details.tabId);
+      if (details.frameId === 0) this.restore.tabCommitted(details.tabId, details.url, rec?.containerId);
       if (!rec) return;
       const nonce = CHILD_NONCE.exec(details.url)?.[1];
       if (nonce && rec.activeSince !== null) {
@@ -1012,6 +1071,20 @@ export class Facet {
     this.log('info', `restored ${restored.length} container tabs after an update`);
   }
 
+  /** `chrome.sessions.onChanged`: a tab or window was closed or reopened. */
+  handleSessionsChanged(): void {
+    void this.ready.then(() => this.restore.sessionsChanged());
+  }
+
+  /** Tabs moved, grouped, regrouped, pinned or navigated: the restore snapshot follows. */
+  handleLayoutChanged(): void {
+    void this.ready.then(() => this.restore.scheduleSnapshot());
+  }
+
+  handleGroupRemoved(groupId: number): void {
+    void this.ready.then(() => this.restore.groupRemoved(groupId));
+  }
+
   /** Browser start: tab IDs from the last session mean nothing now. */
   handleStartup(): void {
     void this.tabs.clearBackup();
@@ -1030,6 +1103,8 @@ export class Facet {
 
   handleSuspend(): void {
     void this.containers.flush();
+    // A restore change that is still waiting for its timer is written now.
+    this.restore.flushPending();
   }
 
   // ---------------------------------------------------------------- content-script messages

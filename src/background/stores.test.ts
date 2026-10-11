@@ -10,17 +10,17 @@ describe('SettingsStore', () => {
   it('starts with the defaults, validates, persists and notifies', async () => {
     const area = new MemoryStorageArea();
     const store = new SettingsStore(area);
-    expect(await store.load()).toEqual({ tabGroups: true, titlePrefix: true, strictMode: true, showNameToPages: false, agentBridge: false, agentActivity: true });
+    expect(await store.load()).toEqual({ tabGroups: true, titlePrefix: true, strictMode: true, showNameToPages: false, agentBridge: false, agentActivity: true, restoreTabs: true });
     const seen: string[] = [];
     store.onChange((next, prev) => seen.push(`${prev.tabGroups}->${next.tabGroups}`));
-    expect(await store.update({ tabGroups: false })).toEqual({ tabGroups: false, titlePrefix: true, strictMode: true, showNameToPages: false, agentBridge: false, agentActivity: true });
+    expect(await store.update({ tabGroups: false })).toEqual({ tabGroups: false, titlePrefix: true, strictMode: true, showNameToPages: false, agentBridge: false, agentActivity: true, restoreTabs: true });
     expect(seen).toEqual(['true->false']);
-    expect(area.data.get('settings')).toEqual({ tabGroups: false, titlePrefix: true, strictMode: true, showNameToPages: false, agentBridge: false, agentActivity: true, explicit: ['tabGroups'] });
+    expect(area.data.get('settings')).toEqual({ tabGroups: false, titlePrefix: true, strictMode: true, showNameToPages: false, agentBridge: false, agentActivity: true, restoreTabs: true, explicit: ['tabGroups'] });
     await expect(store.update({ tabGroups: 'no' })).rejects.toThrow();
     expect(store.get().tabGroups).toBe(false); // a rejected patch changes nothing
 
     const reloaded = new SettingsStore(area);
-    expect(await reloaded.load()).toEqual({ tabGroups: false, titlePrefix: true, strictMode: true, showNameToPages: false, agentBridge: false, agentActivity: true });
+    expect(await reloaded.load()).toEqual({ tabGroups: false, titlePrefix: true, strictMode: true, showNameToPages: false, agentBridge: false, agentActivity: true, restoreTabs: true });
   });
 
   it('turning the name on is remembered as a choice; an install of the previous format gets the new default once', async () => {
@@ -28,8 +28,8 @@ describe('SettingsStore', () => {
     // Previous format: every value stored on any change, the name shown by default.
     await area.set({ settings: { tabGroups: false, titlePrefix: true, strictMode: true, showNameToPages: true } });
     const store = new SettingsStore(area);
-    expect(await store.load()).toEqual({ tabGroups: false, titlePrefix: true, strictMode: true, showNameToPages: false, agentBridge: false, agentActivity: true });
-    expect(area.data.get('settings')).toEqual({ tabGroups: false, titlePrefix: true, strictMode: true, showNameToPages: false, agentBridge: false, agentActivity: true, explicit: ['tabGroups'] });
+    expect(await store.load()).toEqual({ tabGroups: false, titlePrefix: true, strictMode: true, showNameToPages: false, agentBridge: false, agentActivity: true, restoreTabs: true });
+    expect(area.data.get('settings')).toEqual({ tabGroups: false, titlePrefix: true, strictMode: true, showNameToPages: false, agentBridge: false, agentActivity: true, restoreTabs: true, explicit: ['tabGroups'] });
 
     await store.update({ showNameToPages: true });
     const reloaded = new SettingsStore(area);
@@ -150,6 +150,33 @@ describe('BadgeIndicator', () => {
     await badge.apply(1);
     await badge.apply(2);
     expect(calls).toEqual(['text 1 "Wo"', 'bg 1 #ff9f00', 'fg 1 #000000', 'text 2 ""']);
+  });
+
+  it('waiting tabs: a bright "!" on the tab and a hint on the button for every other tab', async () => {
+    const calls: string[] = [];
+    const badge = new BadgeIndicator(
+      {
+        setBadgeText: async ({ tabId, text }) => void calls.push(`text ${tabId} "${text}"`),
+        setBadgeBackgroundColor: async ({ tabId, color }) => void calls.push(`bg ${tabId} ${color}`),
+        setBadgeTextColor: async ({ tabId, color }) => void calls.push(`fg ${tabId} ${color}`),
+        setTitle: async ({ tabId, title }) => void calls.push(`title ${tabId} ${title}`),
+      },
+      { containerOf: () => null, container: () => undefined, isHeld: (id) => id === 4, heldCount: () => 2 },
+    );
+    await badge.apply(4);
+    await badge.apply(5);
+    await badge.applyGlobal();
+    expect(calls).toEqual([
+      'text 4 "!"',
+      'bg 4 #ef2d2d',
+      'fg 4 #ffffff',
+      'title 4 Facet — this tab is waiting for you to choose its container',
+      'text 5 ""',
+      'text undefined "!"',
+      'bg undefined #ef2d2d',
+      'fg undefined #ffffff',
+      'title undefined Facet — 2 tabs are waiting for you to choose a container (open Facet)',
+    ]);
   });
 
   it('never throws for a tab that is gone, and ignores negative ids', async () => {

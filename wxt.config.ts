@@ -40,6 +40,8 @@ export default defineConfig({
       'webNavigation',
       'browsingData',
       'alarms',
+      // Container tabs that come back: which recently-closed tab or window was just reopened (docs/decisions.md).
+      'sessions',
       // Agent bridge (off by default): talk to the local native host `com.facet.bridge` (docs/agents.md).
       'nativeMessaging',
       // Agent bridge "full hands": trusted input, accessibility snapshots, screenshots of background tabs, console and

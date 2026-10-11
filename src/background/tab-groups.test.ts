@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { Container, Settings } from '../core';
+import { groupTitle, type Container, type Settings } from '../core';
 import { MemoryStorageArea } from '../engine/storage/storage-area';
 import { OWNED_GROUPS_KEY, TabGroupProjection, type GroupTab } from './tab-groups';
 
@@ -70,7 +70,7 @@ function setup(settings: Partial<Settings> = {}) {
   const chrome = new FakeChrome();
   const area = new MemoryStorageArea();
   const assigned: Array<{ tabId: number; containerId: string }> = [];
-  const state = { tabGroups: true, titlePrefix: true, strictMode: true, showNameToPages: true, agentBridge: false, agentActivity: true, ...settings };
+  const state = { tabGroups: true, titlePrefix: true, strictMode: true, showNameToPages: true, agentBridge: false, agentActivity: true, restoreTabs: true, ...settings };
   const projection = new TabGroupProjection({
     tabs: chrome.api.tabs,
     tabGroups: chrome.api.tabGroups,
@@ -103,9 +103,9 @@ describe('TabGroupProjection', () => {
     expect(g(1)).toBe(g(2));
     expect(g(3)).not.toBe(g(1));
     expect(g(4)).not.toBe(g(1));
-    expect(chrome.groups.get(g(1))).toMatchObject({ title: 'Work', color: 'blue', windowId: 1 });
-    expect(chrome.groups.get(g(3))).toMatchObject({ title: 'Home', color: 'cyan' });
-    expect(chrome.groups.get(g(4))).toMatchObject({ title: 'Work', windowId: 2 });
+    expect(chrome.groups.get(g(1))).toMatchObject({ title: groupTitle('Work', 'work'), color: 'blue', windowId: 1 });
+    expect(chrome.groups.get(g(3))).toMatchObject({ title: groupTitle('Home', 'home'), color: 'cyan' });
+    expect(chrome.groups.get(g(4))).toMatchObject({ title: groupTitle('Work', 'work'), windowId: 2 });
     expect(chrome.groups.size).toBe(3);
     expect(projection.ownedGroups()).toHaveLength(3);
   });
@@ -158,7 +158,7 @@ describe('TabGroupProjection', () => {
     await chrome.api.tabs.group({ tabIds: [1], groupId: chrome.tabs.get(2)!.groupId }); // Work tab dragged into Home's group
     expect(chrome.tabs.get(1)!.groupId).toBe(chrome.tabs.get(2)!.groupId);
     await assign(3, 'work'); // a new Work tab: gets a Work group (the old one is gone: it was empty)
-    expect(chrome.groups.get(chrome.tabs.get(3)!.groupId)).toMatchObject({ title: 'Work' });
+    expect(chrome.groups.get(chrome.tabs.get(3)!.groupId)).toMatchObject({ title: groupTitle('Work', 'work') });
     expect(chrome.tabs.get(1)!.groupId).toBe(chrome.tabs.get(2)!.groupId);
     await projection.reconcileAll();
     expect(chrome.tabs.get(1)!.groupId).toBe(chrome.tabs.get(3)!.groupId);
@@ -169,7 +169,7 @@ describe('TabGroupProjection', () => {
     chrome.addTab(1);
     await assign(1, 'work');
     await projection.containerUpdated({ id: 'work', name: 'Job', color: 'red', createdAt: 1 });
-    expect(chrome.groups.get(chrome.tabs.get(1)!.groupId)).toMatchObject({ title: 'Job', color: 'red' });
+    expect(chrome.groups.get(chrome.tabs.get(1)!.groupId)).toMatchObject({ title: groupTitle('Job', 'work'), color: 'red' });
   });
 
   it('takes a tab that left its container out of our group, but not out of the user\'s', async () => {
@@ -230,7 +230,7 @@ describe('TabGroupProjection', () => {
       tabs: chrome.api.tabs,
       tabGroups: chrome.api.tabGroups,
       area,
-      settings: () => ({ tabGroups: true, titlePrefix: true, strictMode: true, showNameToPages: true, agentBridge: false, agentActivity: true }),
+      settings: () => ({ tabGroups: true, titlePrefix: true, strictMode: true, showNameToPages: true, agentBridge: false, agentActivity: true, restoreTabs: true }),
       container: (id) => containers.get(id),
       containerTabs: () => [],
       log: () => {},
@@ -258,5 +258,24 @@ describe('TabGroupProjection', () => {
     await assign(1, 'work');
     await projection.containerDeleted('work');
     expect(projection.ownedGroups()).toEqual([]);
+  });
+
+  it('takes over a group Chrome brought back with the container marker, not a look-alike the user made', async () => {
+    const { chrome, assign, projection } = setup();
+    // Session restore: a group with Work's marker, unknown to this (fresh) projection, holding tab 1.
+    chrome.groups.set(500, { id: 500, windowId: 1, title: groupTitle('Work', 'work'), color: 'blue' });
+    chrome.addTab(1, 1, { groupId: 500 });
+    chrome.addTab(2);
+    await assign(1, 'work');
+    await assign(2, 'work');
+    expect(chrome.tabs.get(1)!.groupId).toBe(500);
+    expect(chrome.tabs.get(2)!.groupId).toBe(500);
+    expect(projection.ownedGroups()).toEqual([[500, 'work']]);
+    // The user's own group called "Home", without the marker: the tab leaves it for Facet's own group.
+    chrome.groups.set(600, { id: 600, windowId: 1, title: 'Home', color: 'cyan' });
+    chrome.addTab(3, 1, { groupId: 600 });
+    await assign(3, 'home');
+    expect(chrome.tabs.get(3)!.groupId).not.toBe(600);
+    expect(chrome.groups.get(chrome.tabs.get(3)!.groupId)).toMatchObject({ title: groupTitle('Home', 'home') });
   });
 });
