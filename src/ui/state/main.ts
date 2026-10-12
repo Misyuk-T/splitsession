@@ -80,7 +80,7 @@ async function render(): Promise<void> {
     out.push(el('pre', `${open}?container=${encodeURIComponent(sample)}&url=${encodeURIComponent(sampleUrl)}`));
     out.push(el('p', `Or add a marker to any address (the container must already exist; the marker is stripped, one request goes out before SplitSession sees it):`));
     out.push(el('pre', `${sampleUrl}#ctr=${encodeURIComponent(sample)}`));
-    out.push(el('p', 'Container tabs show the container in three places: the page title starts with "[name] ", the top document has the attribute data-ctr="name" on <html>, and the toolbar badge shows its initials.'));
+    out.push(el('p', 'Container tabs show the container in three places: the page title starts with "[name] ", the top document has the attribute data-ctr="name" on <html>, and the toolbar badge is a dot in its colour.'));
     out.push(el('p', `container = a container name or id. url = a full http(s) address, URL-encoded. ${open} is the open page.`, 'muted'));
 
     root.replaceChildren(...out);

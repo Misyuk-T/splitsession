@@ -130,7 +130,7 @@ export function MenuButton({ children, ariaLabel, items, onSelect, menuLabel, al
           class="fx-popover"
           role="menu"
           aria-label={menuLabel ?? ariaLabel}
-          style={placement ? { left: `${placement.left}px`, top: `${placement.top}px`, maxHeight: `${placement.maxHeight}px` } : { left: '0px', top: '0px', visibility: 'hidden' }}
+          style={placement ? { left: `${placement.left}px`, top: `${placement.top}px`, ...(placement.maxHeight > 0 ? { maxHeight: `${placement.maxHeight}px` } : {}) } : { left: '0px', top: '0px', visibility: 'hidden' }}
           onKeyDown={(event) => {
             switch (event.key) {
               case 'ArrowDown':

@@ -1,21 +1,22 @@
 /* The popup is capped by Chrome at 600px tall: rows are 36px, and only the container list scrolls (inside its own region).
    One accent (the purple of the switch and the primary button); everything else is neutral. */
-html, body { width: 420px; min-height: 120px; }
-body:has(.fx-backdrop) { min-height: 300px; }
+/* --fx-popup-max tells the menu placement how tall the popup can get; while a menu below its trigger is open, the menu
+   sets --fx-menu-min (before it is shown) so the popup is tall enough to hold it without an inner scrollbar. */
+:root { --fx-popup-max: 600px; }
+html, body { width: 420px; min-height: max(120px, var(--fx-menu-min, 0px)); }
+body:has(.fx-backdrop) { min-height: max(300px, var(--fx-menu-min, 0px)); }
 .popup { display: flex; flex-direction: column; gap: 6px; padding: 8px 10px 10px; max-height: 600px; }
 
 .popup__head { display: flex; align-items: center; gap: 4px; min-height: 36px; padding-left: 2px; }
-.popup__title { margin-left: 6px; font-size: 18px; font-weight: 700; letter-spacing: 0.2px; }
+.popup__title { margin-left: 6px; font-size: 18px; font-weight: 600; }
 .popup__spacer { flex: 1; }
 .popup__label { font-size: var(--fx-text-secondary); font-weight: 600; color: var(--fx-muted); text-transform: uppercase; letter-spacing: 0.6px; }
 
 /* This tab: container + site on one line, one icon at the right. */
 .popup__tab { display: flex; align-items: center; gap: 10px; min-height: 40px; padding: 4px 4px 4px 12px; border-radius: var(--fx-radius); background: var(--fx-surface); }
-.popup__tab .fx-dot, .popup__nodot { width: 14px; height: 14px; }
-.popup__nodot { flex: none; border-radius: 50%; border: 1.5px dashed var(--fx-border-strong); }
+.popup__tab .fx-dot { width: 14px; height: 14px; }
 .popup__tabtext { flex: 1; min-width: 0; display: flex; align-items: baseline; gap: 10px; }
 .popup__tabname { flex: none; max-width: 60%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }
-.popup__tabname--none { font-weight: 500; color: var(--fx-muted); }
 .popup__tabsite { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 .popup__list { display: flex; flex-direction: column; gap: 2px; flex: 0 1 auto; min-height: 0; }
@@ -31,9 +32,18 @@ body:has(.fx-backdrop) { min-height: 300px; }
 .popup__rowmain:focus-visible { outline: 2px solid var(--fx-focus); outline-offset: -2px; }
 .popup__rowname { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .popup__rowtabs { flex: none; font-variant-numeric: tabular-nums; }
-/* The row menu shows on hover and on keyboard focus (it stays focusable the whole time). */
-.popup__row > .fx-btn--icon { opacity: 0; }
-.popup__row:hover > .fx-btn--icon, .popup__row:focus-within > .fx-btn--icon, .popup__row > .fx-btn--icon[aria-expanded='true'] { opacity: 1; }
+/* Row icons (new tab, move this tab in, edit, delete) sit over the tab count, in the same place, so nothing shifts: the name
+   always stops before them. They show on hover and on keyboard focus; hidden ones stay focusable (opacity, not display). */
+.popup__row { position: relative; --fx-acts: 92px; }
+.popup__row--move { --fx-acts: 122px; }
+.popup__rowmain { padding-right: var(--fx-acts); }
+.popup__rowtabs { position: absolute; right: 12px; top: 50%; transform: translateY(-50%); }
+.popup__acts { position: absolute; right: 4px; top: 50%; transform: translateY(-50%); display: flex; align-items: center; gap: 2px; opacity: 0; pointer-events: none; }
+.popup__row:hover .popup__acts, .popup__row:focus-within .popup__acts { opacity: 1; pointer-events: auto; }
+.popup__row:hover .popup__rowtabs, .popup__row:focus-within .popup__rowtabs { opacity: 0; }
+.popup__row .popup__act { width: 28px; height: 28px; }
+.popup__row .popup__act--danger:hover:not(:disabled), .popup__row .popup__act--danger:focus-visible { color: var(--fx-danger); }
+.popup__row .popup__act--danger:hover:not(:disabled) { background: var(--fx-danger-soft); }
 
 /* Tabs from before a restart that SplitSession could not match with certainty: one line, details unfold. */
 .popup__held { border-radius: var(--fx-radius); background: var(--fx-surface); }

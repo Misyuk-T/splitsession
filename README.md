@@ -9,7 +9,7 @@ Each container has its own cookies and its own page storage (localStorage, Index
 *A 20-second demo GIF (three accounts of one site in one window, one tab group per container) belongs here; it has not been recorded yet. Still pictures are below and in `docs/screenshots/`.*
 
 <p>
-  <img src="docs/screenshots/popup-light.png" alt="The SplitSession popup: the agent row, the current tab's container with a reopen button, and the list of containers" width="260">
+  <img src="docs/screenshots/popup-light.png" alt="The SplitSession popup: the current tab's container with a reopen button, and the list of containers" width="260">
   <img src="docs/screenshots/popup-menu-light.png" alt="The 'Reopen in' menu" width="260">
   <img src="docs/screenshots/choose-light.png" alt="The page that asks which container a site should open in" width="360">
 </p>
@@ -43,11 +43,11 @@ The two have different IDs, so both can be installed side by side (don't run bot
 
 
 - **Containers**: create, rename, recolour (8 colours), delete. A container is a name, a colour and a cookie jar.
-- **Popup**: shows which container the current tab is in, reopens it in another container (or none), opens a new tab in a container, manages the list.
+- **Popup**: shows which container the current tab is in, reopens it in another container (or none), goes to a container (a click on its row opens its tab group and makes its first tab active; a container with no tabs opens a new tab; creating a container opens its first tab), manages the list: on hover or keyboard focus a row's tab count gives way to icons for a new tab in it, moving the current tab into it, editing (name, colour) and deleting.
 - **Domain rules** (like Firefox's "Always open in"): per site, "always open in container X" or "ask me". The ask page can remember your choice.
-- **Tab groups**: containers are shown as Chrome tab groups with the container's name and colour (optional; a group is only a view, dragging a tab out of it never changes its container).
+- **Tab groups**: containers are shown as Chrome tab groups with the container's name and colour (optional). Dragging a tab out of a group never changes its container; dragging a tab *into* a container's group reopens it in that container, so the group never lies about where a tab is.
 - **Container tabs survive a restart**: with Chrome's "Continue where you left off", Reopen closed tab, History or a closed tab group opened again, container tabs come back in their container, held back until SplitSession has matched them. Tabs it cannot match with certainty wait for you in the popup.
-- **Indicators**: a toolbar badge with the container's initials on its colour; in the Full edition also the page title prefixed with `[name]` and `data-ctr="name"` on the page's `<html>` (only while "Show the container name to pages" is on; it is off by default, AI agents need it on).
+- **Indicators**: a toolbar badge that is a dot in the container's colour (no letters); in the Full edition also the page title prefixed with `[name]` and `data-ctr="name"` on the page's `<html>` (only while "Show the container name to pages" is on; it is off by default, AI agents need it on).
 - **Strict mode** (a setting, off by default; it never asks): when on, removes every service worker of the profile and stops sites from installing new ones, so none can answer a container tab with your regular logins. The price is push notifications on every site, which is why it is off until you switch it on in Settings.
 - **Export and import** of containers and rules as JSON. Cookies are left out unless you tick a clearly marked box.
 - **Links and bookmarks** (both editions): `open.html?container=…&url=…` and a `#ctr=name` marker open a page in a container.
@@ -111,20 +111,20 @@ chrome-extension://hapfikidacgfgnnajkgnaednpgnhmffk/state.html                  
 
 ### The agent bridge (off by default)
 
-A local MCP server lets Claude Code (running on your Mac) see your Chrome tabs across all windows, each with its container, and operate them like a Playwright-class agent: accessibility snapshots with element refs, real (trusted) clicks, typing and key presses, hover, drag and drop, select boxes, file uploads, JavaScript dialogs, `run_js` under any page CSP, screenshots of background tabs without switching to them, console and network recording, viewport sizes, and opening pages in a container. It uses Chrome's debugger (`chrome.debugger`), only while the switch is on and a tool works on a tab; Chrome shows its "started debugging this browser" bar meanwhile, and its Cancel takes the debugger back. It is **one all-or-nothing switch** ("Agent bridge" in the popup): off, nothing is reachable; on, **the agent can do everything in every tab, logged-in pages included**, and every tab's toolbar badge turns amber ("ON", or the container's initials on amber). The popup says "Agent connected — full access" and lists the agent's last five actions. Whatever tab the agent reads or operates shows it (a glowing frame and an "Agent: reading" label on the page, an animated eye in the tab title while it reads, a pulsing ring around the tab's favicon, "AI" on the toolbar button), then fades; "Show agent activity" in the settings turns that off. Container isolation still holds for the pages: the debugger is never used to read or set cookies, headers or storage, and navigations go through SplitSession's own paths.
+A local MCP server lets Claude Code (running on your Mac) see your Chrome tabs across all windows, each with its container, and operate them like a Playwright-class agent: accessibility snapshots with element refs, real (trusted) clicks, typing and key presses, hover, drag and drop, select boxes, file uploads, JavaScript dialogs, `run_js` under any page CSP, screenshots of background tabs without switching to them, console and network recording, viewport sizes, and opening pages in a container. It uses Chrome's debugger (`chrome.debugger`), only while the switch is on and a tool works on a tab; Chrome shows its "started debugging this browser" bar meanwhile, and its Cancel takes the debugger back. It is **one all-or-nothing switch** ("Agent bridge" in Settings, "For AI agents", the last section; the popup shows nothing about agents until it is on): off, nothing is reachable; on, **the agent can do everything in every tab, logged-in pages included**, and every tab's toolbar badge turns amber ("ON": amber on plain tabs, the container's colour on container tabs). Once it is on, the popup gets one compact row with a counter and the agent's last five actions. Whatever tab the agent reads or operates shows it (a glowing frame and an "Agent: reading" label on the page, an animated eye in the tab title while it reads, a pulsing ring around the tab's favicon, "AI" on the toolbar button), then fades; "Show agent activity" in the settings turns that off. Container isolation still holds for the pages: the debugger is never used to read or set cookies, headers or storage, and navigations go through SplitSession's own paths.
 
 ```sh
 pnpm bridge:install                  # 1. builds the bridge, registers the Chrome native host, prints step 2
 claude mcp add --scope user splitsession -- <node> <repo>/bridge/dist/splitsession-bridge.mjs mcp   # 2. (printed by step 1; run it yourself)
 claude mcp remove --scope user facet   # only if you set the agent up before the rename (the installer also prints this)
-# 3. flip "Agent bridge" in the SplitSession popup
+# 3. flip "Agent bridge" in SplitSession Settings, "For AI agents" (its "How to connect" lists steps 1-2)
 ```
 
 Chrome's Native Messaging connects the extension to a local host (pinned to SplitSession's extension ID); the MCP server talks to the host over a private Unix socket (0600), never a network port. Details, tool list and limits: [docs/agents.md](docs/agents.md#7-the-agent-bridge-your-own-agent-drives-your-chrome-tabs-opt-in).
 
 ### Without the bridge
 
-(Full edition.) First switch on **"Show the container name to pages (for AI agents)"** in SplitSession's settings (off by default, because any page can read the name). Then container tabs have a `[Work] ` title prefix (so `tabs_context` shows which account is which) and `data-ctr="Work"` on `<html>`. Details for Claude in Chrome and Playwright: [docs/agents.md](docs/agents.md).
+(Full edition.) First switch on **"Show container name to pages"** in SplitSession's settings, "For AI agents" (off by default, because any page can read the name). Then container tabs have a `[Work] ` title prefix (so `tabs_context` shows which account is which) and `data-ctr="Work"` on `<html>`. Details for Claude in Chrome and Playwright: [docs/agents.md](docs/agents.md).
 
 ## Compatibility
 

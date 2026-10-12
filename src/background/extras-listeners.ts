@@ -13,8 +13,12 @@ export function registerExtrasListeners(extras: Extras, b: typeof browser = brow
   on(nav.onCommitted, (d) => {
     if (d.frameId === 0) extras.handleTabRefresh(d.tabId);
   });
+  on(b.tabs.onCreated, (tab) => {
+    if (tab.id !== undefined) extras.handleTabCreated(tab.id);
+  });
   on(b.tabs.onUpdated, (tabId, change) => {
     if (change.status === 'loading' || change.url !== undefined) extras.handleTabRefresh(tabId);
+    if (change.groupId !== undefined) extras.handleGroupChanged(tabId, change.groupId);
   });
   on(b.tabs.onActivated, (info) => extras.handleTabRefresh(info.tabId));
   on(b.tabs.onAttached, (tabId) => extras.handleTabAttached(tabId));

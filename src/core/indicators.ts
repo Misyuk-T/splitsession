@@ -26,15 +26,6 @@ export const GROUP_COLOR: Readonly<Record<ContainerColor, ChromeGroupColor>> = {
   purple: 'purple',
 };
 
-/** Initials of the first two words, or the first two characters of a single word: "Work" -> "Wo", "my bank" -> "MB". */
-export function badgeText(name: string): string {
-  const words = name.trim().split(/\s+/).filter(Boolean);
-  if (words.length === 0) return '';
-  if (words.length >= 2) return (Array.from(words[0]!)[0]! + Array.from(words[1]!)[0]!).toUpperCase();
-  const chars = Array.from(words[0]!);
-  return chars[0]!.toUpperCase() + (chars[1] ?? '');
-}
-
 /** Black or white, whichever reads better on the colour (WCAG relative luminance). */
 export function readableTextColor(hex: string): '#000000' | '#ffffff' {
   const m = /^#?([0-9a-f]{6})$/i.exec(hex);

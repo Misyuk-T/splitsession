@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { CONTAINER_COLORS } from './types';
-import { badgeText, CONTAINER_HEX, GROUP_COLOR, prefixedTitle, readableTextColor, titlePrefixFor, unprefixedTitle, withoutAgentMark } from './indicators';
+import { CONTAINER_HEX, GROUP_COLOR, prefixedTitle, readableTextColor, titlePrefixFor, unprefixedTitle, withoutAgentMark } from './indicators';
 
 describe('palette', () => {
   it('has a hex colour and a Chrome group colour for every container colour', () => {
@@ -8,20 +8,6 @@ describe('palette', () => {
       expect(CONTAINER_HEX[color]).toMatch(/^#[0-9a-f]{6}$/);
       expect(['blue', 'red', 'yellow', 'green', 'pink', 'purple', 'cyan', 'orange']).toContain(GROUP_COLOR[color]);
     }
-  });
-});
-
-describe('badgeText', () => {
-  it.each([
-    ['Work', 'Wo'],
-    ['a', 'A'],
-    ['my bank', 'MB'],
-    ['  Side   hustle  account ', 'SH'],
-    ['éclair', 'Éc'],
-    ['😀 Fun', '😀F'],
-    ['', ''],
-  ])('%j -> %j', (name, expected) => {
-    expect(badgeText(name)).toBe(expected);
   });
 });
 

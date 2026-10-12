@@ -128,10 +128,20 @@ test.describe('Lite edition', () => {
     await expect(popup.getByRole('button', { name: 'New container' })).toBeVisible();
     await expect(popup.getByText(/agent/i)).toHaveCount(0);
     await expect(popup.getByText(/bridge/i)).toHaveCount(0);
-    // The "More" menu holds only "Re-group tabs" (no state page in Lite); no container tab is open, so it is disabled.
-    await expect(popup.getByRole('button', { name: 'More' })).toBeDisabled(); // its only item, "Re-group tabs", has nothing to do yet
+    await expect(popup.getByRole('button', { name: 'More', exact: true })).toHaveCount(0); // no header overflow menu
     await expect(popup.getByRole('switch')).toHaveCount(0);
     await expect(popup.getByText(/state page/i)).toHaveCount(0);
+    await expect(popup.getByRole('button', { name: /MCP/ })).toHaveCount(0); // no agent entry point in Lite
+    await expect(popup.getByText('MCP')).toHaveCount(0);
+
+    const font = await popup.evaluate(async () => {
+      await document.fonts.ready;
+      const loaded = [...document.fonts].filter((f) => f.status === 'loaded').map((f) => f.family);
+      return { body: getComputedStyle(document.body).fontFamily, loaded, title: getComputedStyle(document.querySelector('h1')!).fontFamily };
+    });
+    expect(font.body.replace(/"/g, '')).toMatch(/^Inter Variable,/);
+    expect(font.title.replace(/"/g, '')).toMatch(/^Inter Variable,/);
+    expect(font.loaded.some((f) => /Inter/.test(f))).toBe(true); // the bundled file really loaded (nothing is fetched from the network)
     await popup.close();
   });
 

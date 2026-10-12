@@ -278,4 +278,17 @@ describe('TabGroupProjection', () => {
     expect(chrome.tabs.get(3)!.groupId).not.toBe(600);
     expect(chrome.groups.get(chrome.tabs.get(3)!.groupId)).toMatchObject({ title: groupTitle('Home', 'home') });
   });
+  it('tells which container a group stands for from its marker, and takes over a marked group it did not make', async () => {
+    const { chrome, projection } = setup();
+    chrome.addTab(1);
+    chrome.groups.set(50, { id: 50, windowId: 1, title: groupTitle('Work', 'work'), color: 'blue' });
+    chrome.groups.set(51, { id: 51, windowId: 1, title: 'Work', color: 'blue' }); // typed by hand: no marker
+    chrome.groups.set(52, { id: 52, windowId: 1, title: groupTitle('Gone', 'deleted'), color: 'blue' });
+    expect(await projection.containerOfGroup(50)).toBe('work');
+    expect(projection.ownedGroups()).toEqual([[50, 'work']]);
+    expect(await projection.containerOfGroup(51)).toBeNull();
+    expect(await projection.containerOfGroup(52)).toBeNull(); // no such container any more
+    expect(await projection.containerOfGroup(404)).toBeNull();
+    expect(projection.ownedGroups()).toEqual([[50, 'work']]);
+  });
 });

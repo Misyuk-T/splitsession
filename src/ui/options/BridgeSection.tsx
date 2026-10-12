@@ -1,11 +1,19 @@
 import { useEffect, useState } from 'preact/hooks';
 import { browser } from 'wxt/browser';
-import { BridgeCard, INSTALL_COMMAND } from '../components/BridgeCard';
+import { DEFAULT_SETTINGS, type Settings } from '../../core';
+import { BridgeStatusLine, BridgeSwitchCard, bridgeStatus } from '../components/BridgeCard';
 import { Button } from '../components/Button';
+import { Disclosure } from '../components/Disclosure';
+import { More } from '../components/More';
 import { Switch } from '../components/Toggle';
 import { TextField } from '../components/TextField';
 import { facetApi } from '../../engine/api-client';
 import { describeError } from '../format';
+import { useBridge } from '../useBridge';
+
+export const INSTALL_COMMAND = 'pnpm bridge:install';
+const MCP_ADD_COMMAND = 'claude mcp add --scope user splitsession -- <node> <repo>/bridge/dist/splitsession-bridge.mjs mcp';
+const DOCS_URL = 'https://github.com/Misyuk-T/splitsession/blob/main/docs/agents.md';
 
 const USER_SCRIPTS = { permissions: ['userScripts'] } as never;
 const LABEL_MAX = 40;
@@ -40,12 +48,7 @@ function ProfileLabel() {
   };
 
   return (
-    <div class="opt-card" data-testid="bridge-profile">
-      <h3>Name of this Chrome profile</h3>
-      <p class="fx-secondary">
-        If you use the bridge from several Chrome profiles (only one can hold it at a time), give each a name. The agent
-        reads it through the “bridge_info” tool, so it knows which profile it is working in.
-      </p>
+    <div data-testid="bridge-profile">
       <TextField
         label="Profile name"
         value={value}
@@ -53,6 +56,7 @@ function ProfileLabel() {
         sanitize={cleanLabel}
         max={LABEL_MAX}
         placeholder="for example Work"
+        hint="Only one Chrome profile can hold the bridge. The agent reads this name to tell them apart."
         error={error}
         disabled={saved === null}
         onEnter={() => void save()}
@@ -62,43 +66,143 @@ function ProfileLabel() {
   );
 }
 
-/** "Show agent activity": the overlay, title mark and badge on the tab the agent touches. */
-function ActivitySwitch() {
-  const [on, setOn] = useState<boolean | null>(null);
+/** "Show agent activity" and the two settings that let an agent tell accounts apart: all about what the agent sees or shows. */
+function AgentSwitches() {
+  const [settings, setSettings] = useState<Settings | null>(null);
   const [error, setError] = useState<string | null>(null);
   useEffect(() => {
-    facetApi.getSettings().then(
-      (settings) => setOn(settings.agentActivity),
-      (e) => setError(describeError(e)),
-    );
+    facetApi.getSettings().then(setSettings, (e) => setError(describeError(e)));
   }, []);
-  const change = async (next: boolean) => {
-    const before = on;
-    setOn(next);
+  const change = async (patch: Partial<Settings>) => {
+    const before = settings ?? DEFAULT_SETTINGS;
+    setSettings({ ...before, ...patch }); // optimistic; the background confirms or we roll back
     try {
-      setOn((await facetApi.updateSettings({ agentActivity: next })).agentActivity);
+      setSettings(await facetApi.updateSettings(patch));
       setError(null);
     } catch (e) {
-      setOn(before);
+      setSettings(before);
       setError(describeError(e));
     }
   };
+  const value = settings ?? DEFAULT_SETTINGS;
   return (
-    <div class="opt-card" data-testid="bridge-activity">
-      <Switch
-        label="Show agent activity"
-        description="While the agent reads or works in a tab, that tab shows it: a glowing frame and a small “Agent: reading” label on the page, an eye in front of the tab title while it reads, and “AI” on the toolbar button. It fades about 2.5 seconds after the last action and never takes focus or switches tabs. Pages cannot read or click it. Off: nothing is shown or changed on your tabs."
-        checked={on ?? true}
-        disabled={on === null}
-        onChange={(next) => void change(next)}
-      />
-      {error && <p class="fx-notice fx-notice--error" role="alert">{error}</p>}
+    <>
+      <div class="opt-row" data-testid="bridge-activity">
+        <Switch
+          label="Show agent activity"
+          description="Glow and an eye on tabs the agent is using."
+          checked={value.agentActivity}
+          disabled={settings === null}
+          onChange={(next) => void change({ agentActivity: next })}
+        />
+        <More id="more-activity" about="agent activity">
+          <p>
+            While the agent reads or works in a tab, that tab shows it: a glowing frame and a small “Agent: reading” label on the
+            page, an eye in front of the tab title while it reads, and “AI” on the toolbar button. It fades about 2.5 seconds after
+            the last action and never takes focus or switches tabs. Pages cannot read or click it.
+          </p>
+          <p>Off: nothing is shown or changed on your tabs.</p>
+        </More>
+      </div>
+      <div class="opt-row">
+        <Switch
+          label="Show container name to pages"
+          description="Pages and AI agents can read the container name."
+          checked={value.showNameToPages}
+          disabled={settings === null}
+          onChange={(next) => void change({ showNameToPages: next })}
+        />
+        <More id="more-name" about="container name">
+          <p>
+            Off by default. On: pages in a container tab can read the container’s name, in the page’s “data-ctr” attribute and in
+            front of the tab title. AI agents need it to tell accounts apart.
+          </p>
+          <p>
+            Any script on the page can read it too, and the name is the same on every site, so trackers can link your visits
+            through it. Off: pages see no name and titles get no prefix (the toolbar badge and the tab’s group still show it to
+            you). Switching it off reaches open pages at once; switching it on, after they reload.
+          </p>
+        </More>
+      </div>
+      {value.showNameToPages && (
+        <div class="opt-row">
+          <Switch
+            label="Put the container name in front of tab titles"
+            description="A tab in Work shows as “[Work] Inbox”."
+            checked={value.titlePrefix}
+            disabled={settings === null}
+            onChange={(next) => void change({ titlePrefix: next })}
+          />
+        </div>
+      )}
+      {error && <p class="fx-notice fx-notice--error opt-row" role="alert">{error}</p>}
+    </>
+  );
+}
+
+/** A command on its own line with a Copy button (the command stays selectable if the clipboard is blocked). */
+function CopyBlock({ text, copyable = true, testId }: { text: string; copyable?: boolean; testId?: string }) {
+  const [copied, setCopied] = useState(false);
+  const copy = async () => {
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      /* clipboard blocked */
+    }
+  };
+  return (
+    <div class="fx-bridge__cmd" data-testid={testId}>
+      <code>{text}</code>
+      {copyable && (
+        <Button small onClick={() => void copy()}>
+          {copied ? 'Copied' : 'Copy'}
+        </Button>
+      )}
     </div>
   );
 }
 
-/** The same switch as the popup's, with a plain explanation of what turning it on means. */
+/** The setup steps, behind a disclosure: only people who want an agent ever open it. */
+function ConnectGuide({ bridge }: { bridge: ReturnType<typeof useBridge> }) {
+  const status = bridgeStatus(bridge);
+  return (
+    <Disclosure id="agent-connect" title="How to connect" testId="bridge-install">
+      <p class="fx-secondary">Requires the SplitSession source code; a one-command installer is coming.</p>
+      <ol class="opt-steps">
+        <li>
+          <p>In the SplitSession source folder, run:</p>
+          <CopyBlock text={INSTALL_COMMAND} testId="bridge-install-command" />
+        </li>
+        <li>
+          <p>Run the command the installer prints. It looks like this, with your real paths:</p>
+          <CopyBlock text={MCP_ADD_COMMAND} copyable={false} />
+        </li>
+        <li>
+          <p>Switch “Agent bridge” on above, then check the connection.</p>
+        </li>
+      </ol>
+      <BridgeStatusLine bridge={bridge} counter={false} data-testid="bridge-guide-status" />
+      {status !== 'off' && status !== 'connected' && (
+        <div class="opt-actions opt-actions--start">
+          <Button small onClick={() => void bridge.retry()}>
+            Check again
+          </Button>
+        </div>
+      )}
+      <p class="fx-secondary">
+        <a href={DOCS_URL} target="_blank" rel="noopener noreferrer">
+          Read the full guide on GitHub
+        </a>
+      </p>
+    </Disclosure>
+  );
+}
+
+/** Settings, "For AI agents": the switches, "How to connect", and what turning it on means. Low-key: one list of rows, the long text behind disclosures. */
 export function BridgeSection() {
+  const bridge = useBridge();
   const [allowed, setAllowed] = useState<boolean | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -117,56 +221,70 @@ export function BridgeSection() {
 
   return (
     <section class="opt-section" aria-labelledby="agent-title" id="agent">
-      <h2 id="agent-title">AI agent bridge</h2>
-      <p class="opt-lead">
-        Lets your own AI coding agent (for example Claude Code, running on this Mac) see your Chrome tabs and work in them,
-        through a small program on this computer. It is one switch: off, nothing is reachable; on, everything is.
-      </p>
-      <BridgeCard layout="options" />
-      <ActivitySwitch />
-      <ProfileLabel />
-      <div class="opt-card">
-        <h3>While it is on, the agent can</h3>
-        <ul class="opt-list">
-          <li>list every tab of every window, with its address, title and container;</li>
-          <li>read the text and HTML of any page, including pages you are logged in to, and take screenshots of them;</li>
-          <li>click, type, scroll and run JavaScript in any tab, which also means act as you on those sites;</li>
-          <li>open, navigate, close and move tabs, and open pages inside containers;</li>
-          <li>upload files from this computer into pages, answer their dialogs, and record their console and network.</li>
-        </ul>
-        <p>
-          For real clicks and key presses SplitSession uses Chrome’s debugger on the tab the agent works in, only while this is on.
-          Chrome then shows “SplitSession started debugging this browser”; its Cancel button takes the debugger back from SplitSession.
-          The debugger is never used to read or change cookies, so containers stay separate.
-        </p>
-        <p>
-          Only programs running as your macOS user can reach it (the connection is a private socket file), and only this
-          extension may start the host. There are no per-site limits yet: it is everything or nothing. Switch it off here or
-          in the toolbar popup at any time; the connection closes at once and the host process exits. Every action is logged
-          (tool, tab, site, result, never page content) under Diagnostics.
-        </p>
-        <p class="fx-secondary">
-          Set-up: run <code>{INSTALL_COMMAND}</code> in the SplitSession source folder, run the <code>claude mcp add …</code> command
-          it prints, then switch this on. Details: docs/agents.md in the repository.
-        </p>
-      </div>
-      <div class="opt-card">
-        <h3>Run JavaScript on pages that forbid it</h3>
-        <p class="fx-secondary">
-          When SplitSession cannot use the debugger on a tab, a site’s Content-Security-Policy can block the “run_js” tool. As an optional fallback SplitSession can use Chrome’s
-          userScripts permission, which those policies do not cover. Chrome also needs “Allow User Scripts” switched on
-          in this extension’s details page.
-        </p>
-        <div class="opt-actions opt-actions--start">
-          {allowed ? (
-            <span class="fx-secondary" data-testid="userscripts-status">The userScripts fallback is allowed.</span>
-          ) : (
-            <Button onClick={() => void allow()} disabled={allowed === null}>
-              Allow the userScripts fallback
-            </Button>
-          )}
+      <h2 id="agent-title">For AI agents</h2>
+      <div class="opt-card opt-card--rows">
+        <BridgeSwitchCard bridge={bridge} />
+        <AgentSwitches />
+        <div class="opt-row">
+          <ConnectGuide bridge={bridge} />
         </div>
-        {error && <p class="fx-notice fx-notice--error" role="alert">{error}</p>}
+        <div class="opt-row">
+          <Disclosure id="agent-can" title="What an agent can do while it is on" testId="bridge-can">
+            <div class="fx-secondary opt-prose">
+              <ul class="opt-list">
+                <li>list every tab of every window, with its address, title and container;</li>
+                <li>read the text and HTML of any page, including pages you are logged in to, and take screenshots of them;</li>
+                <li>click, type, scroll and run JavaScript in any tab, which also means act as you on those sites;</li>
+                <li>open, navigate, close and move tabs, and open pages inside containers;</li>
+                <li>upload files from this computer into pages, answer their dialogs, and record their console and network.</li>
+              </ul>
+              <p>
+                For real clicks and key presses SplitSession uses Chrome’s debugger on the tab the agent works in, only while this is
+                on. Chrome then shows “SplitSession started debugging this browser”; its Cancel button takes the debugger back. The
+                debugger is never used to read or change cookies, so containers stay separate.
+              </p>
+              <p>
+                Only programs running as your macOS user can reach it (the connection is a private socket file), and only this
+                extension may start the host. There are no per-site limits yet: it is everything or nothing. Switch it off here or in
+                the toolbar popup at any time; the connection closes at once and the host process exits. Every action is logged (tool,
+                tab, site, result, never page content) under Diagnostics.
+              </p>
+            </div>
+          </Disclosure>
+        </div>
+        <div class="opt-row">
+          <Disclosure id="agent-advanced" title="Advanced" testId="bridge-advanced">
+            <div class="opt-sub">
+              <div class="opt-row__split">
+                <div class="opt-row__text">
+                  <strong>State page</strong>
+                  <span class="fx-secondary">Containers and tabs as plain text, for agents.</span>
+                </div>
+                <Button small onClick={() => void browser.tabs.create({ url: browser.runtime.getURL('/state.html' as never) })}>
+                  Open state page
+                </Button>
+              </div>
+              <ProfileLabel />
+              <div class="opt-row__split">
+                <div class="opt-row__text">
+                  <strong>Run JavaScript on pages that forbid it</strong>
+                  <span class="fx-secondary">
+                    Optional fallback for pages whose Content-Security-Policy blocks “run_js”. Chrome also needs “Allow User Scripts”
+                    switched on in this extension’s details.
+                  </span>
+                </div>
+                {allowed ? (
+                  <span class="fx-secondary" data-testid="userscripts-status">The userScripts fallback is allowed.</span>
+                ) : (
+                  <Button small onClick={() => void allow()} disabled={allowed === null}>
+                    Allow the userScripts fallback
+                  </Button>
+                )}
+              </div>
+              {error && <p class="fx-notice fx-notice--error" role="alert">{error}</p>}
+            </div>
+          </Disclosure>
+        </div>
       </div>
     </section>
   );

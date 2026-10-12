@@ -46,6 +46,8 @@ const RETRY_DELAY_MS = 150;
  * its container (and is NOT pulled back: the view is re-applied only when the tab is assigned or moved to another
  * window, when a container is renamed or recoloured, when the setting is switched on, or on "Re-group").
  * Chrome deletes a group when its last tab leaves, which removes empty groups for us.
+ * One exception, the other way round (`group-drag-in.ts`): a tab the user drags INTO a group that carries the marker of a
+ * container is reopened in that container, because the group looks like the container and the tab would not be in it.
  * Titles carry an invisible marker with the container ID (`groupTitle`, `core/restore.ts`): a group Chrome brings back
  * (session restore, a saved group opened again) is recognised as this container's and taken over instead of a second
  * group being made, and the restore matcher can tell SplitSession's groups from the user's.
@@ -92,6 +94,24 @@ export class TabGroupProjection {
       }
       if (tab.groupId >= 0 && this.owned.get(tab.groupId) === containerId) await this.ungroup([tabId]);
     });
+  }
+
+  /**
+   * The container a group stands for, read from its invisible title marker (null: not one of ours, a user's group, a
+   * title the user retyped, a deleted container). A marked group Chrome brought back is taken over on the way, so the
+   * tab that joins it later lands in this group and not in a second one.
+   */
+  containerOfGroup(groupId: number): Promise<ContainerId | null> {
+    return this.enqueueValue(async () => {
+      const group = await this.deps.tabGroups.get(groupId).catch(() => null);
+      const id = group ? decodeGroupMarker(group.title) : null;
+      if (id === null || !this.deps.container(id)) return null;
+      if (!this.owned.has(groupId) && this.deps.settings().tabGroups) {
+        this.owned.set(groupId, id);
+        await this.persist();
+      }
+      return id;
+    }, null);
   }
 
   /** Name or colour changed: the groups follow. */
@@ -147,8 +167,13 @@ export class TabGroupProjection {
   // ---- internals ----
 
   private enqueue(work: () => Promise<void>): Promise<void> {
+    return this.enqueueValue(work, undefined);
+  }
+
+  private enqueueValue<T>(work: () => Promise<T>, fallback: T): Promise<T> {
     const next = this.queue.then(work).catch((error) => {
       this.deps.log('warn', 'tab group update failed', String(error));
+      return fallback;
     });
     this.queue = next;
     return next;

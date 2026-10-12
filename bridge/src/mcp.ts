@@ -22,8 +22,8 @@ const INSTRUCTIONS =
 export function unreachableMessage(env: NodeJS.ProcessEnv = process.env, exists: (p: string) => boolean = existsSync): string {
   const installed = manifestSearchDirs(env).some((dir) => exists(path.join(dir, HOST_MANIFEST_FILE)));
   return installed
-    ? 'SplitSession agent bridge is off — turn it on in the SplitSession popup (the "Agent bridge" switch).'
-    : 'SplitSession agent bridge host is not installed — run `pnpm bridge:install` in the SplitSession repository, then turn on the "Agent bridge" switch in the SplitSession popup.';
+    ? 'SplitSession agent bridge is off — turn it on in SplitSession Settings → For AI agents (the "Agent bridge" switch).'
+    : 'SplitSession agent bridge host is not installed — run `pnpm bridge:install` in the SplitSession repository, then turn on the "Agent bridge" switch in SplitSession Settings → For AI agents.';
 }
 
 class Unreachable extends Error {}

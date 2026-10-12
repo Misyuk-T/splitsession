@@ -87,53 +87,49 @@ export function TransferSection({ onChanged }: { onChanged(): void }) {
   return (
     <section class="opt-section" aria-labelledby="transfer-title" id="transfer">
       <h2 id="transfer-title">Export and import</h2>
-      <p class="fx-secondary opt-lead">
-        Move your containers and domain rules to another browser or back them up. By default the file holds no cookies, so nobody can sign in with it.
-      </p>
+      <p class="fx-secondary opt-lead">Back up or move your containers and rules. No cookies unless you ask.</p>
 
-      <div class="opt-card">
-        <h3>Export</h3>
-        <Checkbox
-          label="Also include cookie jars (saved logins)"
-          description="Only if you want the logins to move too."
-          checked={includeJars}
-          onChange={setIncludeJars}
-          describedBy="jar-warning"
-        />
-        {includeJars && (
-          <p id="jar-warning" class="fx-notice fx-notice--warn" role="note" data-testid="jar-warning">
-            <strong>Careful.</strong> The cookie jars contain live login sessions for every site you used in these containers. Anyone who gets this file can sign
-            in as you, no password needed. Keep it private, do not send it anywhere, and delete it when you are done.
-          </p>
-        )}
-        <div class="opt-actions">
-          <Button variant="primary" onClick={() => void doExport()} >
-            {includeJars ? 'Export with cookies…' : 'Export'}
-          </Button>
+      <div class="opt-card opt-card--rows">
+        <div class="opt-row">
+          <div class="opt-row__split">
+            <div class="opt-row__text">
+              <h3>Export</h3>
+              <span class="fx-secondary">Containers and domain rules, as a JSON file.</span>
+            </div>
+            <Button variant="primary" onClick={() => void doExport()}>
+              {includeJars ? 'Export with cookies…' : 'Export'}
+            </Button>
+          </div>
+          <Checkbox label="Also include cookie jars (saved logins)" checked={includeJars} onChange={setIncludeJars} describedBy="jar-warning" />
+          {includeJars && (
+            <p id="jar-warning" class="opt-warn" role="note" data-testid="jar-warning">
+              <strong>Careful.</strong> The jars hold live logins. Anyone who gets this file can sign in as you, no password needed.
+              Keep it private and delete it when you are done.
+            </p>
+          )}
         </div>
-      </div>
 
-      <div class="opt-card">
-        <h3>Import</h3>
-        <p class="fx-secondary">Containers are matched by name: ones you already have are kept as they are, the rest are created. Rules for the same site are replaced.</p>
-        <input
-          ref={picker}
-          class="fx-sr-only"
-          type="file"
-          accept=".json,application/json"
-          tabIndex={-1}
-          aria-label="SplitSession export file"
-          data-testid="import-file"
-          onChange={(event) => {
-            const input = event.currentTarget;
-            void choose(input.files?.[0]).finally(() => (input.value = ''));
-          }}
-        />
-        <div class="opt-actions">
-          <Button onClick={() => picker.current?.click()}>
-            Choose a file…
-          </Button>
-        </div>
+        <div class="opt-row">
+          <div class="opt-row__split">
+            <div class="opt-row__text">
+              <h3>Import</h3>
+              <span class="fx-secondary">Containers match by name; rules for the same site are replaced.</span>
+            </div>
+            <Button onClick={() => picker.current?.click()}>Choose a file…</Button>
+          </div>
+          <input
+            ref={picker}
+            class="fx-sr-only"
+            type="file"
+            accept=".json,application/json"
+            tabIndex={-1}
+            aria-label="SplitSession export file"
+            data-testid="import-file"
+            onChange={(event) => {
+              const input = event.currentTarget;
+              void choose(input.files?.[0]).finally(() => (input.value = ''));
+            }}
+          />
 
         {pending && (
           <div class="opt-plan" role="region" aria-label="What the import will do" data-testid="import-plan">
@@ -162,6 +158,7 @@ export function TransferSection({ onChanged }: { onChanged(): void }) {
             </div>
           </div>
         )}
+        </div>
       </div>
 
       {problem && <p class="fx-notice fx-notice--error" role="alert" data-testid="transfer-error">{problem}</p>}

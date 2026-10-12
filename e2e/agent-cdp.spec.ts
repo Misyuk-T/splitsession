@@ -17,8 +17,8 @@ import { hostPids, installHost, openPopup, startMcp, type Mcp } from './bridge-h
  */
 
 async function turnOn(facet: Facet): Promise<Page> {
-  const { page: popup, toggle } = await openPopup(facet);
-  await toggle.click();
+  await facet.api('updateSettings', { agentBridge: true }); // the switch lives in Settings; the popup row appears once it is on
+  const { page: popup } = await openPopup(facet);
   await expect(popup.getByTestId('bridge-card')).toHaveAttribute('data-status', 'connected', { timeout: 15_000 });
   return popup;
 }
@@ -499,13 +499,13 @@ test.describe('agent bridge: full hands (CDP)', () => {
     expect(await facet.inWorker(async (id: number) => (globalThis as any).facetCdp.isAttached(id), tabId)).toBe(true);
 
     await popup.getByRole('switch', { name: /Agent bridge/ }).click();
-    await expect(popup.getByTestId('bridge-card')).toHaveAttribute('data-status', 'off');
+    await expect(popup.getByTestId('bridge-card')).toHaveCount(0); // off: the popup has no agent row at all
     await expect.poll(() => extensionAttached(facet, tabId)).toBe(false);
     expect(await facet.inWorker(async (id: number) => (globalThis as any).facetCdp.isAttached(id), tabId)).toBe(false);
 
     // On again. The extension holds a session the bridge does not know about (as after a worker restart): Chrome
     // refuses a second attach by the same extension, SplitSession detaches its own and goes on.
-    await popup.getByRole('switch', { name: /Agent bridge/ }).click();
+    await facet.api('updateSettings', { agentBridge: true }); // (back on from Settings: the popup has no switch while it is off)
     await expect(popup.getByTestId('bridge-card')).toHaveAttribute('data-status', 'connected', { timeout: 15_000 });
     await setIdle(facet, 5_000);
     await facet.inWorker(async (id: number) => (globalThis as any).chrome.debugger.attach({ tabId: id }, '1.3'), tabId);

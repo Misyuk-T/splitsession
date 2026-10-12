@@ -42,3 +42,23 @@ export const IconChevron = () => (
     <path d="M7 9.5l5 5 5-5" />
   </Icon>
 );
+
+export const IconPencil = () => (
+  <Icon>
+    <path d="M15.5 5.5l3 3M4.5 19.5l.9-4L16.2 4.7a1.5 1.5 0 0 1 2.1 0l1 1a1.5 1.5 0 0 1 0 2.1L8.5 18.6z" />
+  </Icon>
+);
+
+export const IconTrash = () => (
+  <Icon>
+    <path d="M4.5 7h15M9.5 7V5.2c0-.7.5-1.2 1.2-1.2h2.6c.7 0 1.2.5 1.2 1.2V7M6.5 7l.8 11.5c.1.8.7 1.5 1.5 1.5h6.4c.8 0 1.4-.7 1.5-1.5L17.5 7M10 11v5.5M14 11v5.5" />
+  </Icon>
+);
+
+/** An arrow dropping into a tray: "move this tab in". */
+export const IconMoveIn = () => (
+  <Icon>
+    <path d="M12 4v10M8 10.5l4 4 4-4" />
+    <path d="M5 14.5v3A2.5 2.5 0 0 0 7.5 20h9a2.5 2.5 0 0 0 2.5-2.5v-3" />
+  </Icon>
+);

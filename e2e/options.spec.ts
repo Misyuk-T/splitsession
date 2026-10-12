@@ -23,6 +23,31 @@ const pick = async (page: Page, select: string, option: string | RegExp) => {
 };
 
 test.describe('options page', () => {
+  test('a link to #agent (or #agents) lands on "For AI agents" with the heading focused; the font is the bundled Inter', async ({ facet }) => {
+    for (const hash of ['agent', 'agents']) {
+      const page = await facet.ctx.newPage();
+      await page.setViewportSize({ width: 1000, height: 600 });
+      await page.goto(ext(`options.html#${hash}`));
+      const heading = page.getByRole('heading', { name: 'For AI agents' });
+      await expect(heading).toBeFocused();
+      await expect(heading).toBeInViewport();
+      expect(await page.evaluate(() => scrollY)).toBeGreaterThan(0);
+      if (hash === 'agent') {
+        const font = await page.evaluate(async () => {
+          await document.fonts.ready;
+          return { body: getComputedStyle(document.body).fontFamily, mono: getComputedStyle(document.querySelector('.opt-card code') ?? document.body).fontFamily };
+        });
+        expect(font.body.replace(/"/g, '')).toMatch(/^Inter Variable,/);
+      }
+      await page.close();
+    }
+    // Following an in-page link moves focus to the section too.
+    const page = await openOptions(facet);
+    await page.getByRole('link', { name: 'Domain rules' }).click();
+    await expect(page.getByRole('heading', { name: 'Domain rules' })).toBeFocused();
+    await page.close();
+  });
+
   test('the two settings are switches that default to on and take effect', async ({ facet }) => {
     const page = await openOptions(facet);
     const groups = page.getByRole('switch', { name: /tab groups/ });
@@ -40,6 +65,27 @@ test.describe('options page', () => {
 
     await page.reload();
     await expect(page.getByRole('switch', { name: /tab groups/ })).toHaveAttribute('aria-checked', 'false');
+    await page.close();
+  });
+
+  test('long explanations sit behind "More"; the title-prefix switch exists only while container names are shown to pages', async ({ facet }) => {
+    const page = await openOptions(facet);
+    const more = page.getByRole('button', { name: /^More: restoring tabs/ });
+    await expect(more).toHaveAttribute('aria-expanded', 'false');
+    await expect(page.getByText(/Continue where you left off/)).toHaveCount(0);
+    await more.click();
+    await expect(more).toHaveAttribute('aria-expanded', 'true');
+    await expect(page.getByText(/Continue where you left off/)).toBeVisible();
+
+    const names = page.getByRole('switch', { name: /container name to pages/ });
+    const prefix = page.getByRole('switch', { name: /in front of tab titles/ });
+    await expect(names).toHaveAttribute('aria-checked', 'true');
+    await expect(prefix).toBeVisible();
+    await names.click();
+    await expect(names).toHaveAttribute('aria-checked', 'false');
+    await expect(prefix).toHaveCount(0); // hidden, not shown disabled
+    await names.click();
+    await expect(prefix).toBeVisible();
     await page.close();
   });
 
@@ -203,6 +249,10 @@ test.describe('options page', () => {
     const W = await facet.container('Work');
     await facet.openIn(W.name, at('a.localhost', '/whoami'));
     const page = await openOptions(facet);
+    await expect(page.getByTestId('diag-session-rules')).toHaveCount(0); // folded away until asked for
+    const show = page.getByRole('button', { name: 'Show diagnostics' });
+    await expect(show).toHaveAttribute('aria-expanded', 'false');
+    await show.click();
     await expect(page.getByTestId('diag-session-rules')).not.toHaveText('0');
     await expect(page.getByTestId('diag-managed')).toContainText('a.localhost');
     await expect(page.getByTestId('diag-log')).toContainText('->');

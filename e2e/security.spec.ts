@@ -192,17 +192,23 @@ test.describe('service workers of the real profile', () => {
     await expect(popup.getByRole('heading', { name: 'Containers' })).toBeVisible();
     await popup.getByRole('button', { name: 'New container' }).click();
     await popup.getByLabel('Name').fill(`First-${Date.now().toString(36)}`);
+    const firstTab = facet.ctx.waitForEvent('page');
     await popup.getByRole('button', { name: 'Create' }).click();
-    await expect(popup.getByRole('button', { name: 'Settings' })).toBeVisible();
-    await popup.waitForTimeout(300);
-    await expect(popup.getByRole('alertdialog')).toHaveCount(0);
-    await expect(popup.getByRole('dialog')).toHaveCount(0);
-    await expect(popup.getByTestId('strict-warning')).toHaveCount(0);
-    await popup.reload();
-    await expect(popup.getByRole('heading', { name: 'Containers' })).toBeVisible();
-    await expect(popup.getByRole('alertdialog')).toHaveCount(0);
-    await expect(popup.getByLabel(/strict/i)).toHaveCount(0);
-    await popup.close();
+    facet.adopt(await firstTab); // creating a container opens a tab in it and closes the popup
+    await expect.poll(() => popup.isClosed()).toBe(true);
+    const popup2 = await facet.ctx.newPage();
+    await popup2.setViewportSize({ width: 380, height: 700 });
+    await popup2.goto(ext('popup.html'));
+    await expect(popup2.getByRole('button', { name: 'Settings', exact: true })).toBeVisible();
+    await popup2.waitForTimeout(300);
+    await expect(popup2.getByRole('alertdialog')).toHaveCount(0);
+    await expect(popup2.getByRole('dialog')).toHaveCount(0);
+    await expect(popup2.getByTestId('strict-warning')).toHaveCount(0);
+    await popup2.reload();
+    await expect(popup2.getByRole('heading', { name: 'Containers' })).toBeVisible();
+    await expect(popup2.getByRole('alertdialog')).toHaveCount(0);
+    await expect(popup2.getByLabel(/strict/i)).toHaveCount(0);
+    await popup2.close();
     expect(await registrations(real.page)).toBe(1); // nothing was removed behind the user's back
 
     const options = await facet.ctx.newPage();

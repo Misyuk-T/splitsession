@@ -126,7 +126,7 @@
   padding: 20px; border: 1px solid var(--fx-border); border-radius: 12px;
   background: var(--fx-surface-raised); box-shadow: var(--fx-shadow);
 }
-.fx-dialog__title { font-size: 18px; font-weight: 650; margin-bottom: 8px; }
+.fx-dialog__title { font-size: 18px; font-weight: 600; margin-bottom: 8px; }
 .fx-dialog__body { margin-bottom: 16px; color: var(--fx-text); }
 .fx-dialog__body p + p { margin-top: 8px; }
 .fx-dialog__actions { display: flex; justify-content: flex-end; gap: 8px; }
@@ -143,6 +143,10 @@
 .fx-why__chevron--open { transform: rotate(180deg); }
 .fx-why__body { margin-top: 6px; }
 .fx-why__body p + p { margin-top: 6px; }
+.fx-disclosure { margin-top: 0; }
+.fx-disclosure__toggle { font-size: var(--fx-text-main); color: var(--fx-text); font-weight: 500; }
+.fx-disclosure__toggle .fx-why__chevron { width: 16px; height: 16px; }
+.fx-disclosure__body { margin-top: 8px; display: flex; flex-direction: column; gap: 12px; }
 
 /* ---- Notices ---- */
 .fx-notice { padding: 10px 12px; border-radius: var(--fx-radius-sm); font-size: var(--fx-text-secondary); }

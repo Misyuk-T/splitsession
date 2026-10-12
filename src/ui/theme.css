@@ -1,3 +1,5 @@
+@import './fonts.css';
+
 /* SplitSession UI tokens. Light and dark follow prefers-color-scheme. Main text is 16px, secondary 14px: nothing is smaller. */
 :root {
   color-scheme: light dark;
@@ -28,8 +30,9 @@
   --fx-radius: 8px;
   --fx-radius-sm: 6px;
 
-  --fx-font: system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
-  --fx-mono: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+  /* Bundled Inter and JetBrains Mono (fonts.css); the system fonts are the fallback while a font file loads. */
+  --fx-font: 'Inter Variable', system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  --fx-font-mono: 'JetBrains Mono Variable', ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
   --fx-text-main: 16px;
   --fx-text-secondary: 14px;
 }
@@ -69,11 +72,16 @@ html, body {
   background: var(--fx-bg);
   color: var(--fx-text);
   font: var(--fx-text-main) / 1.45 var(--fx-font);
+  /* Inter alternates: cv11 (single-storey a) and ss01 (open digits) read friendlier at 14-16px. */
+  font-feature-settings: 'cv11', 'ss01';
+  letter-spacing: -0.006em;
   -webkit-font-smoothing: antialiased;
 }
 
 h1, h2, h3, p { margin: 0; }
-button, input, textarea { font: inherit; color: inherit; }
+h1, h2, h3 { font-weight: 600; letter-spacing: -0.015em; }
+button, input, textarea { font: inherit; color: inherit; letter-spacing: inherit; font-feature-settings: inherit; }
+code, pre, kbd, samp { font-family: var(--fx-font-mono); font-feature-settings: normal; letter-spacing: 0; }
 button { cursor: pointer; }
 [hidden] { display: none !important; }
 

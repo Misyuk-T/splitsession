@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'preact/hooks';
 import { DEFAULT_SETTINGS, type Settings } from '../../core';
 import { facetApi } from '../../engine/api-client';
+import { Button } from '../components/Button';
+import { More } from '../components/More';
 import { Switch } from '../components/Toggle';
 import { WhyStrict } from '../components/WhyStrict';
 import { describeError } from '../format';
@@ -10,6 +12,7 @@ export function GeneralSection() {
   const [strictBusy, setStrictBusy] = useState(false);
   const [strictError, setStrictError] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [regrouped, setRegrouped] = useState(false);
 
   useEffect(() => {
     facetApi.getSettings().then(setSettings, (e) => setError(describeError(e)));
@@ -45,74 +48,75 @@ export function GeneralSection() {
   return (
     <section class="opt-section" aria-labelledby="general-title" id="general">
       <h2 id="general-title">General</h2>
-      <div class="opt-card">
-        <Switch
-          label="Show containers as tab groups"
-          description="Tabs of one container are grouped in the tab strip with the container's name and colour. Dragging a tab out of a group never changes its container."
-          checked={value.tabGroups}
-          disabled={settings === null}
-          onChange={(next) => void change({ tabGroups: next })}
-        />
-        <Switch
-          label="Restore container tabs after restart"
-          description="When Chrome brings tabs back (restarting with “Continue where you left off”, Reopen closed tab, History, a closed tab group opened again), container tabs return to their container before they load. SplitSession keeps the addresses of container tabs on this computer for that. A tab it cannot match with certainty waits unloaded, and the popup asks you. Off: such tabs come back as ordinary tabs."
-          checked={value.restoreTabs}
-          disabled={settings === null}
-          onChange={(next) => void change({ restoreTabs: next })}
-        />
-        {/* Agent / privacy features: Full edition only (docs/decisions.md, "Two editions"). */}
-        {__FULL__ && (
-          <>
-            <Switch
-              label="Show the container name to pages (for AI agents)"
-              description={
-                <>
-                  Off by default. On: pages in a container tab can read the container’s name, in the page’s “data-ctr”
-                  attribute and in front of the tab title. AI agents driving the browser need it to tell accounts apart.
-                  Any script on the page can read it too, and the name is the same on every site, so trackers can link your
-                  visits through it. Off: pages see no name and titles get no prefix (the toolbar badge and the tab’s group still
-                  show it to you). Switching it off reaches open pages at once; switching it on, after they reload.
-                </>
-              }
-              checked={value.showNameToPages}
-              disabled={settings === null}
-              onChange={(next) => void change({ showNameToPages: next })}
-            />
-            <Switch
-              label="Put the container name in front of tab titles"
-              description={
-                value.showNameToPages
-                  ? 'A tab in the container Work shows as “[Work] Inbox”. It makes accounts easy to tell apart in the tab strip and in tab lists.'
-                  : 'Needs “Show the container name to pages”: a page can read its own title.'
-              }
-              checked={value.titlePrefix && value.showNameToPages}
-              disabled={settings === null || !value.showNameToPages}
-              onChange={(next) => void change({ titlePrefix: next })}
-            />
-          </>
-        )}
-      </div>
-
-      <h3 id="strict-title">Service workers</h3>
-      <div class="opt-card" aria-labelledby="strict-title">
-        <Switch
-          label="Strict mode"
-          description="Sites can’t send push notifications while it’s on."
-          checked={value.strictMode}
-          disabled={settings === null || strictBusy}
-          onChange={(next) => void changeStrict(next)}
-        />
-        <WhyStrict />
-        {strictBusy && (
-          <p class="fx-secondary" role="status">
-            {value.strictMode ? 'Turning off…' : 'Turning on: removing service workers…'}
-          </p>
-        )}
-        {strictError && (
-          <p class="fx-notice fx-notice--error" role="alert">
-            {strictError}
-          </p>
-        )}
+      <div class="opt-card opt-card--rows">
+        <div class="opt-row">
+          <Switch
+            label="Show containers as tab groups"
+            description="Tabs are grouped by container, with its name and colour."
+            checked={value.tabGroups}
+            disabled={settings === null}
+            onChange={(next) => void change({ tabGroups: next })}
+          />
+          <div class="opt-row__foot">
+            <More id="more-groups" about="tab groups">
+              <p>Dragging a tab out of a group never changes its container.</p>
+            </More>
+            {value.tabGroups && (
+              <>
+                {regrouped && <span class="fx-secondary" role="status">Tabs grouped by container.</span>}
+                <Button
+                  small
+                  disabled={settings === null}
+                  onClick={() =>
+                    void facetApi
+                      .regroupTabs()
+                      .then(() => setRegrouped(true))
+                      .catch((e: unknown) => setError(`Could not re-group: ${describeError(e)}`))
+                  }
+                >
+                  Re-group tabs now
+                </Button>
+              </>
+            )}
+          </div>
+        </div>
+        <div class="opt-row">
+          <Switch
+            label="Restore container tabs after restart"
+            description="Tabs come back in their containers after Chrome restarts."
+            checked={value.restoreTabs}
+            disabled={settings === null}
+            onChange={(next) => void change({ restoreTabs: next })}
+          />
+          <More id="more-restore" about="restoring tabs">
+            <p>
+              When Chrome brings tabs back (restarting with “Continue where you left off”, Reopen closed tab, History, a closed tab
+              group opened again), container tabs return to their container before they load. SplitSession keeps the addresses of
+              container tabs on this computer for that.
+            </p>
+            <p>A tab it cannot match with certainty waits unloaded, and the popup asks you. Off: such tabs come back as ordinary tabs.</p>
+          </More>
+        </div>
+        <div class="opt-row">
+          <Switch
+            label="Strict mode"
+            description="Sites can’t send push notifications while it’s on."
+            checked={value.strictMode}
+            disabled={settings === null || strictBusy}
+            onChange={(next) => void changeStrict(next)}
+          />
+          <WhyStrict />
+          {strictBusy && (
+            <p class="fx-secondary" role="status">
+              {value.strictMode ? 'Turning off…' : 'Turning on: removing service workers…'}
+            </p>
+          )}
+          {strictError && (
+            <p class="fx-notice fx-notice--error" role="alert">
+              {strictError}
+            </p>
+          )}
+        </div>
       </div>
       {error && <p class="fx-notice fx-notice--error" role="alert">{error}</p>}
     </section>

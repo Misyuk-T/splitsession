@@ -30,12 +30,22 @@ export interface PopoverPlacement {
   left: number;
   top: number;
   minWidth: number;
+  /** 0 = the popover fits whole, no limit (and no inner scrollbar); otherwise the most it can take before it scrolls. */
   maxHeight: number;
 }
 
+/** Set on <html> while a popover that opens downwards needs the extension popup to be taller (read by popup.css). */
+const GROW_VAR = '--fx-menu-min';
+
 /**
- * Fixed positioning for menus and listboxes: below the trigger when there is room, above it otherwise, clamped to the
- * viewport. `position: fixed` keeps the popover from being clipped by scrolling containers.
+ * Fixed positioning for menus and listboxes: below the trigger when it fits, above it when that fits better, clamped
+ * to the viewport. `position: fixed` keeps the popover from being clipped by scrolling containers.
+ *
+ * A browser-action popup is as tall as its content (up to a cap), so a short popup has no room for a menu below its
+ * last row. A page that declares that cap (`--fx-popup-max` on <html>, popup.css) gets room made instead: the minimum
+ * height `--fx-menu-min` is set in the same layout pass that places the menu, i.e. before the menu is first painted,
+ * and removed when it closes. Placement never depends on the current window height in that case, so the window
+ * growing does not move the menu.
  */
 export function usePopoverPlacement(
   trigger: RefObject<HTMLElement | null>,
@@ -50,23 +60,35 @@ export function usePopoverPlacement(
       setPlacement(null);
       return;
     }
+    const root = document.documentElement;
     const compute = () => {
       const t = trigger.current;
       const p = popover.current;
       if (!t || !p) return;
       const rect = t.getBoundingClientRect();
       const margin = 8;
-      const naturalHeight = p.scrollHeight;
+      const gap = 4;
+      const cap = parseFloat(getComputedStyle(root).getPropertyValue('--fx-popup-max')) || 0;
+      const viewport = cap > 0 ? Math.max(cap, window.innerHeight) : window.innerHeight;
+      const border = p.offsetHeight - p.clientHeight;
+      const natural = Math.ceil(p.scrollHeight + border);
       const width = Math.max(p.offsetWidth, matchWidth ? rect.width : 0);
-      const below = window.innerHeight - rect.bottom - margin;
-      const above = rect.top - margin;
-      const openUp = naturalHeight > below && above > below;
-      const maxHeight = Math.max(120, openUp ? above : below);
-      const height = Math.min(naturalHeight, maxHeight);
+      const below = viewport - rect.bottom - gap - margin;
+      const above = rect.top - gap - margin;
+      const openUp = natural > below && above > below;
+      const room = Math.max(120, openUp ? above : below);
+      const fits = natural <= room;
+      const height = fits ? natural : room;
       let left = align === 'end' ? rect.right - width : rect.left;
       left = Math.min(Math.max(margin, left), Math.max(margin, window.innerWidth - width - margin));
-      const top = openUp ? Math.max(margin, rect.top - height - 4) : rect.bottom + 4;
-      setPlacement({ left, top, minWidth: matchWidth ? rect.width : 0, maxHeight });
+      const top = openUp ? Math.max(margin, rect.top - height - gap) : rect.bottom + gap;
+      if (cap > 0 && !openUp) root.style.setProperty(GROW_VAR, `${Math.min(cap, Math.ceil(top + height + margin))}px`);
+      else root.style.removeProperty(GROW_VAR);
+      setPlacement((old) =>
+        old && old.left === left && old.top === top && old.minWidth === (matchWidth ? rect.width : 0) && old.maxHeight === (fits ? 0 : room)
+          ? old
+          : { left, top, minWidth: matchWidth ? rect.width : 0, maxHeight: fits ? 0 : room },
+      );
     };
     compute();
     window.addEventListener('resize', compute);
@@ -74,6 +96,7 @@ export function usePopoverPlacement(
     return () => {
       window.removeEventListener('resize', compute);
       window.removeEventListener('scroll', compute, true);
+      root.style.removeProperty(GROW_VAR);
     };
   }, [open, align, matchWidth]);
   return placement;

@@ -1,7 +1,8 @@
 import { browser } from 'wxt/browser';
-import type { ContainerId } from '../core';
+import { ruleKeyOf, type ContainerId } from '../core';
 import type { StorageAreaLike } from '../engine/storage/storage-area';
 import { BadgeIndicator, type ActionApi } from './badges';
+import { GroupDragIn } from './group-drag-in';
 import { DomainRuleEngine } from './domain-rule-engine';
 import type { FacetEvent } from './events';
 import { ExemptionManager } from './exemption-manager';
@@ -25,6 +26,7 @@ export class Extras {
   readonly groups: TabGroupProjection;
   readonly badges: BadgeIndicator;
   readonly engine: DomainRuleEngine;
+  readonly dragIn: GroupDragIn;
   ready!: Promise<void>;
 
   constructor(
@@ -67,6 +69,27 @@ export class Extras {
         await b.tabs.update(tabId, { url });
       },
       chooseUrl: (url, tabId) => `${b.runtime.getURL('/choose.html' as never)}?url=${encodeURIComponent(url)}&tab=${tabId}`,
+      log: facet.log,
+    });
+
+    this.dragIn = new GroupDragIn({
+      getTab: (tabId) => b.tabs.get(tabId).catch(() => null),
+      groupContainer: (groupId) => this.groups.containerOfGroup(groupId),
+      containerOf: (tabId) => facet.getTabContainer(tabId),
+      // Assigned but rules not yet active, or a restored tab the restore has not decided on.
+      isSettling: (tabId) => facet.tabs.get(tabId)?.activeSince === null || facet.restore.isWaiting(tabId),
+      containerName: (id) => facet.containers.get(id)?.name,
+      move: async (tabId, containerId, url) => {
+        const key = ruleKeyOf(url);
+        // The user chose this container by dropping the tab there: the repeated navigation is not judged by domain rules.
+        const fresh = await facet.replaceTab(tabId, containerId, url, (newTabId) => {
+          if (key !== null) this.exemptions.markSite(newTabId, containerId, key);
+        });
+        await this.groups.idle(); // the new tab joins the group before the old one leaves it
+        await this.removeWithRetry(tabId);
+        return fresh;
+      },
+      moved: (newTabId, _containerId, name) => void this.badges.notice(newTabId, `moved to “${name}”`),
       log: facet.log,
     });
 
@@ -146,7 +169,30 @@ export class Extras {
     }
   }
 
+  /** Closes a tab; while the user still holds a dragged tab Chrome refuses, so this waits for the drop (up to ~20 s). */
+  private async removeWithRetry(tabId: number): Promise<void> {
+    for (let attempt = 0; attempt < 80; attempt++) {
+      try {
+        await this.b.tabs.remove(tabId);
+        return;
+      } catch (error) {
+        if (!/cannot be edited|dragging/i.test(String((error as Error)?.message ?? error))) return; // already gone
+        await new Promise((resolve) => setTimeout(resolve, 250));
+      }
+    }
+  }
+
   // ---- called from extras-listeners.ts ----
+
+  handleTabCreated(tabId: number): void {
+    this.dragIn.tabCreated(tabId);
+  }
+
+  /** `tabs.onUpdated` with a `groupId`: the user may have dragged the tab into a group that stands for a container. */
+  handleGroupChanged(tabId: number, groupId: number): void {
+    if (groupId < 0) return;
+    void this.facet.ready.then(() => this.ready).then(() => this.dragIn.groupChanged(tabId, groupId));
+  }
 
   async handleBeforeNavigate(details: { tabId: number; frameId: number; url: string; documentLifecycle?: string; timeStamp?: number }): Promise<void> {
     if (details.frameId !== 0) return;

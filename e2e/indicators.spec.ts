@@ -49,17 +49,17 @@ test.describe('indicators: title prefix, badge, tab groups', () => {
     expect(await titleOf(plain)).toBe('Inbox');
   });
 
-  test('the toolbar badge shows the container, comes back after navigation and is empty on plain tabs', async ({ facet }) => {
+  test('the toolbar badge is a dot in the container colour (no letters), comes back after navigation and is empty on plain tabs', async ({ facet }) => {
     const W = await facet.container('Work');
     const id = (await facet.api<{ id: string }>('updateContainer', W.id, { color: 'orange' })).id;
     expect(id).toBe(W.id);
     const page = await facet.openIn(W.name, at('a.localhost', '/whoami'));
     const tabId = await facet.tabIdOf(page);
-    await expect.poll(async () => (await facet.tabInfo(tabId)).badge).toBe('Wo');
+    await expect.poll(async () => (await facet.tabInfo(tabId)).badge).toBe(' ');
     expect((await facet.tabInfo(tabId)).badgeColor.slice(0, 3)).toEqual([0xff, 0x9f, 0x00]);
 
     await go(page, at('b.localhost', '/whoami')); // navigation resets tab-specific action state
-    await expect.poll(async () => (await facet.tabInfo(tabId)).badge).toBe('Wo');
+    await expect.poll(async () => (await facet.tabInfo(tabId)).badge).toBe(' ');
 
     await facet.api('updateContainer', W.id, { color: 'purple' });
     await expect.poll(async () => (await facet.tabInfo(tabId)).badgeColor.slice(0, 3)).toEqual([0xaf, 0x51, 0xf5]);
@@ -71,7 +71,7 @@ test.describe('indicators: title prefix, badge, tab groups', () => {
     await expect.poll(async () => (await facet.tabInfo(tabId)).badge).toBe('');
   });
 
-  test('one tab group per container and window, titled and coloured; dragging tabs around never changes a container', async ({ facet }) => {
+  test('one tab group per container and window, titled and coloured; taking a tab out of a group never changes its container', async ({ facet }) => {
     const A = await facet.api<{ id: string; name: string }>('createContainer', { name: `Alpha-${Date.now().toString(36)}`, color: 'red' });
     const B = await facet.api<{ id: string; name: string }>('createContainer', { name: `Beta-${Date.now().toString(36)}`, color: 'turquoise' });
     const a1 = await facet.openIn(A.name, at('a.localhost', '/whoami'));
@@ -94,18 +94,24 @@ test.describe('indicators: title prefix, badge, tab groups', () => {
     await facet.api('updateContainer', A.id, { name: `${A.name}-2`, color: 'green' });
     await expect.poll(() => facet.groupInfo(ga1)).toMatchObject({ title: `${A.name}-2`, color: 'green' });
 
-    // The group is a view: taking a tab out of it, or into another group, leaves its container alone,
-    // and the tab is not pulled back.
+    // Taking a tab out of its group, or into a group of the user's own, leaves its container alone, and the tab is not
+    // pulled back. (A tab dragged into another container's group is reopened there: e2e/group-drag.spec.ts.)
     await facet.inWorker(async (id: number) => (globalThis as any).chrome.tabs.ungroup(id), ta1);
     expect((await facet.tabInfo(ta1)).groupId).toBe(-1);
     expect(await facet.api('getTabContainer', ta1)).toBe(A.id);
-    await facet.inWorker(async (ids: number[]) => (globalThis as any).chrome.tabs.group({ tabIds: [ids[0]], groupId: ids[1] }), [ta2, gb1]);
-    expect((await facet.tabInfo(ta2)).groupId).toBe(gb1); // A's tab sits in B's group now
+    const mine = await facet.inWorker(async (id: number) => {
+      const c = (globalThis as any).chrome;
+      const group = await c.tabs.group({ tabIds: [id] });
+      await c.tabGroups.update(group, { title: 'Mine' });
+      return group as number;
+    }, ta2);
+    expect((await facet.tabInfo(ta2)).groupId).toBe(mine); // A's tab sits in the user's own group now
     expect(await facet.api('getTabContainer', ta2)).toBe(A.id);
     expect(await facet.api('getTabContainer', tb1)).toBe(B.id);
     await settle();
     expect((await facet.tabInfo(ta1)).groupId).toBe(-1);
-    expect((await facet.tabInfo(ta2)).groupId).toBe(gb1);
+    expect((await facet.tabInfo(ta2)).groupId).toBe(mine);
+    expect(await facet.api('getTabContainer', ta2)).toBe(A.id);
 
     // Re-group puts everything back where it belongs.
     await facet.api('regroupTabs');

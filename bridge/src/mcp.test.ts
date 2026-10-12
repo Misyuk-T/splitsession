@@ -20,7 +20,7 @@ afterEach(() => {
 describe('mcp side of the bridge', () => {
   it('says "off" when the host is installed and "not installed" when it is not', () => {
     const env = { [MANIFEST_DIRS_ENV]: '/a:/b' };
-    expect(unreachableMessage(env, (p) => p === '/b/com.splitsession.bridge.json')).toMatch(/is off — turn it on in the SplitSession popup/);
+    expect(unreachableMessage(env, (p) => p === '/b/com.splitsession.bridge.json')).toMatch(/is off — turn it on in SplitSession Settings/);
     expect(unreachableMessage(env, () => false)).toMatch(/not installed — run `pnpm bridge:install`/);
   });
 

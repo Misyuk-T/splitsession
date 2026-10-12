@@ -1,16 +1,15 @@
 /* Agent bridge card (Full edition only: imported by BridgeCard.tsx, so Lite does not ship it). */
 .fx-bridge { display: flex; flex-direction: column; gap: 6px; padding: 8px 12px; border: 1px solid var(--fx-border); border-radius: var(--fx-radius); background: var(--fx-surface); }
-.fx-bridge--options.fx-bridge--on { border-color: var(--fx-warn-border); border-width: 2px; padding: 7px 11px; background: var(--fx-warn-soft); color: var(--fx-warn-text); }
-.fx-bridge--options.fx-bridge--on .fx-secondary { color: var(--fx-warn-text); }
-.fx-bridge--options.fx-bridge--on .fx-toggle[aria-checked='true'] .fx-switch { background: var(--fx-warn-border); }
-.fx-bridge--options { padding: 12px 16px; }
-.fx-bridge--options.fx-bridge--on { padding: 11px 15px; }
-.fx-bridge__live { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; padding: 8px 10px; border-radius: var(--fx-radius-sm); background: var(--fx-bg); color: var(--fx-text); }
-.fx-bridge__headline { font-size: var(--fx-text-main); }
+/* Options page: the status line under the "Agent bridge" row. A small dot and short text on a neutral surface. */
+.fx-bridge__live { display: flex; align-items: center; flex-wrap: wrap; gap: 4px 10px; min-height: 28px; padding: 2px 0 6px; color: var(--fx-text); font-size: var(--fx-text-secondary); }
+.fx-bridge__headline { font-weight: 500; }
 .fx-bridge__count { margin-left: auto; font-size: var(--fx-text-secondary); color: var(--fx-muted); font-variant-numeric: tabular-nums; }
 .fx-bridge__dot { flex: none; width: 12px; height: 12px; border-radius: 50%; background: var(--fx-warn-border); }
 .fx-bridge__dot--connected { background: var(--fx-ok); box-shadow: 0 0 0 0 var(--fx-ok); animation: fx-bridge-pulse 1.8s ease-out infinite; }
 .fx-bridge__dot--error, .fx-bridge__dot--host-missing { background: var(--fx-danger); }
+.fx-bridge__live .fx-bridge__dot { width: 10px; height: 10px; background: var(--fx-border-strong); box-shadow: none; animation: none; }
+.fx-bridge__live .fx-bridge__dot--connected { background: var(--fx-ok); }
+.fx-bridge__live .fx-bridge__dot--host-missing, .fx-bridge__live .fx-bridge__dot--busy, .fx-bridge__live .fx-bridge__dot--error { background: var(--fx-amber); }
 .fx-bridge--popup .fx-bridge__dot { width: 10px; height: 10px; }
 .fx-bridge--popup .fx-bridge__dot--off, .fx-bridge--popup .fx-bridge__dot--connecting { background: var(--fx-border-strong); animation: none; }
 .fx-bridge--popup .fx-bridge__dot--connected { background: var(--fx-accent); animation: none; box-shadow: none; }
@@ -19,7 +18,7 @@
 @media (prefers-reduced-motion: reduce) { .fx-bridge__dot--connected { animation: none; } }
 .fx-bridge__help { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; font-size: var(--fx-text-secondary); }
 .fx-bridge__cmd { display: flex; align-items: center; gap: 8px; align-self: stretch; padding: 6px 6px 6px 10px; border-radius: var(--fx-radius-sm); background: var(--fx-bg); color: var(--fx-text); }
-.fx-bridge__cmd code { flex: 1; font: var(--fx-text-main) / 1.4 var(--fx-mono); user-select: all; overflow-wrap: anywhere; }
+.fx-bridge__cmd code { flex: 1; font: var(--fx-text-main) / 1.4 var(--fx-font-mono); user-select: all; overflow-wrap: anywhere; }
 
 /* Popup version: a single quiet row (32-36px); the log of the last actions unfolds under it. */
 .fx-bridge--popup { gap: 2px; padding: 0 4px 0 0; border: 0; background: transparent; }
@@ -35,8 +34,15 @@ button.fx-bridge__main:focus-visible { outline: 2px solid var(--fx-focus); outli
 .fx-bridge__recent { list-style: none; margin: 0 0 2px; padding: 2px 10px 4px 30px; display: flex; flex-direction: column; }
 .fx-bridge__recent li { display: flex; align-items: baseline; gap: 8px; min-height: 24px; font-size: var(--fx-text-secondary); line-height: 24px; color: var(--fx-muted); }
 .fx-bridge__time { flex: none; font-variant-numeric: tabular-nums; }
-.fx-bridge__tool { flex: none; font-family: var(--fx-mono); font-weight: 600; color: var(--fx-text); }
+.fx-bridge__tool { flex: none; font-family: var(--fx-font-mono); font-weight: 600; color: var(--fx-text); }
 .fx-bridge__target { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .fx-bridge__failed .fx-bridge__tool { text-decoration: line-through; }
 .fx-bridge__none { margin: 0; padding: 2px 10px 6px 30px; font-size: var(--fx-text-secondary); line-height: 24px; color: var(--fx-muted); }
 .fx-bridge--popup .fx-bridge__help { padding: 6px 10px 8px; }
+
+/* The popup header's "MCP" pill: 32px tall like the icon buttons next to it, 14px text, a dot when the bridge is on. */
+.fx-mcp { flex: none; display: inline-flex; align-items: center; gap: 6px; min-height: 28px; margin-right: 2px; padding: 2px 10px; border: 1px solid var(--fx-border-strong); border-radius: 999px; background: transparent; color: var(--fx-muted); font-size: var(--fx-text-secondary); font-weight: 600; letter-spacing: 0.02em; line-height: 1.2; }
+.fx-mcp:hover { background: var(--fx-surface-hover); color: var(--fx-text); }
+.fx-mcp:focus-visible { outline: 2px solid var(--fx-focus); outline-offset: 1px; }
+.fx-mcp__dot { flex: none; width: 8px; height: 8px; border-radius: 50%; background: var(--fx-amber); }
+.fx-mcp__dot--on { background: var(--fx-accent); }

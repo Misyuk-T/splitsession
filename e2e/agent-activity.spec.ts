@@ -105,8 +105,8 @@ const pageSees = (page: Page) =>
   });
 
 async function turnOn(facet: Facet): Promise<{ popup: Page; card: ReturnType<Page['getByTestId']> }> {
-  const { page: popup, toggle } = await openPopup(facet);
-  await toggle.click();
+  await facet.api('updateSettings', { agentBridge: true }); // the switch lives in Settings; the popup row appears once it is on
+  const { page: popup } = await openPopup(facet);
   const card = popup.getByTestId('bridge-card');
   await expect(card).toHaveAttribute('data-status', 'connected', { timeout: 15_000 });
   return { popup, card };

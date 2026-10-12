@@ -3,6 +3,7 @@ import type { ContainerInfo } from '../../background/facet';
 import { CONTAINER_HEX, normalizeRuleDomain, type DomainRule } from '../../core';
 import { facetApi } from '../../engine/api-client';
 import { Button, Dot } from '../components/Button';
+import { More } from '../components/More';
 import { Select } from '../components/Select';
 import { TextField } from '../components/TextField';
 import { describeError } from '../format';
@@ -78,10 +79,15 @@ export function RulesSection({ containers }: { containers: ContainerInfo[] | nul
   return (
     <section class="opt-section" aria-labelledby="rules-title" id="rules">
       <h2 id="rules-title">Domain rules</h2>
-      <p class="fx-secondary opt-lead">
-        Decide where a site opens. With “always open in”, a tab that goes to the site moves into that container; with “ask”, you choose each time. A tab
-        that moves has already sent its first request from where it was, so that one request is not isolated.
-      </p>
+      <div class="opt-lead">
+        <p class="fx-secondary">Decide where a site opens.</p>
+        <More id="more-rules" about="domain rules">
+          <p>
+            With “always open in”, a tab that goes to the site moves into that container; with “ask”, you choose each time. A tab
+            that moves has already sent its first request from where it was, so that one request is not isolated.
+          </p>
+        </More>
+      </div>
 
       <form
         class="opt-card opt-ruleform"
@@ -125,13 +131,11 @@ export function RulesSection({ containers }: { containers: ContainerInfo[] | nul
               />
             </div>
           )}
-        </div>
-        {error && <p class="fx-notice fx-notice--error" role="alert">{error}</p>}
-        <div class="opt-actions">
           <Button type="submit" variant="primary" disabled={!valid}>
             {existing ? 'Replace rule' : 'Add rule'}
           </Button>
         </div>
+        {error && <p class="fx-notice fx-notice--error" role="alert">{error}</p>}
       </form>
 
       <div class="fx-status" role="status" aria-live="polite">{note}</div>

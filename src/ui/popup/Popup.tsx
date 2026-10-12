@@ -3,7 +3,7 @@ import { browser } from 'wxt/browser';
 import type { ContainerInfo } from '../../background/facet';
 import { CONTAINER_COLORS, CONTAINER_HEX, type ContainerColor, type Settings } from '../../core';
 import { facetApi } from '../../engine/api-client';
-import { BridgeCard } from '../components/BridgeCard';
+import { BridgeRow, McpButton } from '../components/BridgeCard';
 import { Button, Dot } from '../components/Button';
 import { ContainerForm } from '../components/ContainerForm';
 import { ConfirmDialog } from '../components/Dialog';
@@ -11,7 +11,8 @@ import type { RestoreStatus } from '../../background/restore';
 import { describeError, hostOf, isWebUrl, tabsLabel } from '../format';
 import { Logo } from '../components/Logo';
 import { MenuButton, type MenuItem } from '../components/Menu';
-import { IconChevron, IconMore, IconPlus, IconSettings, IconSwap } from '../icons';
+import { IconChevron, IconMore, IconMoveIn, IconPencil, IconPlus, IconSettings, IconSwap, IconTrash } from '../icons';
+import { useBridge } from '../useBridge';
 
 interface TabInfo {
   id: number;
@@ -25,6 +26,8 @@ interface Status {
 }
 
 const NONE = '__none__';
+/** DOM id of a container row's main button (focus goes there when a row icon that was pressed disappears). */
+const rowId = (containerId: string) => `popup-row-${containerId.replace(/[^\w-]/g, '_')}`;
 /** Waiting tabs listed by name in the banner; the rest are counted. */
 const HELD_ROWS = 3;
 
@@ -57,6 +60,8 @@ export function Popup() {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [restore, setRestore] = useState<RestoreStatus | null>(null);
   const [heldOpen, setHeldOpen] = useState(false);
+  // Full only (a compile-time constant, so the hook order never changes): one poll of the bridge for the MCP pill and the agent row.
+  const bridge = __FULL__ ? useBridge() : null;
   const statusTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const say = (text: string, error = false) => {
@@ -131,9 +136,14 @@ export function Popup() {
       if (!tab) return;
       const target = id === NONE ? null : id;
       if (target === tabContainer) return;
+      const left = tabContainer;
       await facetApi.assignTab(tab.id, target, { reload: true });
       await refresh();
       say(target === null ? 'Reopened without a container.' : `Reopened in “${containers.find((c) => c.id === target)?.name}”.`);
+      // The "This tab" row is gone once the tab has no container, and the pressed "move in" icon goes once the tab is in
+      // that container: focus goes to the main button of the container the tab left, or entered (still about that tab).
+      const focusRow = target ?? left;
+      if (focusRow) setTimeout(() => document.getElementById(rowId(focusRow))?.focus(), 0);
     }, 'Could not reopen the tab');
 
   const newTab = (c: ContainerInfo) =>
@@ -143,10 +153,27 @@ export function Popup() {
       window.close(); // the popup closes by itself when the new tab takes focus; this covers the rest
     }, 'Could not open a tab');
 
-  const rowMenu = (c: ContainerInfo): MenuItem[] => [
-    { id: 'edit', label: 'Rename or recolour…' },
-    { id: 'delete', label: 'Delete…', danger: true, separatorBefore: true },
-  ];
+  /**
+   * The row's main action. With open tabs: show the container's first tab (lowest index in this window, else the first
+   * in any window): open its group if it is collapsed, make the tab active, focus its window. No tabs: open a new one.
+   */
+  const goTo = (c: ContainerInfo) =>
+    run(async () => {
+      const ids = new Set((await facetApi.listTabs()).filter((t) => t.containerId === c.id).map((t) => t.tabId));
+      const tabs = (await Promise.all([...ids].map((id) => browser.tabs.get(id).catch(() => undefined)))).filter((t): t is Browser.tabs.Tab => t?.id !== undefined);
+      if (tabs.length === 0) {
+        await facetApi.newTabInContainer(c.id);
+      } else {
+        const here = (await browser.windows.getCurrent()).id;
+        const inHere = tabs.filter((t) => t.windowId === here);
+        const first = (inHere.length > 0 ? inHere : tabs).reduce((a, b) => (b.index < a.index ? b : a));
+        if (first.groupId !== undefined && first.groupId >= 0) await browser.tabGroups.update(first.groupId, { collapsed: false }).catch(() => {});
+        await browser.tabs.update(first.id!, { active: true });
+        await browser.windows.update(first.windowId, { focused: true });
+      }
+      await refresh();
+      window.close(); // the popup closes by itself when another tab takes focus; this covers the rest
+    }, 'Could not open the container');
 
   const held = restore?.held ?? [];
   const nameOf = (id: string) => containers.find((c) => c.id === id)?.name ?? id;
@@ -165,23 +192,6 @@ export function Popup() {
 
   const editing = mode.kind === 'edit' ? containers.find((c) => c.id === mode.id) : undefined;
 
-  const canRegroup = !!settings?.tabGroups && containers.some((c) => c.tabCount > 0);
-  const regroup = () =>
-    void run(async () => {
-      await facetApi.regroupTabs();
-      say('Tabs grouped by container.');
-    }, 'Could not re-group');
-  // Full: the "More" menu also holds the state page. Lite has no state page: its menu holds only "Re-group tabs", and the
-  // button is disabled while there is nothing to group (a menu whose only item is disabled cannot be opened).
-  const overflowItems: MenuItem[] = [
-    ...(__FULL__ ? [{ id: 'state', label: 'Open state page' }] : []),
-    { id: 'regroup', label: 'Re-group tabs by container', disabled: !canRegroup },
-  ];
-  const onOverflow = (id: string) => {
-    if (__FULL__ && id === 'state') void browser.tabs.create({ url: browser.runtime.getURL('/state.html' as never) });
-    else regroup();
-  };
-
   const heldLabel = held.length === 1 ? '1 tab waiting' : `${held.length} tabs waiting`;
   const heldName = (h: (typeof held)[number]) => (h.title && h.title !== h.url ? h.title : shortAddress(h.url));
 
@@ -191,15 +201,13 @@ export function Popup() {
         <Logo size={24} />
         <h1 class="popup__title">SplitSession</h1>
         <span class="popup__spacer" />
+        {__FULL__ && bridge && <McpButton bridge={bridge} />}
         <Button variant="ghost" small icon aria-label="Settings" title="Settings" onClick={() => void browser.runtime.openOptionsPage()}>
           <IconSettings />
         </Button>
-        <MenuButton ariaLabel="More" menuLabel="More" items={overflowItems} onSelect={onOverflow} align="end" variant="ghost" small icon disabled={!__FULL__ && !canRegroup}>
-          <IconMore />
-        </MenuButton>
       </header>
 
-      {__FULL__ && <BridgeCard layout="popup" />}
+      {__FULL__ && bridge && <BridgeRow bridge={bridge} />}
 
       {held.length > 0 && (
         <section class="popup__held" aria-label="Tabs waiting" data-testid="restore-banner">
@@ -270,27 +278,18 @@ export function Popup() {
         </section>
       )}
 
-      <section class="popup__tab" aria-label="This tab" data-testid="current-container">
-        {current ? <Dot color={CONTAINER_HEX[current.color]} /> : <span class="popup__nodot" aria-hidden="true" />}
-        <div class="popup__tabtext">
-          <strong class={`popup__tabname${current ? '' : ' popup__tabname--none'}`}>{current ? current.name : 'No container'}</strong>
-          <span class="fx-secondary popup__tabsite">{web ? hostOf(tab?.url) : 'Web pages only'}</span>
-        </div>
-        <MenuButton
-          items={reopenItems}
-          onSelect={(id) => void reopen(id)}
-          ariaLabel="Reopen in…"
-          title={web ? 'Reopen in…' : 'Only web pages can be put in a container'}
-          menuLabel="Reopen this tab in"
-          align="end"
-          disabled={!web}
-          variant="ghost"
-          small
-          icon
-        >
-          <IconSwap />
-        </MenuButton>
-      </section>
+      {current && (
+        <section class="popup__tab" aria-label="This tab" data-testid="current-container">
+          <Dot color={CONTAINER_HEX[current.color]} />
+          <div class="popup__tabtext">
+            <strong class="popup__tabname">{current.name}</strong>
+            <span class="fx-secondary popup__tabsite">{hostOf(tab?.url)}</span>
+          </div>
+          <MenuButton items={reopenItems} onSelect={(id) => void reopen(id)} ariaLabel="Reopen in…" menuLabel="Reopen this tab in" align="end" variant="ghost" small icon>
+            <IconSwap />
+          </MenuButton>
+        </section>
+      )}
 
       <section class="popup__list" aria-labelledby="containers-title">
         <div class="popup__listhead">
@@ -310,10 +309,19 @@ export function Popup() {
               submitLabel="Create"
               onCancel={() => setMode({ kind: 'idle' })}
               onSubmit={async (value) => {
-                await facetApi.createContainer(value);
+                const made = await facetApi.createContainer(value);
                 setMode({ kind: 'idle' });
+                // The point of a new container is to use it: open a tab in it (as a click on its row does) and let go.
+                try {
+                  await facetApi.newTabInContainer(made.id);
+                } catch (error) {
+                  await refresh();
+                  say(`Created “${value.name}”, but could not open a tab: ${describeError(error)}`, true);
+                  return;
+                }
                 await refresh();
                 say(`Created “${value.name}”.`);
+                window.close(); // the popup closes by itself when the new tab takes focus; this covers the rest
               }}
             />
           </div>
@@ -339,28 +347,40 @@ export function Popup() {
                 />
               </li>
             ) : (
-              <li key={c.id} class="popup__row" data-testid="container-row" data-current={c.id === tabContainer ? 'true' : undefined}>
-                <button type="button" class="popup__rowmain" aria-label={`New tab in ${c.name}`} title={`New tab in ${c.name}${c.tabCount > 0 ? ` (${tabsLabel(c.tabCount)} open)` : ''}`} onClick={() => void newTab(c)}>
+              <li key={c.id} class={`popup__row${web && c.id !== tabContainer ? ' popup__row--move' : ''}`} data-testid="container-row" data-current={c.id === tabContainer ? 'true' : undefined}>
+                <button
+                  type="button"
+                  id={rowId(c.id)}
+                  class="popup__rowmain"
+                  aria-label={c.tabCount > 0 ? `Go to ${c.name}` : `Open ${c.name}`}
+                  title={c.tabCount > 0 ? `Go to ${c.name} (${tabsLabel(c.tabCount)} open)` : `Open ${c.name} in a new tab`}
+                  onClick={() => void goTo(c)}
+                >
                   <Dot color={CONTAINER_HEX[c.color]} />
                   <span class="popup__rowname">{c.name}</span>
                   {c.tabCount > 0 && (
                     <span class="fx-secondary popup__rowtabs" data-testid="container-tabs">
-                      {c.tabCount}
+                      {tabsLabel(c.tabCount)}
                     </span>
                   )}
                 </button>
-                <MenuButton
-                  ariaLabel={`Actions for ${c.name}`}
-                  menuLabel={`${c.name} actions`}
-                  items={rowMenu(c)}
-                  align="end"
-                  variant="ghost"
-                  small
-                  icon
-                  onSelect={(id) => (id === 'edit' ? setMode({ kind: 'edit', id: c.id }) : setDeleting(c))}
-                >
-                  <IconMore />
-                </MenuButton>
+                {/* Over the tab count, same place: they appear on hover and on keyboard focus (focusable the whole time). */}
+                <div class="popup__acts" role="group" aria-label={`${c.name} actions`}>
+                  <Button variant="ghost" icon class="popup__act" aria-label={`New tab in ${c.name}`} title={`New tab in ${c.name}`} onClick={() => void newTab(c)}>
+                    <IconPlus />
+                  </Button>
+                  {web && c.id !== tabContainer && (
+                    <Button variant="ghost" icon class="popup__act" aria-label={`Move this tab to ${c.name}`} title={`Move this tab to ${c.name}`} onClick={() => void reopen(c.id)}>
+                      <IconMoveIn />
+                    </Button>
+                  )}
+                  <Button variant="ghost" icon class="popup__act" aria-label={`Edit ${c.name}`} title={`Edit ${c.name}`} onClick={() => setMode({ kind: 'edit', id: c.id })}>
+                    <IconPencil />
+                  </Button>
+                  <Button variant="ghost" icon class="popup__act popup__act--danger" aria-label={`Delete ${c.name}`} title={`Delete ${c.name}`} onClick={() => setDeleting(c)}>
+                    <IconTrash />
+                  </Button>
+                </div>
               </li>
             ),
           )}

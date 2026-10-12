@@ -74,7 +74,7 @@ export async function startMcp(facet: Facet, manifestDirs: string = facet.profil
   };
 }
 
-/** Opens the popup as a page and returns it with its agent bridge switch. */
+/** Opens the popup as a page and returns it with its agent bridge switch (the switch exists only while the bridge is on). */
 export async function openPopup(facet: Facet): Promise<{ page: Page; toggle: ReturnType<Page['getByRole']> }> {
   const page = await facet.ctx.newPage();
   await page.setViewportSize({ width: 420, height: 800 });

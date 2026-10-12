@@ -1,18 +1,39 @@
-.opt-page { max-width: 780px; margin: 0 auto; padding: 32px 24px 64px; display: flex; flex-direction: column; gap: 8px; }
+.opt-page { max-width: 780px; margin: 0 auto; padding: 28px 24px 56px; display: flex; flex-direction: column; gap: 4px; }
 .opt-head { display: flex; align-items: center; gap: 12px; margin-bottom: 4px; }
-.opt-head h1 { font-size: 26px; font-weight: 700; }
+.opt-head h1 { font-size: 24px; font-weight: 600; }
 .opt-nav { display: flex; flex-wrap: wrap; gap: 4px 20px; padding-bottom: 12px; border-bottom: 1px solid var(--fx-border); margin-bottom: 8px; font-size: var(--fx-text-main); }
 .opt-nav a { color: var(--fx-accent); text-decoration: none; padding: 4px 0; }
 .opt-nav a:hover { text-decoration: underline; }
-.opt-section { display: flex; flex-direction: column; gap: 12px; padding-top: 20px; }
-.opt-section h2 { font-size: 20px; font-weight: 700; }
-.opt-section h3 { font-size: var(--fx-text-main); font-weight: 650; margin-bottom: 4px; }
-.opt-lead { max-width: 62ch; }
-.opt-card { display: flex; flex-direction: column; gap: 12px; padding: 16px; border: 1px solid var(--fx-border); border-radius: 12px; background: var(--fx-surface); }
+.opt-section { display: flex; flex-direction: column; gap: 10px; padding-top: 18px; }
+.opt-section h2 { font-size: 20px; font-weight: 600; }
+.opt-section h3 { font-size: var(--fx-text-main); font-weight: 600; }
+.opt-lead { max-width: 62ch; display: flex; flex-direction: column; gap: 2px; }
+.opt-lead .fx-why { margin-top: 0; }
+.opt-card { display: flex; flex-direction: column; gap: 10px; padding: 14px 16px; border: 1px solid var(--fx-border); border-radius: 12px; background: var(--fx-surface); }
+.opt-section > .fx-status { min-height: 0; }
 .opt-actions { display: flex; justify-content: flex-end; gap: 8px; }
 .opt-actions--start { justify-content: flex-start; }
+.opt-actions--center { align-items: center; }
 
-.opt-ruleform__row { display: flex; flex-wrap: wrap; gap: 12px; }
+/* A card of settings: rows divided by hairlines, each row one switch, one short line, and an optional "More". */
+.opt-card--rows { gap: 0; padding: 4px 16px; }
+.opt-row { display: flex; flex-direction: column; gap: 2px; padding: 8px 0; }
+.opt-row + .opt-row { border-top: 1px solid var(--fx-border); }
+.opt-row .fx-toggle { padding: 4px 0; }
+.opt-row .fx-why { margin-top: 0; }
+.opt-row__foot { display: flex; align-items: center; gap: 12px; }
+.opt-row__foot .fx-why { margin-right: auto; }
+.opt-row__split { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+.opt-row__text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.opt-row__split > .fx-secondary, .opt-row__split > button { flex: none; }
+.opt-row__text strong, .opt-row__text h3 { font-size: var(--fx-text-main); font-weight: 500; margin: 0; }
+.opt-row .fx-disclosure__toggle { width: 100%; justify-content: space-between; margin-left: 0; padding: 6px 0; }
+.opt-row .fx-disclosure__body { margin-top: 4px; padding-bottom: 6px; }
+.opt-sub { display: flex; flex-direction: column; gap: 14px; }
+.opt-prose { display: flex; flex-direction: column; gap: 8px; }
+.opt-warn { margin: 4px 0 2px; padding: 10px 12px; border: 1px solid var(--fx-border-strong); border-left: 3px solid var(--fx-danger); border-radius: var(--fx-radius-sm); background: var(--fx-bg); font-size: var(--fx-text-secondary); }
+
+.opt-ruleform__row { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 12px; }
 .opt-ruleform__col { flex: 1 1 240px; display: flex; flex-direction: column; gap: 4px; }
 .opt-rules { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; border: 1px solid var(--fx-border); border-radius: 12px; overflow: hidden; }
 .opt-rule { display: flex; align-items: center; gap: 12px; padding: 10px 14px; background: var(--fx-surface); }
@@ -26,8 +47,16 @@
 .opt-facts { display: grid; grid-template-columns: max-content 1fr; gap: 4px 20px; margin: 0; }
 .opt-facts dt { color: var(--fx-muted); font-size: var(--fx-text-secondary); }
 .opt-facts dd { margin: 0; overflow-wrap: anywhere; }
-.opt-log { margin: 0; max-height: 320px; overflow: auto; padding: 10px 12px; border: 1px solid var(--fx-border); border-radius: var(--fx-radius-sm); background: var(--fx-bg); font: var(--fx-text-secondary) / 1.5 var(--fx-mono); white-space: pre-wrap; overflow-wrap: anywhere; }
+.opt-log { margin: 0; max-height: 320px; overflow: auto; padding: 10px 12px; border: 1px solid var(--fx-border); border-radius: var(--fx-radius-sm); background: var(--fx-bg); font: var(--fx-text-secondary) / 1.5 var(--fx-font-mono); white-space: pre-wrap; overflow-wrap: anywhere; }
 
 
 .opt-list { margin: 0; padding-left: 22px; display: flex; flex-direction: column; gap: 4px; }
-.opt-card code { font-family: var(--fx-mono); }
+.opt-card code { font-family: var(--fx-font-mono); }
+
+.opt-steps { margin: 0; padding-left: 22px; display: flex; flex-direction: column; gap: 10px; }
+.opt-steps p { margin-bottom: 6px; }
+.opt-steps li > p:last-child { margin-bottom: 0; }
+
+/* The heading a link like options.html#agent lands on: focused for keyboard and screen-reader users, so no ring on the heading itself. */
+.opt-section h2 { scroll-margin-top: 12px; }
+.opt-section h2:focus { outline: none; }

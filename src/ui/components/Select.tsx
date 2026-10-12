@@ -135,7 +135,7 @@ export function Select({ label, value, options, onChange, placeholder = 'Chooseâ
           aria-label={label}
           style={
             placement
-              ? { left: `${placement.left}px`, top: `${placement.top}px`, minWidth: `${placement.minWidth}px`, maxHeight: `${placement.maxHeight}px`, margin: 0, listStyle: 'none' }
+              ? { left: `${placement.left}px`, top: `${placement.top}px`, minWidth: `${placement.minWidth}px`, ...(placement.maxHeight > 0 ? { maxHeight: `${placement.maxHeight}px` } : {}), margin: 0, listStyle: 'none' }
               : { left: '0px', top: '0px', visibility: 'hidden', margin: 0, listStyle: 'none' }
           }
         >

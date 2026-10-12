@@ -17,9 +17,8 @@ interface TabRow {
 
 /** Popup with the agent bridge switched on and connected. */
 async function turnOn(facet: Facet): Promise<{ popup: Page; card: ReturnType<Page['getByTestId']> }> {
-  const { page: popup, toggle } = await openPopup(facet);
-  await expect(toggle).toHaveAttribute('aria-checked', 'false');
-  await toggle.click();
+  await facet.api('updateSettings', { agentBridge: true }); // the switch lives in Settings; the popup row appears once it is on
+  const { page: popup } = await openPopup(facet);
   const card = popup.getByTestId('bridge-card');
   await expect(card).toHaveAttribute('data-status', 'connected', { timeout: 15_000 });
   return { popup, card };
@@ -57,15 +56,21 @@ test.describe('agent bridge', () => {
   });
 
   test('is off by default: no host process, and the MCP server says so', async ({ facet }) => {
-    const { toggle } = await openPopup(facet);
-    await expect(toggle).toHaveAttribute('aria-checked', 'false');
+    const { page: popup, toggle } = await openPopup(facet);
+    await expect(toggle).toHaveCount(0); // a fresh Full install: the popup is about containers, no agent UI at all
+    await expect(popup.getByTestId('bridge-card')).toHaveCount(0);
+    await expect(popup.getByText(/agent|pnpm/i)).toHaveCount(0);
+    // The one agent entry point: a quiet "MCP" pill in the header, no status dot while the bridge is off.
+    await expect(popup.getByTestId('mcp-button')).toHaveText('MCP');
+    await expect(popup.getByTestId('mcp-button')).toHaveAttribute('data-status', 'off');
+    await expect(popup.locator('.fx-mcp__dot')).toHaveCount(0);
     expect(await facet.api<{ agentBridge: boolean }>('getSettings')).toMatchObject({ agentBridge: false });
     expect(hostPids(facet)).toEqual([]);
 
     mcp = await startMcp(facet);
     const off = await mcp.call('list_tabs');
     expect(off.isError).toBe(true);
-    expect(off.text).toMatch(/bridge is off — turn it on in the SplitSession popup/);
+    expect(off.text).toMatch(/bridge is off — turn it on in SplitSession Settings/);
 
     const empty = await startMcp(facet, '/nonexistent-native-hosts');
     const missing = await empty.call('list_tabs');
@@ -85,11 +90,62 @@ test.describe('agent bridge', () => {
     expect(tools.find((t) => t.name === 'get_tab_text')?.inputSchema).toMatchObject({ required: ['tabId'], properties: { maxChars: { default: 20_000 } } });
   });
 
-  test('the popup switch turns it on and off, with a visible state and an action counter', async ({ facet }) => {
-    const { popup, card } = await turnOn(facet);
+  test('the MCP pill in the popup header opens Settings at "For AI agents" and shows the bridge status', async ({ facet }) => {
+    const { page: popup } = await openPopup(facet);
+    const pill = popup.getByRole('button', { name: /^MCP/ });
+    await expect(pill).toBeVisible();
+    await expect(pill).toHaveAttribute('title', 'AI agents (MCP)');
+
+    const [options] = await Promise.all([facet.ctx.waitForEvent('page'), pill.click()]);
+    await expect(options).toHaveURL(ext('options.html#agent'));
+    const heading = options.getByRole('heading', { name: 'For AI agents' });
+    await expect(heading).toBeFocused();
+    await expect(heading).toBeInViewport();
+
+    // A second press reuses the open Settings tab (and scrolls it back), it does not open another.
+    await options.evaluate(() => window.scrollTo(0, 0));
+    await options.getByRole('link', { name: 'General' }).click();
+    await expect.poll(() => popup.isClosed()).toBe(true); // pressing it closes the popup
+    const { page: again } = await openPopup(facet);
+    const before = facet.ctx.pages().length;
+    await again.getByRole('button', { name: /^MCP/ }).click();
+    await expect(heading).toBeFocused();
+    await expect(heading).toBeInViewport();
+    await expect.poll(() => facet.ctx.pages().length).toBe(before - 1); // the popup closed, no second Settings tab
+
+    // Bridge on: a dot appears (purple once connected, amber before). Off: none.
+    const { page: view } = await openPopup(facet);
+    const pill2 = view.getByRole('button', { name: /^MCP/ });
+    await facet.api('updateSettings', { agentBridge: true });
+    await expect(view.locator('.fx-mcp__dot')).toHaveCount(1);
+    await expect(pill2).toHaveAttribute('data-status', 'connected', { timeout: 15_000 });
+    await expect(view.locator('.fx-mcp__dot--on')).toHaveCount(1);
+    await expect(pill2).toHaveAccessibleName(/connected/);
+    await facet.api('updateSettings', { agentBridge: false });
+    await expect(view.locator('.fx-mcp__dot')).toHaveCount(0);
+  });
+
+  test('Settings, "For AI agents", turns it on; the popup then shows one row with a counter, and its switch turns it off', async ({ facet }) => {
+    const { page: popup, toggle } = await openPopup(facet);
+    await expect(popup.getByTestId('bridge-card')).toHaveCount(0); // off: no agent row
+
+    const options = await facet.ctx.newPage();
+    await options.goto(ext('options.html'));
+    await expect(options.getByRole('heading', { name: 'For AI agents' })).toBeVisible();
+    await expect(options.getByText('Lets an AI agent on this computer see and use your tabs.')).toBeVisible();
+    const optionsSwitch = options.getByRole('switch', { name: /Agent bridge/ });
+    await expect(optionsSwitch).toHaveAttribute('aria-checked', 'false');
+    await optionsSwitch.click();
+    await expect(options.getByTestId('bridge-card')).toHaveAttribute('data-status', 'connected', { timeout: 15_000 });
+    await expect(options.getByTestId('bridge-status')).toContainText('Connected');
+
+    // The popup row appears by itself (it polls) and is one compact line.
+    const card = popup.getByTestId('bridge-card');
+    await expect(card).toHaveAttribute('data-status', 'connected', { timeout: 15_000 });
     await expect(card).toHaveClass(/fx-bridge--on/);
     await expect(popup.getByTestId('bridge-status')).toContainText('Agent connected — full access');
     await expect(popup.getByTestId('bridge-actions')).toHaveText('0');
+    await expect(popup.getByText(/pnpm/)).toHaveCount(0);
     expect(hostPids(facet)).toHaveLength(1);
 
     mcp = await startMcp(facet);
@@ -97,20 +153,18 @@ test.describe('agent bridge', () => {
     await mcp.json('list_tabs');
     await expect(popup.getByTestId('bridge-actions')).toHaveText('2');
 
-    // The options page shows the same switch, in the same state, with a plain explanation of what "on" means.
-    const options = await facet.ctx.newPage();
-    await options.goto(ext('options.html'));
-    await expect(options.getByRole('heading', { name: 'AI agent bridge' })).toBeVisible();
-    await expect(options.getByRole('switch', { name: /Agent bridge/ })).toHaveAttribute('aria-checked', 'true');
-    await expect(options.getByText('While it is on, the agent can')).toBeVisible();
+    // The "what an agent can do" text is one disclosure away.
+    const can = options.getByRole('button', { name: /What an agent can do/ });
+    await expect(can).toHaveAttribute('aria-expanded', 'false');
+    await can.click();
+    await expect(can).toHaveAttribute('aria-expanded', 'true');
     await expect(options.getByText(/click, type, scroll and run JavaScript in any tab/)).toBeVisible();
 
-    // Off again, from the popup: connection closed, host gone, tools refuse.
-    await popup.getByRole('switch', { name: /Agent bridge/ }).click();
-    await expect(popup.getByTestId('bridge-card')).toHaveAttribute('data-status', 'off');
-    await expect(popup.getByTestId('bridge-status')).toHaveCount(0);
+    // Off again, from the popup: connection closed, host gone, tools refuse, the popup row is gone.
+    await toggle.click();
+    await expect(popup.getByTestId('bridge-card')).toHaveCount(0);
     await expect.poll(() => hostPids(facet), { timeout: 10_000 }).toEqual([]);
-    await expect(options.getByRole('switch', { name: /Agent bridge/ })).toHaveAttribute('aria-checked', 'false');
+    await expect(optionsSwitch).toHaveAttribute('aria-checked', 'false');
     const refused = await mcp.call('list_tabs');
     expect(refused.isError).toBe(true);
     expect(refused.text).toMatch(/bridge is off/);
@@ -348,20 +402,42 @@ test.describe('agent bridge', () => {
     expect(big.texts[0]!.length).toBe(1_500_002);
   });
 
-  test('without the host installed the popup says how to install it, and "Check again" connects once it is', async ({ facet }) => {
+  test('without the host installed the popup says "not connected" with no install text; Settings has the steps and "Check again"', async ({ facet }) => {
     uninstallHost(facet);
-    const { page: popup, toggle } = await openPopup(facet);
-    await toggle.click();
+    await facet.api('updateSettings', { agentBridge: true });
+    const { page: popup } = await openPopup(facet);
     const card = popup.getByTestId('bridge-card');
     await expect(card).toHaveAttribute('data-status', 'host-missing', { timeout: 15_000 });
     await expect(card).toHaveClass(/fx-bridge--on/); // the switch is still visibly ON
-    await expect(popup.getByTestId('bridge-install')).toContainText('pnpm bridge:install');
+    await expect(card).toContainText('Agent');
+    await expect(card).toContainText('not connected');
+    await expect(popup.getByText(/pnpm|bridge:install|source/i)).toHaveCount(0);
+    await expect(popup.getByTestId('bridge-install')).toHaveCount(0);
+    await expect(popup.getByRole('button', { name: 'Check again' })).toHaveCount(0);
     await expect(popup.getByTestId('bridge-status')).toContainText('not installed');
 
+    // The gear of the row opens Settings at the agent section.
+    const [options] = await Promise.all([facet.ctx.waitForEvent('page'), popup.getByRole('button', { name: 'Agent settings' }).click()]);
+    await options.waitForLoadState();
+    expect(options.url()).toBe(ext('options.html') + '#agent');
+    await expect(options.getByRole('heading', { name: 'For AI agents' })).toBeVisible();
+    await expect(options.getByTestId('bridge-card')).toHaveAttribute('data-status', 'host-missing');
+    const how = options.getByRole('button', { name: 'How to connect' });
+    await expect(how).toHaveAttribute('aria-expanded', 'false');
+    await expect(options.getByTestId('bridge-install-command')).toHaveCount(0);
+    await how.click();
+    await expect(how).toHaveAttribute('aria-expanded', 'true');
+    await expect(options.getByTestId('bridge-install-command')).toContainText('pnpm bridge:install');
+    await expect(options.getByText(/claude mcp add/).first()).toBeVisible();
+    await expect(options.getByText(/Requires the SplitSession source code; a one-command installer is coming/)).toBeVisible();
+    await expect(options.getByRole('link', { name: /full guide on GitHub/ })).toHaveAttribute('href', 'https://github.com/Misyuk-T/splitsession/blob/main/docs/agents.md');
+    await expect(options.getByTestId('bridge-guide-status')).toContainText('not installed');
+
     installHost(facet);
-    await popup.getByRole('button', { name: 'Check again' }).click();
+    await options.getByRole('button', { name: 'Check again' }).click();
+    await expect(options.getByTestId('bridge-card')).toHaveAttribute('data-status', 'connected', { timeout: 15_000 });
     await expect(card).toHaveAttribute('data-status', 'connected', { timeout: 15_000 });
-    await expect(popup.getByTestId('bridge-install')).toHaveCount(0);
+    await expect(options.getByRole('button', { name: 'Check again' })).toHaveCount(0);
   });
 
   test('reconnects when the host process dies, and after the extension worker restarts', async ({ facet }) => {
@@ -421,7 +497,7 @@ test.describe('agent bridge', () => {
       const pending = mcp.call('click', { tabId, selector: '#go' });
       await expect.poll(lookupStarted, { timeout: 10_000 }).toBe(true);
       await popup.getByRole('switch', { name: /Agent bridge/ }).click();
-      await expect(popup.getByTestId('bridge-card')).toHaveAttribute('data-status', 'off');
+      await expect(popup.getByTestId('bridge-card')).toHaveCount(0);
       const answer = await pending;
       expect(answer.isError).toBe(true);
       expect(answer.text).toMatch(/switched off/);
@@ -452,7 +528,7 @@ test.describe('agent bridge', () => {
     const card2 = popup2.getByTestId('bridge-card');
     await expect(card2).toHaveAttribute('data-status', 'busy', { timeout: 20_000 });
     await expect(popup2.getByTestId('bridge-status')).toContainText('Another Chrome profile holds the agent bridge — turn it off there first');
-    await expect(popup2.getByTestId('bridge-busy')).toContainText('Only one Chrome profile can hold the agent bridge');
+    await expect(card2).toContainText('in use elsewhere');
 
     // The first profile still holds it, truthfully: same host, still connected, and the agent still reaches it.
     await expect(card).toHaveAttribute('data-status', 'connected');
@@ -463,7 +539,7 @@ test.describe('agent bridge', () => {
 
     // The first profile lets go: the second one, which was waiting, connects by itself.
     await popup.getByRole('switch', { name: /Agent bridge/ }).click();
-    await expect(card).toHaveAttribute('data-status', 'off');
+    await expect(card).toHaveCount(0);
     await expect(card2).toHaveAttribute('data-status', 'connected', { timeout: 30_000 });
     expect(hostPids(facet)).toHaveLength(1);
     expect(hostPids(facet)).not.toContain(firstHost);
@@ -478,6 +554,7 @@ test.describe('agent bridge', () => {
     expect((await mcp.json<{ profileLabel: string | null }>('bridge_info')).profileLabel).toBeNull();
     const options = await facet.ctx.newPage();
     await options.goto(ext('options.html'));
+    await options.getByRole('button', { name: 'Advanced' }).click(); // the profile name is under "Advanced"
     const field = options.getByRole('textbox', { name: 'Profile name' });
     await field.fill('Work');
     await field.press('Enter');

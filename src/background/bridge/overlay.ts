@@ -499,6 +499,8 @@ export async function pageActivity(cmd: ActivityCommand): Promise<ActivityInspec
     const boostGlow = document.createElement('div');
     boostGlow.style.cssText = 'position:fixed;inset:0;pointer-events:none;';
     const pill = document.createElement('div');
+    // System font on purpose: the page's closed shadow root could only load Inter through chrome.runtime.getURL, which needs
+    // web_accessible_resources, and that lets any page probe whether SplitSession is installed. Not worth it for one label.
     pill.style.cssText =
       'position:fixed;top:12px;right:12px;display:flex;align-items:center;gap:8px;padding:6px 12px 6px 10px;border-radius:999px;pointer-events:none;' +
       'color:#fff;font:600 14px/1.2 system-ui,-apple-system,"Segoe UI",sans-serif;letter-spacing:0;box-shadow:0 2px 10px rgba(0,0,0,.35);white-space:nowrap;';

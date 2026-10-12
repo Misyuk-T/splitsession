@@ -75,7 +75,7 @@ export interface ActivityDeps {
   b: Browser;
   /** The "Show agent activity" setting, read at every action. */
   enabled: () => boolean;
-  /** Puts the tab's own badge (the container's initials, or none) back. */
+  /** Puts the tab's own badge (the container's colour dot, or none) back. */
   restoreBadge: (tabId: number) => Promise<void>;
   /**
    * Whether the agent bridge's debugger session is held on the tab by more than its idle window (a viewport override, a

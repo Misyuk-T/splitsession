@@ -376,6 +376,11 @@ export class TabRestore {
     return this.held.has(tabId);
   }
 
+  /** The tab is still being decided (matched against what Chrome brought back) or waits for the user. */
+  isWaiting(tabId: number): boolean {
+    return this.pending.has(tabId) || this.held.has(tabId);
+  }
+
   heldCount(): number {
     return this.held.size;
   }

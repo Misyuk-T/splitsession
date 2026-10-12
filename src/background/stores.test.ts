@@ -145,11 +145,17 @@ describe('BadgeIndicator', () => {
     return { badge, calls };
   };
 
-  it('sets initials, container colour and a readable text colour; clears plain tabs', async () => {
+  it('sets a colour dot (blank text, never initials), the container colour and a readable text colour; clears plain tabs', async () => {
     const { badge, calls } = make(new Map([[1, 'work']]));
     await badge.apply(1);
     await badge.apply(2);
-    expect(calls).toEqual(['text 1 "Wo"', 'bg 1 #ff9f00', 'fg 1 #000000', 'text 2 ""']);
+    expect(calls).toEqual(['text 1 " "', 'bg 1 #ff9f00', 'fg 1 #000000', 'text 2 ""']);
+  });
+
+  it('the move notice is an arrow on the container colour, never initials', async () => {
+    const { badge, calls } = make(new Map([[1, 'work']]));
+    await badge.notice(1, 'moved to “Work”', 10);
+    expect(calls.slice(0, 3)).toEqual(['text 1 "→"', 'bg 1 #ff9f00', 'fg 1 #000000']);
   });
 
   it('waiting tabs: a bright "!" on the tab and a hint on the button for every other tab', async () => {

@@ -59,6 +59,35 @@ try {
   await api('setDomainRule', { domain: 'threads.com', action: 'always', containerId: personal.id });
   await new Promise((r) => setTimeout(r, 800));
 
+  const shoot = async (name, path, viewport, { scheme, fullPage = false, before, element } = {}) => {
+    const page = await context.newPage();
+    await page.setViewportSize(viewport);
+    await page.emulateMedia({ colorScheme: scheme });
+    await page.goto(`chrome-extension://${EXT_ID}/${path}`);
+    await page.waitForTimeout(500);
+    if (before) await before(page);
+    const file = resolve(out, `${name}-${scheme}.png`);
+    if (element) await page.locator(element).screenshot({ path: file });
+    else await page.screenshot({ path: file, fullPage });
+    await page.close();
+    console.log(`${name}-${scheme}.png`);
+  };
+
+  // Fresh install, bridge off: the popup is containers only, and the settings page shows the agent section low-key at the bottom.
+  for (const scheme of ['light', 'dark']) {
+    // 420 x 600: the largest popup Chrome shows.
+    await shoot('popup', `popup.html?tab=${tabId}`, { width: 420, height: 600 }, { scheme });
+    await shoot('popup-menu', `popup.html?tab=${tabId}`, { width: 420, height: 600 }, {
+      scheme,
+      before: async (page) => {
+        await page.getByRole('button', { name: /Reopen in/ }).click();
+        await page.waitForTimeout(200);
+      },
+    });
+    await shoot('options', 'options.html', { width: 900, height: 900 }, { scheme, fullPage: true });
+    await shoot('choose', `choose.html?url=${encodeURIComponent('https://www.reddit.com/r/chrome/')}&tab=${tabId}`, { width: 700, height: 640 }, { scheme });
+  }
+
   // The agent bridge, connected, with a few things the "agent" just did.
   await api('updateSettings', { agentBridge: true });
   const connected = async () => {
@@ -87,38 +116,24 @@ try {
   await call('scroll', { tabId, to: 'bottom' });
   await new Promise((r) => setTimeout(r, 3500)); // the on-page highlight has faded; the popup keeps the list
 
-  const shoot = async (name, path, viewport, { scheme, fullPage = false, before } = {}) => {
-    const page = await context.newPage();
-    await page.setViewportSize(viewport);
-    await page.emulateMedia({ colorScheme: scheme });
-    await page.goto(`chrome-extension://${EXT_ID}/${path}`);
-    await page.waitForTimeout(500);
-    if (before) await before(page);
-    await page.screenshot({ path: resolve(out, `${name}-${scheme}.png`), fullPage });
-    await page.close();
-    console.log(`${name}-${scheme}.png`);
-  };
-
+  // The agent bridge switched on in Settings: the popup gets one row, Settings shows the status and "How to connect".
   for (const scheme of ['light', 'dark']) {
-    // 420 x 600: the largest popup Chrome shows.
-    await shoot('popup', `popup.html?tab=${tabId}`, { width: 420, height: 600 }, { scheme });
-    // The agent row unfolded: the last five actions.
     await shoot('popup-agent', `popup.html?tab=${tabId}`, { width: 420, height: 600 }, {
       scheme,
       before: async (page) => {
-        await page.getByRole('button', { name: /^Agent, / }).click();
+        await page.getByRole('button', { name: /^Agent, / }).click(); // the row unfolded: the last five actions
         await page.waitForTimeout(200);
       },
     });
-    await shoot('popup-menu', `popup.html?tab=${tabId}`, { width: 420, height: 600 }, {
+    await shoot('options-agent', 'options.html#agent', { width: 900, height: 900 }, {
       scheme,
       before: async (page) => {
-        await page.getByRole('button', { name: /Reopen in/ }).click();
+        await page.getByRole('button', { name: 'How to connect' }).click();
         await page.waitForTimeout(200);
+        await page.locator('#agent').scrollIntoViewIfNeeded();
       },
+      element: '#agent',
     });
-    await shoot('options', 'options.html', { width: 900, height: 900 }, { scheme, fullPage: true });
-    await shoot('choose', `choose.html?url=${encodeURIComponent('https://www.reddit.com/r/chrome/')}&tab=${tabId}`, { width: 700, height: 640 }, { scheme });
   }
   // The Lite edition's popup: containers only, no agent row.
   const liteDir = resolve(root, '.output/lite/chrome-mv3');
