@@ -93,6 +93,28 @@ export const GeneralSection = () => {
         </div>
         <div class="opt-row">
           <Switch
+            label="Mark container tabs outside their group"
+            description="Adds ⧉ to the tab title. Sites can read titles."
+            checked={value.markOutsideGroup}
+            disabled={settings === null}
+            onChange={(next) => void change({ markOutsideGroup: next })}
+          />
+          <More id="more-mark" about="the tab mark">
+            <p>
+              A container tab that is not inside its container’s group (dragged
+              out, or tab groups switched off) gets ⧉ in front of its title, so
+              it does not look like an ordinary tab. The mark goes when the tab
+              is back in its group or leaves the container.
+            </p>
+            <p>
+              The mark never contains the container’s name, but a page can read
+              its own title, so a site can tell that this is a container tab.
+              Off: titles stay as the site sets them.
+            </p>
+          </More>
+        </div>
+        <div class="opt-row">
+          <Switch
             label="Restore container tabs after restart"
             description="Tabs come back in their containers after Chrome restarts."
             checked={value.restoreTabs}

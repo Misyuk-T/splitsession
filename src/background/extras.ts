@@ -8,6 +8,7 @@ import type { FacetEvent } from "./events";
 import { ExemptionManager } from "./exemption-manager";
 import type { Facet } from "./facet";
 import { GroupGuard, type GuardTab } from "./group-guard";
+import { GroupMark, OUTSIDE_GROUP_MESSAGE } from "./group-mark";
 import { RuleStore } from "./rule-store";
 import { SettingsStore } from "./settings-store";
 import {
@@ -36,6 +37,7 @@ export class Extras {
   readonly badges: BadgeIndicator;
   readonly engine: DomainRuleEngine;
   readonly guard: GroupGuard;
+  readonly mark: GroupMark;
   ready!: Promise<void>;
 
   constructor(
@@ -137,6 +139,29 @@ export class Extras {
       log: facet.log,
     });
 
+    this.mark = new GroupMark({
+      containerOf: (tabId) => facet.getTabContainer(tabId),
+      groupOf: (tabId) =>
+        b.tabs.get(tabId).then(
+          (t) => t.groupId,
+          () => null,
+        ),
+      groupContainer: (groupId) => this.groups.containerOfGroup(groupId),
+      groupsOn: () => this.settings.get().tabGroups,
+      groupsIdle: () => this.groups.idle(),
+      send: (tabId, message) =>
+        b.tabs.sendMessage(tabId, message, { frameId: 0 }).then(
+          () => undefined,
+          () => undefined,
+        ),
+    });
+    // The page asks once when it starts; changes are pushed (`refreshMark`).
+    facet.addContentHandler(OUTSIDE_GROUP_MESSAGE, async (tabId, sender) => {
+      if (sender.frameId !== 0) return { ok: false };
+      await this.ready;
+      return { ok: true, outside: await this.mark.isOutside(tabId) };
+    });
+
     facet.events.on((event) => this.onFacetEvent(event));
     this.settings.onChange((next, previous) => {
       void facet
@@ -145,9 +170,11 @@ export class Extras {
           facet.log("error", "applying settings failed", String(error)),
         );
       if (next.tabGroups === previous.tabGroups) return;
-      void (next.tabGroups
-        ? this.groups.reconcileAll()
-        : this.groups.releaseAll());
+      void (
+        next.tabGroups ? this.groups.reconcileAll() : this.groups.releaseAll()
+      ).then(() =>
+        this.mark.refreshMany(this.facet.tabs.entries().map(([id]) => id)),
+      );
     });
   }
 
@@ -215,12 +242,14 @@ export class Extras {
         void this.ready.then(() => {
           void this.groups.tabAssigned(event.tabId, event.containerId);
           void this.badges.apply(event.tabId);
+          void this.mark.refresh(event.tabId);
         });
         break;
       case "tab-unassigned":
         void this.ready.then(() => {
           void this.groups.tabUnassigned(event.tabId, event.containerId);
           void this.badges.apply(event.tabId);
+          void this.mark.refresh(event.tabId, true);
         });
         break;
       case "tab-replaced":
@@ -298,6 +327,13 @@ export class Extras {
       .then(() => this.guard.groupChanged(tabId, groupId));
   }
 
+  /** `tabs.onUpdated` with a `groupId` (joined, left or moved to another group): the "⧉ " mark of a container tab follows. */
+  handleGroupMembership(tabId: number): void {
+    void this.facet.ready
+      .then(() => this.ready)
+      .then(() => this.mark.refresh(tabId));
+  }
+
   /** `tabGroups.onUpdated`: the user may have renamed or recoloured a group of ours in Chrome's menu. */
   handleGroupEdited(group: {
     id: number;
@@ -362,13 +398,16 @@ export class Extras {
   handleTabAttached(tabId: number): void {
     void this.ready.then(() => {
       const containerId: ContainerId | null = this.facet.getTabContainer(tabId);
-      if (containerId !== null)
+      if (containerId !== null) {
         void this.groups.tabAssigned(tabId, containerId);
+        void this.mark.refresh(tabId);
+      }
     });
   }
 
   handleTabRemoved(tabId: number): void {
     this.exemptions.forget(tabId);
     this.engine.forgetTab(tabId);
+    this.mark.forget(tabId);
   }
 }

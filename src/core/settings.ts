@@ -38,13 +38,19 @@ export interface Settings {
    * Off: they come back as ordinary tabs. Default on.
    */
   restoreTabs: boolean;
+  /**
+   * A container tab that is not inside its container's tab group (dragged out, or tab groups switched off) gets "⧉ " in
+   * front of its title, so it does not pass for an ordinary tab. The mark carries no container name, but pages can read
+   * their title and so learn that this is a container tab. Both editions. Default on.
+   */
+  markOutsideGroup: boolean;
 }
 
 /** `chrome.storage.local` key holding the settings object. */
 export const SETTINGS_KEY = "settings";
 
 /**
- * Lite has only `tabGroups`, `strictMode` and `restoreTabs`: the agent bridge, agent activity and page-name settings are
+ * Lite has only `tabGroups`, `strictMode`, `restoreTabs` and `markOutsideGroup`: the agent bridge, agent activity and page-name settings are
  * not part of its schema at all (no default, not a valid key: an update naming one is an error, nothing stored, no string
  * shipped). The `Settings` type stays the Full one; Lite code never reads the other keys (every use sits behind `__FULL__`).
  */
@@ -58,8 +64,14 @@ export const DEFAULT_SETTINGS: Readonly<Settings> = Object.freeze(
         agentBridge: false,
         agentActivity: true,
         restoreTabs: true,
+        markOutsideGroup: true,
       }
-    : ({ tabGroups: true, strictMode: false, restoreTabs: true } as Settings),
+    : ({
+        tabGroups: true,
+        strictMode: false,
+        restoreTabs: true,
+        markOutsideGroup: true,
+      } as Settings),
 );
 
 /** The edition's setting keys, in the order of `DEFAULT_SETTINGS` (the one list of them). */

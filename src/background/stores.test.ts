@@ -19,6 +19,7 @@ describe("SettingsStore", () => {
       agentBridge: false,
       agentActivity: true,
       restoreTabs: true,
+      markOutsideGroup: true,
     });
     const seen: string[] = [];
     store.onChange((next, prev) =>
@@ -32,6 +33,7 @@ describe("SettingsStore", () => {
       agentBridge: false,
       agentActivity: true,
       restoreTabs: true,
+      markOutsideGroup: true,
     });
     expect(seen).toEqual(["true->false"]);
     expect(area.data.get("settings")).toEqual({
@@ -42,6 +44,7 @@ describe("SettingsStore", () => {
       agentBridge: false,
       agentActivity: true,
       restoreTabs: true,
+      markOutsideGroup: true,
       explicit: ["tabGroups"],
     });
     await expect(store.update({ tabGroups: "no" })).rejects.toThrow();
@@ -56,6 +59,7 @@ describe("SettingsStore", () => {
       agentBridge: false,
       agentActivity: true,
       restoreTabs: true,
+      markOutsideGroup: true,
     });
   });
 
@@ -79,6 +83,7 @@ describe("SettingsStore", () => {
       agentBridge: false,
       agentActivity: true,
       restoreTabs: true,
+      markOutsideGroup: true,
     });
     expect(area.data.get("settings")).toEqual({
       tabGroups: false,
@@ -88,6 +93,7 @@ describe("SettingsStore", () => {
       agentBridge: false,
       agentActivity: true,
       restoreTabs: true,
+      markOutsideGroup: true,
       explicit: ["tabGroups"],
     });
 

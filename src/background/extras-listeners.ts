@@ -20,8 +20,10 @@ export function registerExtrasListeners(
   on(b.tabs.onUpdated, (tabId, change) => {
     if (change.status === "loading" || change.url !== undefined)
       extras.handleTabRefresh(tabId);
-    if (change.groupId !== undefined)
+    if (change.groupId !== undefined) {
       extras.handleGroupChanged(tabId, change.groupId);
+      extras.handleGroupMembership(tabId);
+    }
   });
   on(b.tabs.onActivated, (info) => extras.handleTabRefresh(info.tabId));
   on(b.tabs.onAttached, (tabId) => {

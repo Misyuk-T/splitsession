@@ -313,6 +313,10 @@ export const test = base.extend<
     await sw();
     await api("listContainers"); // waits for the worker to be ready
     await context.clearCookies(); // real profile starts empty for every test
+    // Containers outlive a test in the shared browser too (with their jars, rules, tabs and groups): every test starts with
+    // none, so a list that grows with the suite (the popup, the swap menu) cannot depend on which specs ran before it.
+    for (const c of await api<Array<{ id: string }>>("listContainers"))
+      await api("deleteContainer", c.id);
     // Rules and settings outlive a test in the shared browser: start from the defaults.
     for (const rule of await api<Array<{ domain: string }>>("listDomainRules"))
       await api("removeDomainRule", rule.domain);
@@ -324,6 +328,7 @@ export const test = base.extend<
       agentBridge: false,
       agentActivity: true,
       restoreTabs: true,
+      markOutsideGroup: true,
     });
     // Container tabs closed by earlier tests are not reopened by this one.
     await api("forgetClosedTabs");

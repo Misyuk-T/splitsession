@@ -19,6 +19,7 @@ describe("settings defaults", () => {
       agentBridge: false,
       agentActivity: true,
       restoreTabs: true,
+      markOutsideGroup: true,
     });
   });
 

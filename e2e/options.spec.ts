@@ -157,6 +157,32 @@ test.describe("options page", () => {
     await page.close();
   });
 
+  test("the tab-mark switch defaults to on, says what it does, keeps the privacy note behind More, and takes effect", async ({
+    facet,
+  }) => {
+    const page = await openOptions(facet);
+    const mark = page.getByRole("switch", {
+      name: /Mark container tabs outside their group/,
+    });
+    await expect(mark).toHaveAttribute("aria-checked", "true");
+    await expect(
+      page.getByText("Adds ⧉ to the tab title. Sites can read titles."),
+    ).toBeVisible();
+    await expect(
+      page.getByText(/never contains the container’s name/),
+    ).toHaveCount(0);
+    await page.getByRole("button", { name: /^More: the tab mark/ }).click();
+    await expect(
+      page.getByText(/never contains the container’s name/),
+    ).toBeVisible();
+    await mark.click();
+    await expect(mark).toHaveAttribute("aria-checked", "false");
+    expect(await facet.api("getSettings")).toMatchObject({
+      markOutsideGroup: false,
+    });
+    await page.close();
+  });
+
   test('long explanations sit behind "More"; the title-prefix switch exists only while container names are shown to pages', async ({
     facet,
   }) => {

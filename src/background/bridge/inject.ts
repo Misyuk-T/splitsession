@@ -18,11 +18,10 @@ export function pageText(maxChars: number): {
   const text = (document.body?.innerText ??
     document.documentElement?.innerText ??
     "") as string;
-  // The title as the page has it: without a mark an older version of the agent-activity display may have left in front of it.
-  const title = document.title.replace(
-    /^(\[[^\]]*\] )?(?:👁|👀|🤖[◐◓◑◒]?) /u,
-    "$1",
-  );
+  // The title as the page has it: without the outside-group mark and a mark an older version of the agent-activity display may have left in front of it.
+  const title = document.title
+    .replace(/^⧉ /u, "")
+    .replace(/^(\[[^\]]*\] )?(?:👁|👀|🤖[◐◓◑◒]?) /u, "$1");
   return {
     text: text.slice(0, maxChars),
     total: text.length,
@@ -86,16 +85,14 @@ export function pageHtml(
   );
   if (overlay && el.contains(overlay))
     html = html.replace(overlay.outerHTML, "");
-  // Same for the mark in front of the <title> (it is written into the page's own title element).
+  // Same for the marks in front of the <title> (they are written into the page's own title element).
   if (el === document.documentElement)
-    html = html.replace(
-      /(<title[^>]*>)(\[[^\]]*\] )?(?:👁|👀|🤖[◐◓◑◒]?) /u,
-      "$1$2",
-    );
-  const title = document.title.replace(
-    /^(\[[^\]]*\] )?(?:👁|👀|🤖[◐◓◑◒]?) /u,
-    "$1",
-  );
+    html = html
+      .replace(/(<title[^>]*>)⧉ /u, "$1")
+      .replace(/(<title[^>]*>)(\[[^\]]*\] )?(?:👁|👀|🤖[◐◓◑◒]?) /u, "$1$2");
+  const title = document.title
+    .replace(/^⧉ /u, "")
+    .replace(/^(\[[^\]]*\] )?(?:👁|👀|🤖[◐◓◑◒]?) /u, "$1");
   return {
     html: html.slice(0, maxChars),
     total: html.length,

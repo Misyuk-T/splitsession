@@ -116,7 +116,6 @@ export default defineConfig({
     // v0.1 asks for every host up front: header rewriting needs host access, and
     // headless e2e cannot click permission prompts. Optional-permission onboarding is deferred.
     host_permissions: ["<all_urls>"],
-    optional_permissions: ["cookies"],
     icons: iconSet,
     action: { default_title: "SplitSession", default_icon: iconSet },
     // Static default answer for the beacon (`{}` = no container) so the content script never reaches the network,

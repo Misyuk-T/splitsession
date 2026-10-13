@@ -57,6 +57,12 @@ export function readableTextColor(hex: string): "#000000" | "#ffffff" {
 
 // ---- Title prefix ----
 
+/**
+ * In front of the title of a container tab that is not inside its container's tab group. The glyph of the group titles,
+ * and no name: the page can read its title, and learns only that this is a container tab.
+ */
+export const OUTSIDE_MARK = "⧉ ";
+
 export const titlePrefixFor = (name: string): string => `[${name}] `;
 
 /**
@@ -70,12 +76,13 @@ export function prefixedTitle(
   prefix: string,
   previous?: string,
 ): string {
+  // `previous` first: the new prefix may be longer or shorter than it and start the same ("⧉ " / "⧉ [Work] ").
+  if (previous && previous !== prefix && title.startsWith(previous)) {
+    const rest = title.slice(previous.length);
+    return rest === "" ? "" : prefix + rest;
+  }
   if (title.startsWith(prefix)) return title;
-  const stripped =
-    previous && previous !== prefix && title.startsWith(previous)
-      ? title.slice(previous.length)
-      : title;
-  return stripped === "" ? "" : prefix + stripped;
+  return title === "" ? "" : prefix + title;
 }
 
 /** The page's own title: `prefix` removed from the front when present. */
@@ -99,11 +106,17 @@ export const AGENT_TITLE_MARKS = [
   "🤖 ",
 ] as const;
 
-/** The title without the agent mark (the `[container] ` prefix stays). For the action log, which must not show our own marks. */
+/**
+ * The title without our own marks: the outside-group mark ("⧉ ") and the agent mark; the `[container] ` prefix stays.
+ * For everything an agent reads (tab lists, the action log), which must not show our marks.
+ */
 export function withoutAgentMark(title: string): string {
-  const prefix = /^\[[^\]]*\] /.exec(title)?.[0] ?? "";
-  const rest = title.slice(prefix.length);
+  const body = title.startsWith(OUTSIDE_MARK)
+    ? title.slice(OUTSIDE_MARK.length)
+    : title;
+  const prefix = /^\[[^\]]*\] /.exec(body)?.[0] ?? "";
+  const rest = body.slice(prefix.length);
   for (const mark of AGENT_TITLE_MARKS)
     if (rest.startsWith(mark)) return prefix + rest.slice(mark.length);
-  return title;
+  return body;
 }

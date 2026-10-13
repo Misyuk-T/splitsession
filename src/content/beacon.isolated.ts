@@ -22,6 +22,7 @@ import {
   RES_ATTR,
   SKIP_ATTR,
 } from "./bridge-protocol";
+import { startGroupMark } from "./group-mark";
 import { sealFrame } from "./seal.isolated";
 import { startPageName } from "./title-prefix";
 
@@ -59,6 +60,8 @@ export function runBeacon(): void {
     bridge.setAttribute(MODE_ATTR, "container");
     bridge.setAttribute(CONTAINER_ATTR, key);
     startContainer({ ...(answer as Partial<BeaconPayload>), c: key }, bridge);
+    // "⧉ " in front of the title while the tab is outside its container's tab group (both editions).
+    if (window === window.top) startGroupMark();
     // The name reaches pages only when the user allows it (the background leaves `n` out otherwise). Full edition only.
     if (__FULL__ && window === window.top && typeof answer.n === "string")
       startPageName(root, answer.n);

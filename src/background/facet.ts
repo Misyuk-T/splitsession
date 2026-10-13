@@ -609,11 +609,28 @@ export class Facet {
     this.restore.flushPending();
   }
 
+  /** Answers for `facet/*` messages that belong to the extras (tab groups, ...) and not to the isolation engine. */
+  private readonly contentHandlers = new Map<
+    string,
+    (tabId: number, sender: MessageSender) => Promise<unknown>
+  >();
+
+  addContentHandler(
+    type: string,
+    handler: (tabId: number, sender: MessageSender) => Promise<unknown>,
+  ): void {
+    this.contentHandlers.set(type, handler);
+  }
+
   /** A `facet/*` message from a content script (`isolation/content-messages.ts`). */
   handleContentMessage(
     message: ContentMessage,
     sender: MessageSender,
   ): Promise<unknown> {
+    const extra = this.contentHandlers.get(message.type);
+    const tabId = sender.tab?.id;
+    if (extra && tabId !== undefined && tabId >= 0)
+      return this.ready.then(() => extra(tabId, sender));
     return handleContentMessage(this.messageDeps, message, sender);
   }
 }

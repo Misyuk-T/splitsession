@@ -2,159 +2,141 @@
 
 **Same site, separate logins.**
 
-SplitSession is Firefox-style containers for Chrome: an open-source Manifest V3 extension that lets you keep several accounts of the same site open **side by side, in different tabs of one Chrome profile**: two Reddit accounts, three Threads accounts, a work and a personal Supabase, all logged in at the same moment, without a second profile or a second browser.
+[![CI](https://github.com/Misyuk-T/splitsession/actions/workflows/ci.yml/badge.svg)](https://github.com/Misyuk-T/splitsession/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-Each container has its own cookies and its own page storage (localStorage, IndexedDB, caches, ...). A tab belongs to one container, and everything that tab does, on every site it visits, happens inside it.
+SplitSession is an open-source Manifest V3 extension that brings Firefox-style containers to Chrome. Keep several accounts of the same site open **side by side, in different tabs of one Chrome profile**: two Reddit accounts, three Threads accounts, a work and a personal Supabase, all logged in at the same moment, with no second profile and no second browser.
 
-*A 20-second demo GIF (three accounts of one site in one window, one tab group per container) belongs here; it has not been recorded yet. Still pictures are below and in `docs/screenshots/`.*
+Each container has its own cookies and its own page storage. A tab belongs to one container, and everything that tab does, on every site it visits, happens inside it.
 
 <p>
-  <img src="docs/screenshots/popup-light.png" alt="The SplitSession popup: the current tab's container with a reopen button, and the list of containers" width="260">
-  <img src="docs/screenshots/popup-menu-light.png" alt="The 'Reopen in' menu" width="260">
-  <img src="docs/screenshots/choose-light.png" alt="The page that asks which container a site should open in" width="360">
+  <img src="docs/screenshots/popup-lite-light.png" alt="The SplitSession popup in light theme: the current tab's container and the list of containers" width="280">
+  <img src="docs/screenshots/popup-lite-dark.png" alt="The same popup in dark theme" width="280">
 </p>
 
-**Status: v0.1, in development.** The isolation engine and the interface are covered by an end-to-end suite that runs real Chromium against a local multi-host test stand. It has **not yet been verified on real sites** (see [Compatibility](#compatibility)). Read [what is and is not isolated](docs/limits.md) before trusting it with anything important.
+<p>
+  <img src="docs/screenshots/options-light.png" alt="The SplitSession settings page: tab groups, restore, strict mode, domain rules" width="560">
+</p>
 
 ## Why
 
-Chrome profiles isolate everything, but they are separate windows with separate extensions and bookmarks, and an AI agent that drives "your browser" can only see one of them. SplitSession gives you the Firefox containers model inside one profile, and makes it easy for people and for agents to say "open this page as that account".
+Chrome profiles isolate everything, but each one is a separate window with its own extensions, bookmarks and history. Switching profiles to answer a client's account, then back, gets old quickly, and an AI agent that drives "your browser" can see only one of them.
 
-## Two editions
-
-SplitSession is built from one codebase in two editions. On the Chrome Web Store the Lite edition is listed as *SplitSession: Multiple Logins per Site*; the Full edition is *SplitSession (Full)*.
-
-| | **SplitSession** (Lite) | **SplitSession (Full)** |
-| --- | --- | --- |
-| For | everyone; the Chrome Web Store listing and the GitHub release | the author's daily build, and people who drive their browser with an AI agent |
-| Containers, isolation engine, strict mode, domain rules, choose page, tab groups, badge, `open.html` and `#ctr=`, restore after restart, export / import | yes | yes |
-| Agent bridge (native messaging, MCP server, CDP "full hands") | not in the bundle | yes, off by default |
-| Agent activity display (glow, label, tab-title mark, "AI" badge) | not in the bundle | yes |
-| "Show the container name to pages", `data-ctr`, `[name]` title prefix | not in the bundle | yes, off by default |
-| Permissions | `declarativeNetRequest`, `webRequest`, `scripting`, `tabs`, `tabGroups`, `storage`, `webNavigation`, `browsingData`, `alarms`, `sessions`, all sites; optional `cookies` | Lite plus `nativeMessaging`, `debugger` |
-| Extension ID | assigned by the Web Store (a local build gets a path-derived one) | fixed: `hapfikidacgfgnnajkgnaednpgnhmffk` |
-| Build | `pnpm build:lite` -> `.output/lite/chrome-mv3` | `pnpm build` (= `pnpm build:full`) -> `.output/chrome-mv3` |
-| Zip | `pnpm zip:lite` -> `.output/lite/splitsession-lite-<version>.zip` | `pnpm zip:full` -> `.output/splitsession-full-<version>.zip` |
-
-The two have different IDs, so both can be installed side by side (don't run both on the same sites at once: each would isolate its own tabs). **Install Lite** unless you want the agent bridge. Lite is not a hidden-settings variant: the agent code is not compiled into it, and `scripts/check-lite.mjs` fails the Lite build if any bridge, debugger or native-messaging marker, or any of the three permissions, shows up in the bundle.
+Containers isolate only what identifies you to a site (cookies and page storage) and leave the rest of the profile shared. You pick the account per tab, not per window.
 
 ## Features
 
-
-- **Containers**: create, rename, recolour (8 colours), delete. A container is a name, a colour and a cookie jar.
-- **Popup**: shows which container the current tab is in, reopens it in another container (or none), goes to a container (a click on its row opens its tab group and makes its first tab active; a container with no tabs opens a new tab; creating a container opens its first tab), manages the list: on hover or keyboard focus a row's tab count gives way to icons for a new tab in it, moving the current tab into it, editing (name, colour) and deleting.
-- **Domain rules** (like Firefox's "Always open in"): per site, "always open in container X" or "ask me". The ask page can remember your choice.
-- **Tab groups**: containers are shown as Chrome tab groups titled `⧉ name` in the container's colour (optional). Renaming or recolouring such a group in Chrome's own group menu renames or recolours the container (and its groups in every window); a name that is empty or already taken is put back. Dragging a tab out of a group never changes its container; every tab inside a container's group is in that container: a tab dragged in is reopened there, a new tab Chrome opens inside the group is put in it before anything loads, and a periodic check fixes anything that got in otherwise, so the group never lies about where a tab is.
-- **Container tabs survive a restart**: with Chrome's "Continue where you left off", Reopen closed tab, History or a closed tab group opened again, container tabs come back in their container, held back until SplitSession has matched them. Tabs it cannot match with certainty wait for you in the popup.
-- **Indicators**: a toolbar badge that is a dot in the container's colour (no letters); in the Full edition also the page title prefixed with `[name]` and `data-ctr="name"` on the page's `<html>` (only while "Show the container name to pages" is on; it is off by default, AI agents need it on).
-- **Strict mode** (a setting, off by default; it never asks): when on, removes every service worker of the profile and stops sites from installing new ones, so none can answer a container tab with your regular logins. The price is push notifications on every site, which is why it is off until you switch it on in Settings.
+- **Containers**: a name, a colour (8 to choose from) and a cookie jar. Create, rename, recolour, delete.
+- **Isolation of cookies and storage**: per-tab cookie jars for all network requests of the tab (frames, `fetch`, XHR, WebSocket handshakes), and per-container `document.cookie`, `localStorage`, `sessionStorage`, IndexedDB, Cache Storage and `BroadcastChannel`. Popups and links opened from a container tab stay in it.
+- **Tab groups**: containers show up as Chrome tab groups titled `⧉ name` in the container's colour (optional). Renaming or recolouring such a group renames or recolours the container, and a tab dragged into a group is reopened in that container, so the group never lies about where a tab is. A container tab that is outside its group (dragged out, or tab groups off) gets `⧉ ` in front of its title, so it does not pass for an ordinary tab (optional; no container name in it, but sites can read titles).
+- **Restore after restart**: with "Continue where you left off", Reopen closed tab, History or a reopened tab group, container tabs come back in their containers. Tabs SplitSession cannot match with certainty wait for you in the popup.
+- **Domain rules**: per site, "always open in container X" or "ask me" (like Firefox's "Always open in").
+- **Strict mode** (off by default): removes every service worker of the profile and refuses new ones, so none can answer a container tab with your regular logins. The price is push notifications on every site.
 - **Export and import** of containers and rules as JSON. Cookies are left out unless you tick a clearly marked box.
-- **Links and bookmarks** (both editions): `open.html?container=…&url=…` and a `#ctr=name` marker open a page in a container.
-- **For AI agents** (Full edition only): an opt-in **agent bridge** that lets your own local agent (Claude Code) list, read and operate all your tabs through an MCP server. See [docs/agents.md](docs/agents.md).
-- Light and dark theme. Every control is custom and keyboard accessible: no browser `<select>`, `alert` or validation bubbles.
+- **Links and bookmarks**: `open.html?container=…&url=…` and a `#ctr=name` marker open a page in a container.
+- Light and dark themes; every control is custom and keyboard accessible.
+
+### Lite and Full
+
+One codebase, two builds. **Lite** is containers only and is the edition for the Chrome Web Store (listed as *SplitSession: Multiple Logins per Site*). **Full** adds a local AI agent bridge.
+
+| | **Lite** | **Full** |
+| --- | --- | --- |
+| Containers, isolation, strict mode, domain rules, tab groups, restore, export / import, `open.html` and `#ctr=` | yes | yes |
+| Agent bridge (native messaging, MCP server, Chrome DevTools Protocol), off by default | not in the bundle | yes |
+| Agent activity display (glow, label, tab-title mark, "AI" badge) | not in the bundle | yes |
+| "Show the container name to pages" (`data-ctr`, `[name]` title prefix), off by default | not in the bundle | yes |
+| Extra permissions | none | `nativeMessaging`, `debugger` |
+| Extension ID | assigned by the Web Store (a local build gets a path-derived one) | fixed: `hapfikidacgfgnnajkgnaednpgnhmffk` |
+| Build output | `.output/lite/chrome-mv3` | `.output/chrome-mv3` |
+
+Lite is not a Full build with the settings hidden: the agent code is not compiled into it, and `scripts/check-lite.mjs` fails the Lite build if any bridge, CDP or native-messaging marker, or any of the three Full-only permissions, ends up in the bundle. The two editions have different IDs and can be installed side by side, but do not run both on the same sites at once: each would isolate its own tabs.
 
 ## Install
 
-SplitSession is not in the Chrome Web Store yet. Pick the [edition](#two-editions) first: **Lite** for containers, **Full** if you also want the agent bridge.
+SplitSession is **not in the Chrome Web Store yet**, and there is no GitHub release yet. Until there is, build it from source. Pick an [edition](#lite-and-full) first: Lite unless you want the agent bridge.
 
-**From a release zip.** A GitHub release has `splitsession-lite-<version>.zip` and `splitsession-full-<version>.zip`. Unzip one and load the folder: `chrome://extensions` > turn on *Developer mode* > *Load unpacked*.
+**From a release zip** (once releases exist). A GitHub release carries `splitsession-lite-<version>.zip` and `splitsession-full-<version>.zip`. Unzip one, open `chrome://extensions`, turn on *Developer mode*, choose *Load unpacked* and select the unzipped folder. CI also attaches both zips to every run.
 
 **From source** (Node 22+, pnpm 10):
 
 ```sh
 pnpm install
-pnpm build:lite     # Lite: unpacked extension in .output/lite/chrome-mv3 (and the bundle check)
-pnpm build          # Full: unpacked extension in .output/chrome-mv3 (same as pnpm build:full)
-pnpm zip:lite       # .output/lite/splitsession-lite-<version>.zip
-pnpm zip:full       # .output/splitsession-full-<version>.zip
+pnpm build:lite     # Lite -> .output/lite/chrome-mv3 (and the bundle check)
+pnpm build          # Full -> .output/chrome-mv3
 ```
 
-then *Load unpacked* on the folder of the edition you want. The **Full** extension's ID is fixed (`hapfikidacgfgnnajkgnaednpgnhmffk`, see [docs/development.md](docs/development.md)), so `chrome-extension://hapfikidacgfgnnajkgnaednpgnhmffk/open.html` is the same address on every machine. A local **Lite** build has no key, so Chrome derives its ID from the folder's path; the Web Store gives the published Lite its own ID.
+Then *Load unpacked* on the folder of the edition you want.
 
-SplitSession asks for access to all sites: rewriting request headers per tab needs it. It sends nothing anywhere (in the Full edition the optional [agent bridge](#the-agent-bridge-off-by-default) opens a local, off-by-default channel to your own agent, and nothing else; Lite has no such channel); containers and cookie jars live in `chrome.storage.local` on your machine, unencrypted (so does Chrome's own cookie store, and FileVault or the like is what protects both).
+SplitSession requests access to all sites, because rewriting request headers per tab needs it. It sends nothing anywhere. Containers and cookie jars live in `chrome.storage.local` on your machine, unencrypted (as do Chrome's own cookies); full-disk encryption is what protects both.
 
-## How isolation works
+## Quick start
 
-1. A container is a property of a **tab** (`tabId -> container`), not of a site. Everything that tab requests, on any host, belongs to its container.
-2. Each container has its own **cookie jar**. For the tabs of a container, `declarativeNetRequest` session rules replace the `Cookie` request header with the jar's cookies and strip `Set-Cookie` from responses, so the real profile's cookies are neither sent nor changed. The rules follow `SameSite`: a cross-site request gets only `SameSite=None` cookies, a cross-site top-level GET also `Lax` ones, never `Strict` ones.
-3. `Set-Cookie` headers are read in `webRequest` (before the rules remove them) and stored in the container's jar; the rules are recompiled before the next request. A navigation that raced the update is detected by the `Cookie` header it actually carried and repeated once.
-4. A script that runs **before the page's own scripts** (a synchronous "beacon" answered by a DNR rule tells it the container without any network traffic) namespaces `document.cookie`, `cookieStore`, `localStorage`, `sessionStorage`, IndexedDB, Cache Storage and `BroadcastChannel` per container. Pages can read the beacon too, so it never carries the container's ID, only an opaque key that differs per site. The script is registered only while containers are in use: afterwards only on the sites containers have used (where plain tabs keep the containers' storage hidden), and in a profile that never had a container not at all, so ordinary pages make no beacon request.
-5. Pages a container tab opens (`window.open`, `target=_blank`, Ctrl-click) are created blank, put into the same container, and only then navigated, so even the first request of an OAuth popup is isolated.
-6. `open.html?container=…&url=…` puts a tab into a container before its first request; that is how the popup, domain rules and agents open pages.
-7. Service workers and shared workers make requests outside every tab's rules, so they are switched off in containers. Strict mode (off by default, switch in Settings) removes every service worker of the profile and refuses new ones everywhere; without it, they are removed and refused on sites used in containers, and SplitSession removes a site's workers before it navigates a container tab there itself.
-8. The real profile is never touched. A tab without a container is an ordinary Chrome tab.
+1. Click the SplitSession toolbar button and press **+** to create a container, say "Work". Its first tab opens in it.
+2. Log in to a site in that tab. Create a second container, open the same site there, and log in as someone else. Both stay logged in.
+3. For any tab, use the popup's swap button to reopen it in another container (or in none), or add a **domain rule** in Settings so a site always opens in the right one.
 
-The design is in [docs/PLAN.md](docs/PLAN.md) (Ukrainian), the decisions taken while building it in [docs/decisions.md](docs/decisions.md).
+## How it works
 
-## Isolated, and not
+1. A container belongs to a **tab** (`tabId -> container`), not to a site, so everything the tab requests, on any host, is in its container.
+2. For a container's tabs, `declarativeNetRequest` session rules replace the `Cookie` request header with the container's jar and strip `Set-Cookie` from responses. The profile's real cookies are neither sent nor changed. The rules follow `SameSite`.
+3. `Set-Cookie` headers are read in `webRequest` before the rules remove them, and stored in the container's jar.
+4. A script that runs before the page's own scripts learns its container synchronously and namespaces cookie, storage, IndexedDB, Cache Storage and `BroadcastChannel` access per container.
+5. Pages that a container tab opens (`window.open`, `target=_blank`) are created blank, put in the same container, and only then navigated, so even the first request of an OAuth popup is isolated.
+6. Service workers and shared workers make requests outside any tab's rules, so they are switched off in containers; strict mode extends that to the whole profile.
+7. The content scripts are registered only while containers are in use, so in a profile with none, ordinary pages are untouched.
+8. A tab without a container is an ordinary Chrome tab.
 
-| | |
-| --- | --- |
-| Isolated | Network cookies of the whole tab (top frame, iframes, fetch/XHR, WebSocket handshakes, dedicated workers), with `SameSite` honoured for cross-site requests; `document.cookie`, `cookieStore`, `localStorage`, `sessionStorage`, IndexedDB, Cache Storage, `BroadcastChannel`, also in same-origin frames, `<object>` documents and sandboxed frames whose scripts are disabled; popups and links opened from a container tab; several accounts of one site at once; restarts of the extension's service worker |
-| Switched off in containers | `SharedWorker`; service workers. Strict mode (when switched on): service workers removed and refused in the whole profile, their scripts blocked at the network level, and requests outside tabs to container sites sent without cookies |
-| Not isolated | The **first request** of a tab SplitSession did not open itself (context-menu "open in new tab", `#ctr=`, a domain rule that moves a tab); without strict mode, a site's service worker of the real profile may answer a container tab's first visit through a plain link; **a site that deliberately polls its own same-origin iframe while it navigates can read the real profile's cookies and that origin's storage of other containers in the instant before SplitSession's scripts run in the new document** (no extension API closes this; it links accounts on that site only); `SameSite=None` cookies on cross-site requests made with `credentials: 'omit'`; HTTP cache, HTTP auth, client certificates, fingerprint, saved passwords, history, state inside dedicated workers, `Path` of cookies |
-| Seen by pages | An opaque per-site key (never the container ID); the container name only while "Show the container name to pages" is on (off by default; AI agents need it on) |
-| After a browser restart | Container tabs come back in their containers, background tabs before their first request; the tab that was active in each window (and pinned tabs) may send one request as the real profile first, because Chrome loads them before extension rules apply; uncertain matches wait for your choice in the popup |
+The reasoning behind each choice is in [docs/decisions.md](docs/decisions.md).
 
-The complete, honest list, with the mechanism behind each item, is [docs/limits.md](docs/limits.md).
+## Security and limits
 
-## For AI agents (Full edition)
+SplitSession separates accounts on the same site; it is not a privacy tool and not a sandbox. Read these before trusting it with anything important.
 
-`open.html` and `#ctr=` also work in Lite; everything else in this section, the bridge, is Full only.
+- **Isolated**: network cookies of the whole tab, the page storage APIs above, popups and links from a container tab, several accounts of one site at once.
+- **Not isolated**: the HTTP cache, HTTP auth, client certificates, browser fingerprint, saved passwords and history. The first request of a tab SplitSession did not open itself can go out as the real profile before it is moved into its container.
+- **A known hole**: a site that deliberately polls its own same-origin iframe or popup while it navigates can read the real profile's cookies and storage of that origin in the instant before SplitSession's scripts run. No extension API closes this; it can link accounts on that one site only. It is documented and not fixed on purpose: [docs/commit-gap.md](docs/commit-gap.md) (Ukrainian).
+- **Not verified on real sites yet.** The isolation engine and the interface are covered by unit tests and by an end-to-end suite that runs real Chromium against a local multi-host stand imitating the usual login patterns (302 and XHR logins, HttpOnly cookies, OAuth by redirect and by popup, cross-origin iframes). Real sites bring service workers, anti-abuse checks and fingerprinting that the stand does not have, and some may notice two sessions from one browser.
 
-```text
-chrome-extension://hapfikidacgfgnnajkgnaednpgnhmffk/open.html?container=Work&url=https%3A%2F%2Fexample.com%2F   (navigate a tab here: it opens in container "Work", created if new)
-https://example.com/#ctr=Work                                                                                       (marker form: container must exist, tab must have none, navigation started by the browser or an extension)
-```
+The complete list, with the mechanism behind each item, is [docs/limits.md](docs/limits.md).
 
-### The agent bridge (off by default)
+## AI agents (Full edition)
 
-A local MCP server lets Claude Code (running on your Mac) see your Chrome tabs across all windows, each with its container, and operate them like a Playwright-class agent: accessibility snapshots with element refs, real (trusted) clicks, typing and key presses, hover, drag and drop, select boxes, file uploads, JavaScript dialogs, `run_js` under any page CSP, screenshots of background tabs without switching to them, console and network recording, viewport sizes, and opening pages in a container. It uses Chrome's debugger (`chrome.debugger`), only while the switch is on and a tool works on a tab; Chrome shows its "started debugging this browser" bar meanwhile, and its Cancel takes the debugger back. It is **one all-or-nothing switch** ("Agent bridge" in Settings, "For AI agents", the last section; the popup shows nothing about agents until it is on): off, nothing is reachable; on, **the agent can do everything in every tab, logged-in pages included**, and every tab's toolbar badge turns amber ("ON": amber on plain tabs, the container's colour on container tabs). Once it is on, the popup gets one compact row with a counter and the agent's last five actions. Whatever tab the agent reads or operates shows it (a glowing frame and an "Agent: reading" label on the page, an animated eye in the tab title while it reads, a pulsing ring around the tab's favicon, "AI" on the toolbar button), then fades; "Show agent activity" in the settings turns that off. Container isolation still holds for the pages: the debugger is never used to read or set cookies, headers or storage, and navigations go through SplitSession's own paths.
+The Full edition has an optional **agent bridge**: a local MCP server that lets your own agent (Claude Code, on the same machine) list your Chrome tabs with their containers and operate them. It uses Chrome's debugger API for accessibility snapshots, trusted clicks and typing, file uploads, dialogs, screenshots of background tabs, console and network, `run_js` and opening pages in a container.
+
+It is **off by default** and it is one all-or-nothing switch: when on, the agent can do everything in every tab, logged-in pages included. Every tab's toolbar badge turns amber, and pages the agent touches show a glow and a label (this can be turned off). Chrome shows its own "started debugging this browser" bar meanwhile. The debugger is never used to read or set cookies, headers or storage, so container isolation still holds.
+
+Set-up, three steps:
 
 ```sh
-pnpm bridge:install                  # 1. builds the bridge, registers the Chrome native host, prints step 2
-claude mcp add --scope user splitsession -- <node> <repo>/bridge/dist/splitsession-bridge.mjs mcp   # 2. (printed by step 1; run it yourself)
-claude mcp remove --scope user facet   # only if you set the agent up before the rename (the installer also prints this)
-# 3. flip "Agent bridge" in SplitSession Settings, "For AI agents" (its "How to connect" lists steps 1-2)
+pnpm bridge:install     # 1. builds the bridge, registers the native host with Chrome, prints step 2
+claude mcp add --scope user splitsession -- <node> <repo>/bridge/dist/splitsession-bridge.mjs mcp   # 2. printed by step 1; run it yourself
+# 3. open SplitSession Settings > "For AI agents" and switch on "Agent bridge"
 ```
 
-Chrome's Native Messaging connects the extension to a local host (pinned to SplitSession's extension ID); the MCP server talks to the host over a private Unix socket (0600), never a network port. Details, tool list and limits: [docs/agents.md](docs/agents.md#7-the-agent-bridge-your-own-agent-drives-your-chrome-tabs-opt-in).
-
-### Without the bridge
-
-(Full edition.) First switch on **"Show container name to pages"** in SplitSession's settings, "For AI agents" (off by default, because any page can read the name). Then container tabs have a `[Work] ` title prefix (so `tabs_context` shows which account is which) and `data-ctr="Work"` on `<html>`. Details for Claude in Chrome and Playwright: [docs/agents.md](docs/agents.md).
-
-## Compatibility
-
-Everything in this table is **not yet verified on real sites**. What is verified is the behaviour of the engine against a local stand that imitates the patterns these sites use (302 and XHR logins, HttpOnly session cookies, cross-domain OAuth by redirect and by popup, cross-origin iframes). Real sites also bring service workers, anti-abuse checks and fingerprinting that the stand does not have, and some of them may well notice two sessions from one browser.
-
-| Site | Two accounts side by side | Notes |
-| --- | --- | --- |
-| Reddit | not yet verified on real sites | |
-| Threads (and Instagram / Facebook hops) | not yet verified on real sites | whole-tab isolation exists for exactly this: the login hops across several domains |
-| Supabase (and GitHub / Google OAuth) | not yet verified on real sites | |
-| GitHub | not yet verified on real sites | |
-| Google accounts | not yet verified on real sites | Google ties sessions to more than cookies |
-
-A dated manual matrix will replace this table once it exists.
+Chrome's native messaging connects the extension to a local host; the MCP server talks to the host over a private Unix socket (mode 0600), never over a network port. Today the installer targets macOS. The tool list, the security model and how to use `open.html`, `#ctr=` and the page-name switches with Claude in Chrome or Playwright are in [docs/agents.md](docs/agents.md).
 
 ## Development
 
 ```sh
 pnpm install
-pnpm typecheck      # tsc for src and e2e
-pnpm test           # unit tests (Vitest)
-pnpm build          # Full: unpacked extension in .output/chrome-mv3 (= pnpm build:full)
-pnpm build:lite     # Lite: .output/lite/chrome-mv3, then scripts/check-lite.mjs (fails if any agent code or permission is in it)
-pnpm e2e            # build (both editions and the agent bridge), then the Playwright suite in real Chromium against the local stand
-pnpm e2e:lite       # build Lite, run only e2e/lite.spec.ts
-pnpm zip:full       # .output/splitsession-full-<version>.zip (pnpm zip is the same)
-pnpm zip:lite       # .output/lite/splitsession-lite-<version>.zip
-pnpm bridge:build   # the agent bridge alone (bridge/dist/); bridge:install / bridge:uninstall register it with Chrome
 pnpm dev            # WXT dev mode (Full) with a throwaway Chrome profile; pnpm dev:lite for Lite
+pnpm build          # Full -> .output/chrome-mv3
+pnpm build:lite     # Lite -> .output/lite/chrome-mv3, then scripts/check-lite.mjs
+pnpm test           # unit tests (Vitest)
+pnpm e2e            # build both editions and the bridge, then Playwright in real Chromium against the local stand
+pnpm lint           # ESLint (pnpm lint:fix to fix)
+pnpm format         # Prettier (pnpm format:check to only check)
+pnpm typecheck      # tsc for src, e2e and bridge
 ```
 
-The end-to-end tests need Playwright's Chromium once (`pnpm exec playwright install chromium`). More in [docs/development.md](docs/development.md).
+Also: `pnpm e2e:lite`, `pnpm zip:full` and `pnpm zip:lite` (release zips), `pnpm bridge:build`. The end-to-end tests need Playwright's Chromium once: `pnpm exec playwright install chromium`.
+
+Edition code is compile-time: everything of the agent side sits behind `if (__FULL__)`, so Lite builds without it. CI (`.github/workflows/ci.yml`) runs lint, format check, typecheck, unit tests, both builds with the Lite check and both zips on every push and pull request, and publishes a GitHub Release with both zips on a tag `v<version>`. It does not run the end-to-end suite (it needs the native bridge host). Layout, the editions in detail and the extension key: [docs/development.md](docs/development.md). All documents: [docs/README.md](docs/README.md).
+
+## Project status
+
+Beta, version 0.1. It is not in the Chrome Web Store yet; the Lite edition is being prepared for it. The interface and the isolation engine are stable enough for daily use by the author, and the open items are real-site verification and the limits above.
 
 ## License
 

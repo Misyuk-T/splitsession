@@ -430,6 +430,23 @@ test.describe("visible agent activity", () => {
     await expect
       .poll(() => facet.tabInfo(tabId).then((x) => x.badge))
       .toBe(quiet.badge);
+
+    // Out of its tab group the page title carries "⧉ " (Chrome's own view of the tab too), and the agent never sees it.
+    await facet.inWorker(
+      async (id: number) => (globalThis as any).chrome.tabs.ungroup(id),
+      tabId,
+    );
+    await expect.poll(() => page.title()).toBe(`⧉ ${prefix}Rewritten`);
+    expect((await facet.tabInfo(tabId)).title).toBe(`⧉ ${prefix}Rewritten`);
+    expect(
+      await mcp
+        .json<Array<{ tabId: number; title: string }>>("list_tabs")
+        .then((l) => l.find((t) => t.tabId === tabId)!.title),
+    ).toMatch(rewritten);
+    const read = await mcp.call("get_tab_text", { tabId });
+    expect(JSON.parse(read.texts[0]!)).toMatchObject({
+      title: `${prefix}Rewritten`,
+    });
   });
 
   test("a click and typing pulse at the element; the answers carry no rectangle", async ({

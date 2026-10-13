@@ -4,6 +4,7 @@ import {
   CONTAINER_HEX,
   containerColorOfGroup,
   GROUP_COLOR,
+  OUTSIDE_MARK,
   prefixedTitle,
   readableTextColor,
   titlePrefixFor,
@@ -70,6 +71,33 @@ describe("title prefix", () => {
     expect(unprefixedTitle("[Work] Inbox", prefix)).toBe("Inbox");
     expect(unprefixedTitle("Inbox", prefix)).toBe("Inbox");
     expect(unprefixedTitle("[Work] [Work] x", prefix)).toBe("[Work] x");
+  });
+});
+
+describe("outside-group mark", () => {
+  it("stacks in front of the name prefix without doubling, and follows either layer changing", () => {
+    const mark = OUTSIDE_MARK;
+    const name = titlePrefixFor("Work");
+    // Mark added to a title that has the name prefix: "⧉ [Work] Inbox", once.
+    const both = prefixedTitle("[Work] Inbox", mark + name, name);
+    expect(both).toBe("⧉ [Work] Inbox");
+    expect(prefixedTitle(both, mark + name, mark + name)).toBe(both);
+    // Mark taken off while the name stays, and the other way round.
+    expect(prefixedTitle(both, name, mark + name)).toBe("[Work] Inbox");
+    expect(prefixedTitle("⧉ Inbox", mark + name, mark)).toBe("⧉ [Work] Inbox");
+    expect(prefixedTitle("⧉ [Work] Inbox", mark, mark + name)).toBe("⧉ Inbox");
+    // The page sets a fresh title: both layers go in front of it.
+    expect(prefixedTitle("Mail", mark + name, mark + name)).toBe(
+      "⧉ [Work] Mail",
+    );
+    expect(prefixedTitle("Mail", mark)).toBe("⧉ Mail");
+    expect(prefixedTitle("", mark, mark)).toBe("");
+  });
+  it("is not part of what an agent reads", () => {
+    expect(withoutAgentMark("⧉ Inbox")).toBe("Inbox");
+    expect(withoutAgentMark("⧉ [Work] Inbox")).toBe("[Work] Inbox");
+    expect(withoutAgentMark("⧉ [Work] 👁 Inbox")).toBe("[Work] Inbox");
+    expect(withoutAgentMark("Inbox ⧉ x")).toBe("Inbox ⧉ x");
   });
 });
 

@@ -111,6 +111,7 @@ test.describe("Lite edition", () => {
   test("settings and API: only the shared settings exist, the bridge API does not", async () => {
     const settings = await api<Record<string, boolean>>("getSettings");
     expect(Object.keys(settings).sort()).toEqual([
+      "markOutsideGroup",
       "restoreTabs",
       "strictMode",
       "tabGroups",
@@ -171,6 +172,44 @@ test.describe("Lite edition", () => {
     await expect(pa.locator("#user")).toHaveText("alice2");
     expect((await pageJson(pb, "/me")).user).toBe("bob");
     for (const p of [pa, pb, plain]) await p.close();
+  });
+
+  test("a container tab outside its group gets ⧉ in front of the title, and loses it back in the group or with the setting off", async () => {
+    const A = (
+      await api<Array<{ id: string; name: string }>>("listContainers")
+    ).find((c) => c.name === "Lite-A")!;
+    const page = await openIn(A.name, at("a.localhost", "/spa"));
+    const url = page.url();
+    const tabId = await worker.evaluate(async (u) => {
+      const tabs = await (globalThis as any).chrome.tabs.query({});
+      return tabs.find((t: { url: string }) => t.url === u).id as number;
+    }, url);
+    const title = () => page.evaluate(() => document.title);
+    const ungroup = () =>
+      worker.evaluate(
+        (id) => (globalThis as any).chrome.tabs.ungroup(id),
+        tabId,
+      );
+    await expect
+      .poll(() =>
+        worker.evaluate(
+          async (id) => (await (globalThis as any).chrome.tabs.get(id)).groupId,
+          tabId,
+        ),
+      )
+      .toBeGreaterThanOrEqual(0);
+    await expect.poll(title).toBe("Inbox");
+    await ungroup();
+    await expect.poll(title).toBe("⧉ Inbox");
+    await page.click("#t-prop");
+    await expect.poll(title).toBe("⧉ Inbox (3)");
+    await api("updateSettings", { markOutsideGroup: false });
+    await expect.poll(title).toBe("Inbox (3)");
+    await api("updateSettings", { markOutsideGroup: true });
+    await expect.poll(title).toBe("⧉ Inbox (3)");
+    await api("regroupTabs");
+    await expect.poll(title).toBe("Inbox (3)");
+    await page.close();
   });
 
   test("popup renders containers without a bridge section", async () => {

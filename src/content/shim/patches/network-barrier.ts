@@ -21,27 +21,26 @@ export const patchNetworkBarrier: Patch = (W, shared, h) => {
 
   const XHR = W.XMLHttpRequest?.prototype;
   if (!XHR) return;
-  const meta = new WeakMap<
-    object,
-    { method: string; url: string; async: boolean }
-  >();
-  h.replaceMethod(XHR, "open", function (original, args) {
-    meta.set(this, {
-      method: String(args[0] ?? "GET"),
-      url: String(args[1] ?? ""),
-      async: args.length < 3 || Boolean(args[2]),
-    });
-    return reflectApply(original, this, args);
-  });
-  h.replaceMethod(XHR, "send", function (original, args) {
-    const info = meta.get(this);
-    if (!info || !info.async) return reflectApply(original, this, args);
-    // eslint-disable-next-line @typescript-eslint/no-this-alias -- the queued event handlers below run with their own `this`
-    const xhr = this;
-    const queue: Event[] = [];
-    let settling: Promise<void> | null = null;
+  interface Pending {
+    method: string;
+    url: string;
+    async: boolean;
+    queue: Event[];
+    settling: Promise<void> | null;
+  }
+  const pending = new WeakMap<object, Pending>();
+  const gated = new WeakSet<object>();
+  /**
+   * The gate goes on at open(), before a page can add its handlers: on an XMLHttpRequest listeners run in the order they
+   * were added (a capture listener gets no priority, unlike on a DOM node), so a gate added only at send() would run
+   * after an `onload` set earlier and the page would read the response before its cookies reached the rules.
+   */
+  const install = (xhr: XMLHttpRequest) => {
+    if (gated.has(xhr)) return;
+    gated.add(xhr);
     const gate = (event: Event) => {
-      if (shared.redispatched.has(event)) return;
+      const state = pending.get(xhr);
+      if (!state?.async || shared.redispatched.has(event)) return;
       if (event.type === "readystatechange" && xhr.readyState !== 4) return;
       if (xhr.status === 0) return; // network error / abort: no cookies to wait for
       event.stopImmediatePropagation();
@@ -53,17 +52,34 @@ export const patchNetworkBarrier: Patch = (W, shared, h) => {
               loaded: (event as ProgressEvent).loaded,
               total: (event as ProgressEvent).total,
             });
-      queue.push(copy);
-      settling ??= shared
-        .settle(xhr.responseURL || info.url, info.method)
+      state.queue.push(copy);
+      state.settling ??= shared
+        .settle(xhr.responseURL || state.url, state.method)
         .then(() => {
-          for (const e of queue.splice(0)) {
+          for (const e of state.queue.splice(0)) {
             shared.redispatched.add(e);
             xhr.dispatchEvent(e);
           }
         });
     };
     for (const type of GATED) xhr.addEventListener(type, gate, true);
+  };
+  h.replaceMethod(XHR, "open", function (original, args) {
+    pending.set(this, {
+      method: String(args[0] ?? "GET"),
+      url: String(args[1] ?? ""),
+      async: args.length < 3 || Boolean(args[2]),
+      queue: [],
+      settling: null,
+    });
+    install(this);
+    return reflectApply(original, this, args);
+  });
+  h.replaceMethod(XHR, "send", function (original, args) {
+    const info = pending.get(this);
+    if (!info || !info.async) return reflectApply(original, this, args);
+    // eslint-disable-next-line @typescript-eslint/no-this-alias -- the delayed start below runs with its own `this`
+    const xhr = this;
     const start = () => reflectApply(original, xhr, args);
     const before = shared.writesSettled();
     if (!before) return start();

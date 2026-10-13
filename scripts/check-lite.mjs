@@ -17,11 +17,20 @@ const MARKERS = [
   ["connectNative", /connectNative/],
   ["sendNativeMessage", /sendNativeMessage/],
   ["chrome.debugger / debugger API", /\.debugger\b|["'`]debugger["'`]/],
-  ["CDP Input.dispatch*", /Input\.dispatch/],
+  ["CDP Input.dispatch* (Input.dispatchMouseEvent, ...)", /Input\.dispatch/],
   ["CDP Accessibility domain", /Accessibility\.(?:enable|getFullAXTree)/],
   ["CDP Page.captureScreenshot", /Page\.captureScreenshot/],
+  ["CDP Runtime.evaluate", /Runtime\.evaluate/],
+  ["CDP DOM.setFileInputFiles", /DOM\.setFileInputFiles/],
   ["native host name com.splitsession.bridge", /com\.splitsession\.bridge/],
   ["old native host name com.facet.bridge", /com\.facet\.bridge/],
+  // Any native host name the bridge could be renamed to: `com.<vendor>.bridge`.
+  ["native host name (com.<vendor>.bridge)", /["'`]com\.[\w-]+\.bridge["'`]/],
+  // Bridge tool identifiers (src/bridge/spec.ts), as a bare word: quoted, an object key, or in a message.
+  [
+    "agent tool name (run_js / screenshot_tab / open_in_container / ...)",
+    /\b(?:run_js|screenshot_tab|open_in_container|get_tab_html|get_tab_text|handle_dialog|resize_viewport|select_option|network_requests|console_messages)\b/,
+  ],
   ["nativeMessaging", /nativeMessaging/],
   ["userScripts", /userScripts/],
   ["agent tool spec (bridge_info)", /bridge_info/],

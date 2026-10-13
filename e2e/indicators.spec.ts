@@ -54,6 +54,98 @@ test.describe("indicators: title prefix, badge, tab groups", () => {
     expect(await titleOf(plain)).toBe("Inbox");
   });
 
+  test("a container tab outside its group gets ⧉ in front of the title (no name), once, through every title change; back in the group, or with the setting off, it goes", async ({
+    facet,
+  }) => {
+    const W = await facet.container("Work");
+    const prefix = `[${W.name}] `;
+    const mark = "⧉ ";
+    const count = (title: string) => title.split(mark).length - 1;
+    const page = await facet.openIn(W.name, at("a.localhost", "/spa"));
+    const plain = await facet.plain(at("a.localhost", "/spa"));
+    const tabId = await facet.tabIdOf(page);
+    const ungroup = () =>
+      facet.inWorker(
+        async (id: number) => (globalThis as any).chrome.tabs.ungroup(id),
+        tabId,
+      );
+    await expect
+      .poll(async () => (await facet.tabInfo(tabId)).groupId)
+      .toBeGreaterThanOrEqual(0);
+    await expect.poll(() => titleOf(page)).toBe(`${prefix}Inbox`); // in its group: no mark
+
+    // Dragged out of the group: marked, in front of the name prefix, and the name is not repeated in the mark.
+    await ungroup();
+    await expect.poll(() => titleOf(page)).toBe(`${mark}${prefix}Inbox`);
+    expect((await facet.tabInfo(tabId)).title).toBe(`${mark}${prefix}Inbox`);
+    expect(await facet.api("getTabContainer", tabId)).toBe(W.id); // still in the container
+
+    // Every way a page can change its title keeps exactly one mark.
+    await page.click("#t-prop");
+    await expect.poll(() => titleOf(page)).toBe(`${mark}${prefix}Inbox (3)`);
+    await page.click("#t-text");
+    await expect.poll(() => titleOf(page)).toBe(`${mark}${prefix}Settings`);
+    await page.click("#t-replace");
+    await expect.poll(() => titleOf(page)).toBe(`${mark}${prefix}Replaced`);
+    await page.click("#t-append"); // the page reads the marked title and appends to it
+    await expect.poll(() => titleOf(page)).toBe(`${mark}${prefix}Replaced !`);
+    expect(count(await titleOf(page))).toBe(1);
+
+    // A plain tab never gets it.
+    expect(await titleOf(plain)).toBe("Inbox");
+
+    // The two layers are independent: the name prefix off leaves the mark, and the other way round.
+    await facet.api("updateSettings", { titlePrefix: false });
+    await expect.poll(() => titleOf(page)).toBe(`${mark}Replaced !`);
+    await facet.api("updateSettings", { titlePrefix: true });
+    await expect.poll(() => titleOf(page)).toBe(`${mark}${prefix}Replaced !`);
+
+    // The setting switches the mark off and on live, and the title is restored exactly.
+    await facet.api("updateSettings", { markOutsideGroup: false });
+    await expect.poll(() => titleOf(page)).toBe(`${prefix}Replaced !`);
+    await page.click("#t-prop");
+    await expect.poll(() => titleOf(page)).toBe(`${prefix}Inbox (3)`);
+    await facet.api("updateSettings", { markOutsideGroup: true });
+    await expect.poll(() => titleOf(page)).toBe(`${mark}${prefix}Inbox (3)`);
+
+    // Back in its group: gone.
+    await facet.api("regroupTabs");
+    await expect.poll(() => titleOf(page)).toBe(`${prefix}Inbox (3)`);
+
+    // Tab groups off: every container tab is outside. On again: back in the group, unmarked.
+    await facet.api("updateSettings", { tabGroups: false });
+    await expect.poll(() => titleOf(page)).toBe(`${mark}${prefix}Inbox (3)`);
+    const second = await facet.openIn(W.name, at("a.localhost", "/spa"));
+    await expect.poll(() => titleOf(second)).toBe(`${mark}${prefix}Inbox`);
+    await facet.api("updateSettings", { tabGroups: true });
+    await expect.poll(() => titleOf(page)).toBe(`${prefix}Inbox (3)`);
+    await expect.poll(() => titleOf(second)).toBe(`${prefix}Inbox`);
+
+    // Leaving the container takes the mark off a page that stays open.
+    await ungroup();
+    await expect.poll(() => titleOf(page)).toBe(`${mark}${prefix}Inbox (3)`);
+    await facet.api("assignTab", tabId, null);
+    await expect.poll(async () => count(await titleOf(page))).toBe(0);
+    expect(await titleOf(plain)).toBe("Inbox");
+  });
+
+  test("a document that gets its title late is marked too", async ({
+    facet,
+  }) => {
+    const W = await facet.container("Work");
+    const late = await facet.openIn(W.name, at("a.localhost", "/late-title"));
+    const tabId = await facet.tabIdOf(late);
+    await expect
+      .poll(async () => (await facet.tabInfo(tabId)).groupId)
+      .toBeGreaterThanOrEqual(0);
+    await facet.inWorker(
+      async (id: number) => (globalThis as any).chrome.tabs.ungroup(id),
+      tabId,
+    );
+    await facet.api("updateSettings", { titlePrefix: false });
+    await expect.poll(() => titleOf(late)).toBe("⧉ Late title");
+  });
+
   test("the toolbar badge is a dot in the container colour (no letters), comes back after navigation and is empty on plain tabs", async ({
     facet,
   }) => {

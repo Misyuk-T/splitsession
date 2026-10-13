@@ -111,6 +111,7 @@ function setup(settings: Partial<Settings> = {}) {
     agentBridge: false,
     agentActivity: true,
     restoreTabs: true,
+    markOutsideGroup: true,
     ...settings,
   };
   const projection = new TabGroupProjection({
@@ -316,6 +317,7 @@ describe("TabGroupProjection", () => {
         agentBridge: false,
         agentActivity: true,
         restoreTabs: true,
+        markOutsideGroup: true,
       }),
       container: (id) => containers.get(id),
       containers: () => [...containers.values()],
@@ -680,6 +682,7 @@ describe("TabGroupProjection", () => {
           agentBridge: false,
           agentActivity: true,
           restoreTabs: true,
+          markOutsideGroup: true,
         }),
         container: (id) => containers.get(id),
         containers: () => [...containers.values()],

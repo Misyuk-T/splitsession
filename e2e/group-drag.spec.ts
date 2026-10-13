@@ -494,6 +494,8 @@ test.describe("every tab inside a SplitSession tab group is in its container", (
       null,
     );
     await groupTabs(facet, ids, groupId);
+    // A replaced tab joins the group before its original closes: for a moment the group holds both. The end state (16 tabs,
+    // every one in the container) is read in one snapshot, not as two reads with the replacement running in between.
     const inGroup = () =>
       facet.inWorker(
         async (g: number) =>
@@ -504,16 +506,19 @@ test.describe("every tab inside a SplitSession tab group is in its container", (
       );
     await expect
       .poll(
-        async () =>
-          (
-            await Promise.all(
-              (await inGroup()).map((id) => facet.api("getTabContainer", id)),
-            )
-          ).filter((c) => c === R.id).length,
+        async () => {
+          const members = await inGroup();
+          const owners = await Promise.all(
+            members.map((id) => facet.api("getTabContainer", id)),
+          );
+          return {
+            tabs: members.length,
+            inContainer: owners.filter((c) => c === R.id).length,
+          };
+        },
         { timeout: 25_000, intervals: [500] },
       )
-      .toBe(16);
-    expect((await inGroup()).length).toBe(16);
+      .toEqual({ tabs: 16, inContainer: 16 });
     expect((await guardLog(facet)).join("\n")).toContain(
       "the rest wait for a sweep just after the window",
     );
