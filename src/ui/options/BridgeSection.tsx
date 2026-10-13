@@ -1,27 +1,34 @@
-import { useEffect, useState } from 'preact/hooks';
-import { browser } from 'wxt/browser';
-import { DEFAULT_SETTINGS, type Settings } from '../../core';
-import { BridgeStatusLine, BridgeSwitchCard, bridgeStatus } from '../components/BridgeCard';
-import { Button } from '../components/Button';
-import { Disclosure } from '../components/Disclosure';
-import { More } from '../components/More';
-import { Switch } from '../components/Toggle';
-import { TextField } from '../components/TextField';
-import { facetApi } from '../../engine/api-client';
-import { describeError } from '../format';
-import { useBridge } from '../useBridge';
+import { useEffect, useState } from "preact/hooks";
 
-export const INSTALL_COMMAND = 'pnpm bridge:install';
-const MCP_ADD_COMMAND = 'claude mcp add --scope user splitsession -- <node> <repo>/bridge/dist/splitsession-bridge.mjs mcp';
-const DOCS_URL = 'https://github.com/Misyuk-T/splitsession/blob/main/docs/agents.md';
+import { DEFAULT_SETTINGS, type Settings } from "../../core";
+import { facetApi } from "../../engine/api-client";
+import {
+  bridgeStatus,
+  BridgeStatusLine,
+  BridgeSwitchCard,
+} from "../components/BridgeCard";
+import { Button } from "../components/Button";
+import { Disclosure } from "../components/Disclosure";
+import { More } from "../components/More";
+import { TextField } from "../components/TextField";
+import { Switch } from "../components/Toggle";
+import { describeError } from "../format";
+import { useBridge } from "../useBridge";
+
+export const INSTALL_COMMAND = "pnpm bridge:install";
+const MCP_ADD_COMMAND =
+  "claude mcp add --scope user splitsession -- <node> <repo>/bridge/dist/splitsession-bridge.mjs mcp";
+const DOCS_URL =
+  "https://github.com/Misyuk-T/splitsession/blob/main/docs/agents.md";
 
 const LABEL_MAX = 40;
-const cleanLabel = (raw: string) => raw.replace(/[\u0000-\u001f\u007f]/g, '');
+// eslint-disable-next-line no-control-regex -- strips control characters from a user-typed label
+const cleanLabel = (raw: string) => raw.replace(/[\u0000-\u001f\u007f]/g, "");
 
 /** The name of this Chrome profile, which the agent reads through `bridge_info` to tell profiles apart. */
-function ProfileLabel() {
+const ProfileLabel = () => {
   const [saved, setSaved] = useState<string | null>(null);
-  const [value, setValue] = useState('');
+  const [value, setValue] = useState("");
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -63,10 +70,10 @@ function ProfileLabel() {
       />
     </div>
   );
-}
+};
 
 /** "Show agent activity" and the two settings that let an agent tell accounts apart: all about what the agent sees or shows. */
-function AgentSwitches() {
+const AgentSwitches = () => {
   const [settings, setSettings] = useState<Settings | null>(null);
   const [error, setError] = useState<string | null>(null);
   useEffect(() => {
@@ -96,9 +103,11 @@ function AgentSwitches() {
         />
         <More id="more-activity" about="agent activity">
           <p>
-            While the agent reads or works in a tab, that tab shows it: a glowing frame and a small “Agent: reading” label on the
-            page, an eye in front of the tab title while it reads, and “AI” on the toolbar button. It fades about 2.5 seconds after
-            the last action and never takes focus or switches tabs. Pages cannot read or click it.
+            While the agent reads or works in a tab, that tab shows it: a
+            glowing frame and a small “Agent: reading” label on the page, an eye
+            in front of the tab title while it reads, and “AI” on the toolbar
+            button. It fades about 2.5 seconds after the last action and never
+            takes focus or switches tabs. Pages cannot read or click it.
           </p>
           <p>Off: nothing is shown or changed on your tabs.</p>
         </More>
@@ -113,13 +122,16 @@ function AgentSwitches() {
         />
         <More id="more-name" about="container name">
           <p>
-            Off by default. On: pages in a container tab can read the container’s name, in the page’s “data-ctr” attribute and in
-            front of the tab title. AI agents need it to tell accounts apart.
+            Off by default. On: pages in a container tab can read the
+            container’s name, in the page’s “data-ctr” attribute and in front of
+            the tab title. AI agents need it to tell accounts apart.
           </p>
           <p>
-            Any script on the page can read it too, and the name is the same on every site, so trackers can link your visits
-            through it. Off: pages see no name and titles get no prefix (the toolbar badge and the tab’s group still show it to
-            you). Switching it off reaches open pages at once; switching it on, after they reload.
+            Any script on the page can read it too, and the name is the same on
+            every site, so trackers can link your visits through it. Off: pages
+            see no name and titles get no prefix (the toolbar badge and the
+            tab’s group still show it to you). Switching it off reaches open
+            pages at once; switching it on, after they reload.
           </p>
         </More>
       </div>
@@ -134,13 +146,25 @@ function AgentSwitches() {
           />
         </div>
       )}
-      {error && <p class="fx-notice fx-notice--error opt-row" role="alert">{error}</p>}
+      {error && (
+        <p class="fx-notice fx-notice--error opt-row" role="alert">
+          {error}
+        </p>
+      )}
     </>
   );
-}
+};
 
 /** A command on its own line with a Copy button (the command stays selectable if the clipboard is blocked). */
-function CopyBlock({ text, copyable = true, testId }: { text: string; copyable?: boolean; testId?: string }) {
+const CopyBlock = ({
+  text,
+  copyable = true,
+  testId,
+}: {
+  text: string;
+  copyable?: boolean;
+  testId?: string;
+}) => {
   const [copied, setCopied] = useState(false);
   const copy = async () => {
     try {
@@ -156,34 +180,48 @@ function CopyBlock({ text, copyable = true, testId }: { text: string; copyable?:
       <code>{text}</code>
       {copyable && (
         <Button small onClick={() => void copy()}>
-          {copied ? 'Copied' : 'Copy'}
+          {copied ? "Copied" : "Copy"}
         </Button>
       )}
     </div>
   );
-}
+};
 
 /** The setup steps, behind a disclosure: only people who want an agent ever open it. */
-function ConnectGuide({ bridge }: { bridge: ReturnType<typeof useBridge> }) {
+const ConnectGuide = ({ bridge }: { bridge: ReturnType<typeof useBridge> }) => {
   const status = bridgeStatus(bridge);
   return (
-    <Disclosure id="agent-connect" title="How to connect" testId="bridge-install">
-      <p class="fx-secondary">Requires the SplitSession source code; a one-command installer is coming.</p>
+    <Disclosure
+      id="agent-connect"
+      title="How to connect"
+      testId="bridge-install"
+    >
+      <p class="fx-secondary">
+        Requires the SplitSession source code; a one-command installer is
+        coming.
+      </p>
       <ol class="opt-steps">
         <li>
           <p>In the SplitSession source folder, run:</p>
           <CopyBlock text={INSTALL_COMMAND} testId="bridge-install-command" />
         </li>
         <li>
-          <p>Run the command the installer prints. It looks like this, with your real paths:</p>
+          <p>
+            Run the command the installer prints. It looks like this, with your
+            real paths:
+          </p>
           <CopyBlock text={MCP_ADD_COMMAND} copyable={false} />
         </li>
         <li>
           <p>Switch “Agent bridge” on above, then check the connection.</p>
         </li>
       </ol>
-      <BridgeStatusLine bridge={bridge} counter={false} data-testid="bridge-guide-status" />
-      {status !== 'off' && status !== 'connected' && (
+      <BridgeStatusLine
+        bridge={bridge}
+        counter={false}
+        data-testid="bridge-guide-status"
+      />
+      {status !== "off" && status !== "connected" && (
         <div class="opt-actions opt-actions--start">
           <Button small onClick={() => void bridge.retry()}>
             Check again
@@ -197,10 +235,10 @@ function ConnectGuide({ bridge }: { bridge: ReturnType<typeof useBridge> }) {
       </p>
     </Disclosure>
   );
-}
+};
 
 /** Settings, "For AI agents": the switches, "How to connect", and what turning it on means. Low-key: one list of rows, the long text behind disclosures. */
-export function BridgeSection() {
+export const BridgeSection = () => {
   const bridge = useBridge();
   return (
     <section class="opt-section" aria-labelledby="agent-title" id="agent">
@@ -212,31 +250,59 @@ export function BridgeSection() {
           <ConnectGuide bridge={bridge} />
         </div>
         <div class="opt-row">
-          <Disclosure id="agent-can" title="What an agent can do while it is on" testId="bridge-can">
+          <Disclosure
+            id="agent-can"
+            title="What an agent can do while it is on"
+            testId="bridge-can"
+          >
             <div class="fx-secondary opt-prose">
               <ul class="opt-list">
-                <li>list every tab of every window, with its address, title and container;</li>
-                <li>read the text and HTML of any page, including pages you are logged in to, and take screenshots of them;</li>
-                <li>click, type, scroll and run JavaScript in any tab, which also means act as you on those sites;</li>
-                <li>open, navigate, close and move tabs, and open pages inside containers;</li>
-                <li>upload files from this computer into pages, answer their dialogs, and record their console and network.</li>
+                <li>
+                  list every tab of every window, with its address, title and
+                  container;
+                </li>
+                <li>
+                  read the text and HTML of any page, including pages you are
+                  logged in to, and take screenshots of them;
+                </li>
+                <li>
+                  click, type, scroll and run JavaScript in any tab, which also
+                  means act as you on those sites;
+                </li>
+                <li>
+                  open, navigate, close and move tabs, and open pages inside
+                  containers;
+                </li>
+                <li>
+                  upload files from this computer into pages, answer their
+                  dialogs, and record their console and network.
+                </li>
               </ul>
               <p>
-                For real clicks and key presses SplitSession uses Chrome’s debugger on the tab the agent works in, only while this is
-                on. Chrome then shows “SplitSession started debugging this browser”; its Cancel button takes the debugger back. The
-                debugger is never used to read or change cookies, so containers stay separate.
+                For real clicks and key presses SplitSession uses Chrome’s
+                debugger on the tab the agent works in, only while this is on.
+                Chrome then shows “SplitSession started debugging this browser”;
+                its Cancel button takes the debugger back. The debugger is never
+                used to read or change cookies, so containers stay separate.
               </p>
               <p>
-                Only programs running as your macOS user can reach it (the connection is a private socket file), and only this
-                extension may start the host. There are no per-site limits yet: it is everything or nothing. Switch it off here or in
-                the toolbar popup at any time; the connection closes at once and the host process exits. Every action is logged (tool,
-                tab, site, result, never page content) under Diagnostics.
+                Only programs running as your macOS user can reach it (the
+                connection is a private socket file), and only this extension
+                may start the host. There are no per-site limits yet: it is
+                everything or nothing. Switch it off here or in the toolbar
+                popup at any time; the connection closes at once and the host
+                process exits. Every action is logged (tool, tab, site, result,
+                never page content) under Diagnostics.
               </p>
             </div>
           </Disclosure>
         </div>
         <div class="opt-row">
-          <Disclosure id="agent-advanced" title="Advanced" testId="bridge-advanced">
+          <Disclosure
+            id="agent-advanced"
+            title="Advanced"
+            testId="bridge-advanced"
+          >
             <div class="opt-sub">
               <ProfileLabel />
             </div>
@@ -245,4 +311,4 @@ export function BridgeSection() {
       </div>
     </section>
   );
-}
+};

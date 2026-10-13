@@ -1,7 +1,8 @@
-import type { browser } from 'wxt/browser';
-import type { StorageAreaLike } from '../../engine/storage/storage-area';
-import type { AgentBridge, BridgeState } from './agent-bridge';
-import { readProfileLabel, writeProfileLabel } from './profile-label';
+import type { browser } from "wxt/browser";
+
+import type { StorageAreaLike } from "../../engine/storage/storage-area";
+import type { AgentBridge, BridgeState } from "./agent-bridge";
+import { readProfileLabel, writeProfileLabel } from "./profile-label";
 
 /** The agent bridge's part of the API (the switch itself is the `agentBridge` setting). Full edition only. */
 export interface BridgeApi {
@@ -15,16 +16,26 @@ export interface BridgeApi {
   setBridgeProfileLabel(label: string): Promise<string>;
 }
 
-export const BRIDGE_METHODS = ['getBridgeState', 'retryBridge', 'getBridgeProfileLabel', 'setBridgeProfileLabel'] as const satisfies readonly (keyof BridgeApi)[];
+export const BRIDGE_METHODS = [
+  "getBridgeState",
+  "retryBridge",
+  "getBridgeProfileLabel",
+  "setBridgeProfileLabel",
+] as const satisfies readonly (keyof BridgeApi)[];
 
-export function createBridgeApi(bridge: AgentBridge, b: typeof browser): BridgeApi {
+export function createBridgeApi(
+  bridge: AgentBridge,
+  b: typeof browser,
+): BridgeApi {
   return {
     getBridgeState: async () => bridge.state(),
     retryBridge: async () => {
       bridge.retry();
       return bridge.state();
     },
-    getBridgeProfileLabel: () => readProfileLabel(b.storage.local as unknown as StorageAreaLike),
-    setBridgeProfileLabel: (label) => writeProfileLabel(b.storage.local as unknown as StorageAreaLike, label),
+    getBridgeProfileLabel: () =>
+      readProfileLabel(b.storage.local as unknown as StorageAreaLike),
+    setBridgeProfileLabel: (label) =>
+      writeProfileLabel(b.storage.local as unknown as StorageAreaLike, label),
   };
 }

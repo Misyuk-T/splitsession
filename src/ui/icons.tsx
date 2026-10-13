@@ -1,13 +1,29 @@
-import type { ComponentChildren } from 'preact';
+import type { ComponentChildren } from "preact";
 
 /** The icon set of the popup: simple outlines, 1.5px stroke, 24-unit grid, drawn in the text colour. Decorative: the button carries the name. */
-function Icon({ size = 20, children }: { size?: number; children: ComponentChildren }) {
-  return (
-    <svg class="fx-icon" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">
-      {children}
-    </svg>
-  );
-}
+const Icon = ({
+  size = 20,
+  children,
+}: {
+  size?: number;
+  children: ComponentChildren;
+}) => (
+  <svg
+    class="fx-icon"
+    width={size}
+    height={size}
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    stroke-width="1.5"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+    aria-hidden="true"
+    focusable="false"
+  >
+    {children}
+  </svg>
+);
 
 export const IconSettings = () => (
   <Icon>

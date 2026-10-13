@@ -1,8 +1,12 @@
-import { Exemptions, type ContainerId, type SerializedExemptions } from '../core';
-import type { StorageAreaLike } from '../engine/storage/storage-area';
+import {
+  type ContainerId,
+  Exemptions,
+  type SerializedExemptions,
+} from "../core";
+import type { StorageAreaLike } from "../engine/storage/storage-area";
 
 /** `chrome.storage.session` key. Survives service-worker restarts, cleared with the browser session (tab IDs too). */
-export const EXEMPTIONS_KEY = 'ruleExemptions';
+export const EXEMPTIONS_KEY = "ruleExemptions";
 
 /** `Exemptions` (see core) kept in `storage.session`: a placement made a minute ago must still count after a worker restart. */
 export class ExemptionManager {
@@ -13,7 +17,10 @@ export class ExemptionManager {
 
   async load(): Promise<void> {
     const stored = (await this.area.get(EXEMPTIONS_KEY))[EXEMPTIONS_KEY];
-    const fromStorage = typeof stored === 'object' && stored !== null ? (stored as SerializedExemptions) : {};
+    const fromStorage =
+      typeof stored === "object" && stored !== null
+        ? (stored as SerializedExemptions)
+        : {};
     // Placements made while this was loading are newer than what is stored.
     this.book = new Exemptions({ ...fromStorage, ...this.book.toJSON() });
   }
@@ -58,6 +65,8 @@ export class ExemptionManager {
 
   private persist(): void {
     const snapshot = this.book.toJSON();
-    this.writing = this.writing.then(() => this.area.set({ [EXEMPTIONS_KEY]: snapshot })).catch(() => {});
+    this.writing = this.writing
+      .then(() => this.area.set({ [EXEMPTIONS_KEY]: snapshot }))
+      .catch(() => {});
   }
 }

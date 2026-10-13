@@ -1,4 +1,4 @@
-@import './fonts.css';
+@import "./fonts.css";
 
 /* SplitSession UI tokens. Light and dark follow prefers-color-scheme. Main text is 16px, secondary 14px: nothing is smaller. */
 :root {
@@ -26,13 +26,18 @@
   --fx-focus: #1a6fe0;
   --fx-ok: #1a7f43;
   --fx-ok-soft: #dcf3e5;
-  --fx-shadow: 0 8px 24px rgba(15, 20, 30, 0.18), 0 1px 3px rgba(15, 20, 30, 0.12);
+  --fx-shadow:
+    0 8px 24px rgba(15, 20, 30, 0.18), 0 1px 3px rgba(15, 20, 30, 0.12);
   --fx-radius: 8px;
   --fx-radius-sm: 6px;
 
   /* Bundled Inter and JetBrains Mono (fonts.css); the system fonts are the fallback while a font file loads. */
-  --fx-font: 'Inter Variable', system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
-  --fx-font-mono: 'JetBrains Mono Variable', ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+  --fx-font:
+    "Inter Variable", system-ui, -apple-system, "Segoe UI", Roboto,
+    "Helvetica Neue", Arial, sans-serif;
+  --fx-font-mono:
+    "JetBrains Mono Variable", ui-monospace, "SF Mono", Menlo, Consolas,
+    monospace;
   --fx-text-main: 16px;
   --fx-text-secondary: 14px;
 }
@@ -65,34 +70,83 @@
   }
 }
 
-* { box-sizing: border-box; }
+* {
+  box-sizing: border-box;
+}
 
-html, body {
+html,
+body {
   margin: 0;
   background: var(--fx-bg);
   color: var(--fx-text);
   font: var(--fx-text-main) / 1.45 var(--fx-font);
   /* Inter alternates: cv11 (single-storey a) and ss01 (open digits) read friendlier at 14-16px. */
-  font-feature-settings: 'cv11', 'ss01';
+  font-feature-settings: "cv11", "ss01";
   letter-spacing: -0.006em;
   -webkit-font-smoothing: antialiased;
 }
 
-h1, h2, h3, p { margin: 0; }
-h1, h2, h3 { font-weight: 600; letter-spacing: -0.015em; }
-button, input, textarea { font: inherit; color: inherit; letter-spacing: inherit; font-feature-settings: inherit; }
-code, pre, kbd, samp { font-family: var(--fx-font-mono); font-feature-settings: normal; letter-spacing: 0; }
-button { cursor: pointer; }
-[hidden] { display: none !important; }
+h1,
+h2,
+h3,
+p {
+  margin: 0;
+}
+h1,
+h2,
+h3 {
+  font-weight: 600;
+  letter-spacing: -0.015em;
+}
+button,
+input,
+textarea {
+  font: inherit;
+  color: inherit;
+  letter-spacing: inherit;
+  font-feature-settings: inherit;
+}
+code,
+pre,
+kbd,
+samp {
+  font-family: var(--fx-font-mono);
+  font-feature-settings: normal;
+  letter-spacing: 0;
+}
+button {
+  cursor: pointer;
+}
+[hidden] {
+  display: none !important;
+}
 
-:focus-visible { outline: 2px solid var(--fx-focus); outline-offset: 2px; }
+:focus-visible {
+  outline: 2px solid var(--fx-focus);
+  outline-offset: 2px;
+}
 
-.fx-secondary { font-size: var(--fx-text-secondary); color: var(--fx-muted); }
+.fx-secondary {
+  font-size: var(--fx-text-secondary);
+  color: var(--fx-muted);
+}
 .fx-sr-only {
-  position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0;
-  overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0;
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
 }
 
 @media (prefers-reduced-motion: reduce) {
-  *, *::before, *::after { animation-duration: 0.001ms !important; transition-duration: 0.001ms !important; }
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    transition-duration: 0.001ms !important;
+  }
 }

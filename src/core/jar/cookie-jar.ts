@@ -1,6 +1,10 @@
-import type { Cookie } from '../types';
-import { domainMatches, hostnameOf } from '../site';
-import { parseSetCookie, type ParseContext, type ParseResult } from './set-cookie-parser';
+import { domainMatches, hostnameOf } from "../site";
+import type { Cookie } from "../types";
+import {
+  type ParseContext,
+  type ParseResult,
+  parseSetCookie,
+} from "./set-cookie-parser";
 
 export interface HostCookieOptions {
   /** The request goes over a secure scheme (https/wss or a trustworthy host): `Secure` cookies are eligible. */
@@ -13,15 +17,15 @@ export interface HostCookieOptions {
 
 export type UpsertOutcome =
   /** New cookie stored. */
-  | 'added'
+  | "added"
   /** Existing cookie replaced with different data. */
-  | 'updated'
+  | "updated"
   /** Same data as before (only the Set-Cookie arrived again): nothing to recompile. */
-  | 'unchanged'
+  | "unchanged"
   /** An existing cookie was removed because the new one is already expired. */
-  | 'deleted'
+  | "deleted"
   /** Nothing happened: expired cookie with nothing to delete, or a script tried to overwrite an HttpOnly cookie. */
-  | 'ignored';
+  | "ignored";
 
 export interface UpsertOptions {
   now?: number;
@@ -34,29 +38,44 @@ export interface SerializedJar {
   cookies: Cookie[];
 }
 
-type CookieIdentity = Pick<Cookie, 'name' | 'domain' | 'hostOnly' | 'path' | 'partitionKey'>;
+type CookieIdentity = Pick<
+  Cookie,
+  "name" | "domain" | "hostOnly" | "path" | "partitionKey"
+>;
 
 /**
  * Identity of a cookie in the jar. Name, domain, path and partition key as in the plan; the host-only flag is
  * included too (RFC 6265bis 5.7), so a host-only cookie of `a.com` and a Domain=a.com cookie coexist.
  */
 export function cookieKey(c: CookieIdentity): string {
-  return [c.name, c.domain, c.hostOnly ? 'h' : 'd', c.path, c.partitionKey ?? ''].join('\u0000');
+  return [
+    c.name,
+    c.domain,
+    c.hostOnly ? "h" : "d",
+    c.path,
+    c.partitionKey ?? "",
+  ].join("\u0000");
 }
 
 /** Value of the `Cookie` request header. A nameless cookie is sent as its bare value, as browsers do. */
-export function serializeCookieHeader(cookies: readonly Pick<Cookie, 'name' | 'value'>[]): string {
-  return cookies.map((c) => (c.name === '' ? c.value : `${c.name}=${c.value}`)).join('; ');
+export function serializeCookieHeader(
+  cookies: readonly Pick<Cookie, "name" | "value">[],
+): string {
+  return cookies
+    .map((c) => (c.name === "" ? c.value : `${c.name}=${c.value}`))
+    .join("; ");
 }
 
-export const isExpired = (c: Pick<Cookie, 'expires'>, now: number): boolean => c.expires !== null && c.expires <= now;
+export const isExpired = (c: Pick<Cookie, "expires">, now: number): boolean =>
+  c.expires !== null && c.expires <= now;
 
 /** In-memory cookie store of one container. Pure data structure: persistence and DNR wiring live elsewhere. */
 export class CookieJar {
   private readonly store = new Map<string, Cookie>();
 
   constructor(initial: Iterable<Cookie> = []) {
-    for (const cookie of initial) this.store.set(cookieKey(cookie), { ...cookie });
+    for (const cookie of initial)
+      this.store.set(cookieKey(cookie), { ...cookie });
   }
 
   get size(): number {
@@ -73,33 +92,45 @@ export class CookieJar {
   }
 
   /** RFC 6265bis 5.7 storage step: replace-or-add, keeping the old creation time; an expired cookie deletes. */
-  upsert(cookie: Cookie, { now = Date.now(), fromScript = false }: UpsertOptions = {}): UpsertOutcome {
+  upsert(
+    cookie: Cookie,
+    { now = Date.now(), fromScript = false }: UpsertOptions = {},
+  ): UpsertOutcome {
     const key = cookieKey(cookie);
     const existing = this.store.get(key);
 
-    if (existing?.httpOnly && fromScript) return 'ignored';
+    if (existing?.httpOnly && fromScript) return "ignored";
 
     if (isExpired(cookie, now)) {
-      if (!existing) return 'ignored';
+      if (!existing) return "ignored";
       this.store.delete(key);
-      return 'deleted';
+      return "deleted";
     }
 
-    const next: Cookie = { ...cookie, creationTime: existing?.creationTime ?? cookie.creationTime };
+    const next: Cookie = {
+      ...cookie,
+      creationTime: existing?.creationTime ?? cookie.creationTime,
+    };
     if (!existing) {
       this.store.set(key, next);
-      return 'added';
+      return "added";
     }
-    const outcome = sameCookieData(existing, next) ? 'unchanged' : 'updated';
+    const outcome = sameCookieData(existing, next) ? "unchanged" : "updated";
     this.store.set(key, next);
     return outcome;
   }
 
   /** Parses a `Set-Cookie` header and stores the result. */
-  setFromHeader(header: string, ctx: ParseContext): { parsed: ParseResult; outcome: UpsertOutcome } {
+  setFromHeader(
+    header: string,
+    ctx: ParseContext,
+  ): { parsed: ParseResult; outcome: UpsertOutcome } {
     const parsed = parseSetCookie(header, ctx);
-    if (!parsed.ok) return { parsed, outcome: 'ignored' };
-    const outcome = this.upsert(parsed.cookie, { now: ctx.now ?? parsed.cookie.creationTime, fromScript: ctx.fromScript });
+    if (!parsed.ok) return { parsed, outcome: "ignored" };
+    const outcome = this.upsert(parsed.cookie, {
+      now: ctx.now ?? parsed.cookie.creationTime,
+      fromScript: ctx.fromScript,
+    });
     return { parsed, outcome };
   }
 
@@ -122,7 +153,8 @@ export class CookieJar {
   /** Distinct cookie domains that currently hold at least one unexpired cookie, sorted. */
   hosts(now: number = Date.now()): string[] {
     const hosts = new Set<string>();
-    for (const cookie of this.store.values()) if (!isExpired(cookie, now)) hosts.add(cookie.domain);
+    for (const cookie of this.store.values())
+      if (!isExpired(cookie, now)) hosts.add(cookie.domain);
     return [...hosts].sort();
   }
 
@@ -131,23 +163,37 @@ export class CookieJar {
    * Paths are deliberately not matched (accepted limitation: header rules cannot express them), but the
    * result is ordered like RFC 6265 5.4: longer path first, then older creation time first.
    */
-  cookiesForHost(host: string, { secure, topLevelSite = null, now = Date.now() }: HostCookieOptions): Cookie[] {
+  cookiesForHost(
+    host: string,
+    { secure, topLevelSite = null, now = Date.now() }: HostCookieOptions,
+  ): Cookie[] {
     const target = hostnameOf(host);
     const matches: Cookie[] = [];
     for (const cookie of this.store.values()) {
       if (isExpired(cookie, now)) continue;
       if (cookie.secure && !secure) continue;
-      if (cookie.partitioned && (topLevelSite === null || cookie.partitionKey !== topLevelSite)) continue;
-      const hostMatches = cookie.hostOnly ? cookie.domain === target : domainMatches(target, cookie.domain);
+      if (
+        cookie.partitioned &&
+        (topLevelSite === null || cookie.partitionKey !== topLevelSite)
+      )
+        continue;
+      const hostMatches = cookie.hostOnly
+        ? cookie.domain === target
+        : domainMatches(target, cookie.domain);
       if (hostMatches) matches.push({ ...cookie });
     }
     // Array#sort is stable, so equal path length and creation time keep insertion order.
-    return matches.sort((a, b) => b.path.length - a.path.length || a.creationTime - b.creationTime);
+    return matches.sort(
+      (a, b) =>
+        b.path.length - a.path.length || a.creationTime - b.creationTime,
+    );
   }
 
   /** What `document.cookie` returns on `host`: the same cookies minus HttpOnly ones. */
   documentCookieString(host: string, options: HostCookieOptions): string {
-    return serializeCookieHeader(this.cookiesForHost(host, options).filter((c) => !c.httpOnly));
+    return serializeCookieHeader(
+      this.cookiesForHost(host, options).filter((c) => !c.httpOnly),
+    );
   }
 
   /**
@@ -158,10 +204,20 @@ export class CookieJar {
   applyDocumentCookieWrite(
     host: string,
     value: string,
-    { secure, path = '/', topLevelSite = null, now = Date.now() }: HostCookieOptions & { path?: string },
+    {
+      secure,
+      path = "/",
+      topLevelSite = null,
+      now = Date.now(),
+    }: HostCookieOptions & { path?: string },
   ): { parsed: ParseResult; outcome: UpsertOutcome } {
-    const url = `${secure ? 'https' : 'http'}://${hostnameForUrl(host)}${path.startsWith('/') ? path : `/${path}`}`;
-    return this.setFromHeader(value, { url, now, topLevelSite, fromScript: true });
+    const url = `${secure ? "https" : "http"}://${hostnameForUrl(host)}${path.startsWith("/") ? path : `/${path}`}`;
+    return this.setFromHeader(value, {
+      url,
+      now,
+      topLevelSite,
+      fromScript: true,
+    });
   }
 
   toJSON(): SerializedJar {
@@ -170,7 +226,7 @@ export class CookieJar {
 
   /** Tolerant loader for data read from storage: malformed entries are skipped, unknown versions yield an empty jar. */
   static fromJSON(data: unknown): CookieJar {
-    if (typeof data !== 'object' || data === null) return new CookieJar();
+    if (typeof data !== "object" || data === null) return new CookieJar();
     const { version, cookies } = data as Partial<SerializedJar>;
     if (version !== 1 || !Array.isArray(cookies)) return new CookieJar();
     return new CookieJar(cookies.filter(isCookie));
@@ -178,7 +234,7 @@ export class CookieJar {
 }
 
 function hostnameForUrl(host: string): string {
-  return host.includes(':') && !host.startsWith('[') ? `[${host}]` : host;
+  return host.includes(":") && !host.startsWith("[") ? `[${host}]` : host;
 }
 
 function sameCookieData(a: Cookie, b: Cookie): boolean {
@@ -192,24 +248,24 @@ function sameCookieData(a: Cookie, b: Cookie): boolean {
   );
 }
 
-const SAME_SITE_VALUES = new Set(['strict', 'lax', 'none', 'unspecified']);
+const SAME_SITE_VALUES = new Set(["strict", "lax", "none", "unspecified"]);
 
 function isCookie(x: unknown): x is Cookie {
-  if (typeof x !== 'object' || x === null) return false;
+  if (typeof x !== "object" || x === null) return false;
   const c = x as Record<string, unknown>;
   return (
-    typeof c.name === 'string' &&
-    typeof c.value === 'string' &&
-    typeof c.domain === 'string' &&
-    typeof c.hostOnly === 'boolean' &&
-    typeof c.path === 'string' &&
-    typeof c.secure === 'boolean' &&
-    typeof c.httpOnly === 'boolean' &&
-    typeof c.sameSite === 'string' &&
+    typeof c.name === "string" &&
+    typeof c.value === "string" &&
+    typeof c.domain === "string" &&
+    typeof c.hostOnly === "boolean" &&
+    typeof c.path === "string" &&
+    typeof c.secure === "boolean" &&
+    typeof c.httpOnly === "boolean" &&
+    typeof c.sameSite === "string" &&
     SAME_SITE_VALUES.has(c.sameSite) &&
-    typeof c.partitioned === 'boolean' &&
-    (c.partitionKey === null || typeof c.partitionKey === 'string') &&
-    (c.expires === null || typeof c.expires === 'number') &&
-    typeof c.creationTime === 'number'
+    typeof c.partitioned === "boolean" &&
+    (c.partitionKey === null || typeof c.partitionKey === "string") &&
+    (c.expires === null || typeof c.expires === "number") &&
+    typeof c.creationTime === "number"
   );
 }

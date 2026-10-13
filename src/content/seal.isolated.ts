@@ -1,4 +1,4 @@
-import { ADOPT_EVENT, ADOPT_SWEEP } from './bridge-protocol';
+import { ADOPT_EVENT, ADOPT_SWEEP } from "./bridge-protocol";
 
 /**
  * Runs in the ISOLATED world as part of the beacon, at document_start, before the MAIN-world shim.
@@ -24,7 +24,7 @@ import { ADOPT_EVENT, ADOPT_SWEEP } from './bridge-protocol';
 const MAX_WINDOWS = 300;
 
 export function sealFrame(bridge: Element, mode: string, key: string): void {
-  if (self.origin === 'null') return;
+  if (self.origin === "null") return;
   askParent(mode, key);
   let done = false;
   const check = () => {
@@ -52,7 +52,9 @@ function askParent(mode: string, key: string): void {
     const n = parent.length;
     for (let i = 0; i < n; i++) {
       if (parent[i] === window) {
-        doc.dispatchEvent(new CustomEvent(ADOPT_EVENT, { detail: `${i}|${mode}|${key}` }));
+        doc.dispatchEvent(
+          new CustomEvent(ADOPT_EVENT, { detail: `${i}|${mode}|${key}` }),
+        );
         return;
       }
     }
@@ -65,7 +67,8 @@ function requestSweep(): void {
   const documents: Document[] = [];
   const visited = new Set<Window>();
   const visit = (win: Window | null, depth: number): void => {
-    if (!win || visited.has(win) || visited.size >= MAX_WINDOWS || depth > 12) return;
+    if (!win || visited.has(win) || visited.size >= MAX_WINDOWS || depth > 12)
+      return;
     visited.add(win);
     if (win !== window) {
       try {

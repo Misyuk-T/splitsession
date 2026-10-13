@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any -- CDP event params and command results are protocol JSON whose shape depends on the method; callers narrow them */
 /**
  * The agent bridge's Chrome DevTools Protocol sessions (`chrome.debugger`), one per tab, attached on demand.
  *
@@ -31,16 +32,32 @@ export interface Debuggee {
 export interface DebuggerApi {
   attach(target: { tabId: number }, version: string): Promise<void>;
   detach(target: { tabId: number }): Promise<void>;
-  sendCommand(target: Debuggee, method: string, params?: object): Promise<unknown>;
-  getTargets?(): Promise<Array<{ tabId?: number; attached: boolean; type: string }>>;
-  onEvent: { addListener(cb: (source: Debuggee, method: string, params?: any) => void): void };
-  onDetach: { addListener(cb: (source: Debuggee, reason: string) => void): void };
+  sendCommand(
+    target: Debuggee,
+    method: string,
+    params?: object,
+  ): Promise<unknown>;
+  getTargets?(): Promise<
+    Array<{ tabId?: number; attached: boolean; type: string }>
+  >;
+  onEvent: {
+    addListener(
+      cb: (source: Debuggee, method: string, params?: any) => void,
+    ): void;
+  };
+  onDetach: {
+    addListener(cb: (source: Debuggee, reason: string) => void): void;
+  };
 }
 
 export interface CdpDeps {
   dbg: DebuggerApi;
   tabUrl(tabId: number): Promise<string | undefined>;
-  log?: (level: 'info' | 'warn' | 'error', message: string, data?: unknown) => void;
+  log?: (
+    level: "info" | "warn" | "error",
+    message: string,
+    data?: unknown,
+  ) => void;
   now?: () => number;
   /** Idle window after the last debugger-using tool (default 60 s: one attach, and one bar in Chrome, per burst of actions). */
   idleMs?: number;
@@ -78,8 +95,8 @@ export interface DialogInfo {
 export interface ConsoleEntry {
   seq: number;
   at: number;
-  level: 'error' | 'warning' | 'info' | 'log' | 'debug';
-  source: 'console' | 'exception' | 'browser';
+  level: "error" | "warning" | "info" | "log" | "debug";
+  source: "console" | "exception" | "browser";
   text: string;
   url?: string;
   line?: number;
@@ -112,11 +129,17 @@ export interface TabRecord {
 }
 
 /** Headers that carry credentials are never recorded: they would show a container's (or the profile's) sessions. */
-const SECRET_HEADERS = /^(cookie|set-cookie|set-cookie2|authorization|proxy-authorization|x-csrf-token|x-xsrf-token)$/i;
-export function redactHeaders(headers: Record<string, unknown> | undefined): Record<string, string> | undefined {
+const SECRET_HEADERS =
+  /^(cookie|set-cookie|set-cookie2|authorization|proxy-authorization|x-csrf-token|x-xsrf-token)$/i;
+export function redactHeaders(
+  headers: Record<string, unknown> | undefined,
+): Record<string, string> | undefined {
   if (!headers) return undefined;
   const out: Record<string, string> = {};
-  for (const [name, value] of Object.entries(headers)) out[name] = SECRET_HEADERS.test(name) ? '(hidden by SplitSession)' : String(value).slice(0, 500);
+  for (const [name, value] of Object.entries(headers))
+    out[name] = SECRET_HEADERS.test(name)
+      ? "(hidden by SplitSession)"
+      : String(value).slice(0, 500);
   return out;
 }
 
@@ -129,9 +152,19 @@ export function refusedUrl(url: string | undefined): string | null {
   } catch {
     return null;
   }
-  if (u.protocol === 'chrome-extension:') return 'extension pages (SplitSession\'s own included) are not operated by the agent';
-  if (/^(chrome|chrome-untrusted|chrome-search|devtools|view-source|edge|brave|opera|vivaldi):$/.test(u.protocol)) return `${u.protocol}// pages belong to the browser; Chrome does not let extensions debug them`;
-  if (u.hostname === 'chromewebstore.google.com' || (u.hostname === 'chrome.google.com' && u.pathname.startsWith('/webstore'))) return 'Chrome does not let extensions debug the Chrome Web Store';
+  if (u.protocol === "chrome-extension:")
+    return "extension pages (SplitSession's own included) are not operated by the agent";
+  if (
+    /^(chrome|chrome-untrusted|chrome-search|devtools|view-source|edge|brave|opera|vivaldi):$/.test(
+      u.protocol,
+    )
+  )
+    return `${u.protocol}// pages belong to the browser; Chrome does not let extensions debug them`;
+  if (
+    u.hostname === "chromewebstore.google.com" ||
+    (u.hostname === "chrome.google.com" && u.pathname.startsWith("/webstore"))
+  )
+    return "Chrome does not let extensions debug the Chrome Web Store";
   return null;
 }
 
@@ -140,14 +173,22 @@ export function cdpMessage(error: unknown): string {
   const raw = error instanceof Error ? error.message : String(error);
   try {
     const parsed = JSON.parse(raw) as { message?: string; data?: string };
-    if (parsed && typeof parsed.message === 'string') return parsed.data ? `${parsed.message} (${parsed.data})` : parsed.message;
+    if (parsed && typeof parsed.message === "string")
+      return parsed.data
+        ? `${parsed.message} (${parsed.data})`
+        : parsed.message;
   } catch {
     /* not JSON */
   }
   return raw;
 }
 
-type Waiter = { method: string; sessionId: string | undefined; test: (params: any) => boolean; resolve: (params: any) => void };
+type Waiter = {
+  method: string;
+  sessionId: string | undefined;
+  test: (params: any) => boolean;
+  resolve: (params: any) => void;
+};
 
 /** One attached tab. */
 export class TabSession {
@@ -167,8 +208,18 @@ export class TabSession {
   ) {}
 
   /** One CDP command (`sessionId`: a child target). Rejects with the protocol's message, on detach, or after `timeoutMs`. */
-  send<T = any>(method: string, params: object = {}, sessionId?: string, timeoutMs = COMMAND_MS): Promise<T> {
-    if (this.detached) return Promise.reject(new CdpError('SplitSession is no longer attached to this tab; try again'));
+  send<T = any>(
+    method: string,
+    params: object = {},
+    sessionId?: string,
+    timeoutMs = COMMAND_MS,
+  ): Promise<T> {
+    if (this.detached)
+      return Promise.reject(
+        new CdpError(
+          "SplitSession is no longer attached to this tab; try again",
+        ),
+      );
     return new Promise<T>((resolve, reject) => {
       let done = false;
       const finish = (fn: () => void) => {
@@ -178,24 +229,49 @@ export class TabSession {
         this.onGone.delete(gone);
         fn();
       };
-      const gone = () => finish(() => reject(new CdpError('SplitSession was detached from this tab while it worked (the tab closed, navigated to a page it cannot debug, or debugging was cancelled)')));
+      const gone = () =>
+        finish(() =>
+          reject(
+            new CdpError(
+              "SplitSession was detached from this tab while it worked (the tab closed, navigated to a page it cannot debug, or debugging was cancelled)",
+            ),
+          ),
+        );
       const timer = setTimeout(
         () =>
           finish(() =>
-            reject(new CdpError(this.dialog ? dialogBlocks(this.dialog) : `the page did not answer ${method} within ${Math.round(timeoutMs / 1000)} s (it may be busy, or a JavaScript dialog may be open)`)),
+            reject(
+              new CdpError(
+                this.dialog
+                  ? dialogBlocks(this.dialog)
+                  : `the page did not answer ${method} within ${Math.round(timeoutMs / 1000)} s (it may be busy, or a JavaScript dialog may be open)`,
+              ),
+            ),
           ),
         timeoutMs,
       );
       this.onGone.add(gone);
-      this.dbg.sendCommand({ tabId: this.tabId, ...(sessionId ? { sessionId } : {}) }, method, params).then(
-        (r) => finish(() => resolve(r as T)),
-        (e) => finish(() => reject(new CdpError(cdpMessage(e)))),
-      );
+      this.dbg
+        .sendCommand(
+          { tabId: this.tabId, ...(sessionId ? { sessionId } : {}) },
+          method,
+          params,
+        )
+        .then(
+          (r) => finish(() => resolve(r as T)),
+          (e) => finish(() => reject(new CdpError(cdpMessage(e)))),
+        );
     });
   }
 
   /** Waits for the next event `method` (of `sessionId`, top target by default) whose params pass `test`; null after `ms`. */
-  waitFor<T = any>(method: string, ms: number, test: (params: T) => boolean = () => true, sessionId?: string, signal?: AbortSignal): Promise<T | null> {
+  waitFor<T = any>(
+    method: string,
+    ms: number,
+    test: (params: T) => boolean = () => true,
+    sessionId?: string,
+    signal?: AbortSignal,
+  ): Promise<T | null> {
     return new Promise((resolve) => {
       const waiter: Waiter = {
         method,
@@ -204,7 +280,7 @@ export class TabSession {
         resolve: (p) => {
           clearTimeout(timer);
           this.waiters.delete(waiter);
-          signal?.removeEventListener('abort', cancel);
+          signal?.removeEventListener("abort", cancel);
           resolve(p);
         },
       };
@@ -212,14 +288,15 @@ export class TabSession {
       const timer = setTimeout(cancel, ms);
       this.waiters.add(waiter);
       if (signal?.aborted) cancel();
-      else signal?.addEventListener('abort', cancel, { once: true });
+      else signal?.addEventListener("abort", cancel, { once: true });
     });
   }
 
   /** @internal Called by the manager for every event of this tab. */
   dispatch(method: string, params: any, sessionId: string | undefined): void {
     for (const w of [...this.waiters]) {
-      if (w.method === method && w.sessionId === sessionId && w.test(params)) w.resolve(params);
+      if (w.method === method && w.sessionId === sessionId && w.test(params))
+        w.resolve(params);
     }
   }
 
@@ -232,7 +309,7 @@ export class TabSession {
 }
 
 export const dialogBlocks = (d: DialogInfo): string =>
-  `a JavaScript ${d.type} is open on this tab${d.message ? `: "${d.message.slice(0, 200)}"` : ''}. Answer it with handle_dialog (accept true or false) before doing anything else on this tab.`;
+  `a JavaScript ${d.type} is open on this tab${d.message ? `: "${d.message.slice(0, 200)}"` : ""}. Answer it with handle_dialog (accept true or false) before doing anything else on this tab.`;
 
 interface Slot {
   session: TabSession | null;
@@ -264,8 +341,12 @@ export class CdpSessions {
     this.dialogMaxMs = d.dialogMaxMs ?? DIALOG_MAX_MS;
     this.pinMaxMs = d.pinMaxMs ?? PIN_MAX_MS;
     // Registered synchronously (the service worker's top level calls this constructor).
-    d.dbg.onEvent.addListener((source, method, params) => this.onEvent(source, method, params));
-    d.dbg.onDetach.addListener((source, reason) => this.onDetach(source, reason));
+    d.dbg.onEvent.addListener((source, method, params) =>
+      this.onEvent(source, method, params),
+    );
+    d.dbg.onDetach.addListener((source, reason) =>
+      this.onDetach(source, reason),
+    );
   }
 
   /** Changes the idle window (tests: the default is a minute). */
@@ -284,7 +365,10 @@ export class CdpSessions {
   isHeld(tabId: number): boolean {
     const slot = this.slots.get(tabId);
     const s = slot?.session;
-    return !!s && (s.users > 0 || slot.pinned || slot.watchUntil > this.now() || !!s.dialog);
+    return (
+      !!s &&
+      (s.users > 0 || slot.pinned || slot.watchUntil > this.now() || !!s.dialog)
+    );
   }
 
   /** The tab's session if attached right now (no attach). */
@@ -294,7 +378,11 @@ export class CdpSessions {
 
   record(tabId: number): TabRecord {
     let r = this.records.get(tabId);
-    if (!r) this.records.set(tabId, (r = { console: [], network: [], byRequest: new Map(), seq: 0 }));
+    if (!r)
+      this.records.set(
+        tabId,
+        (r = { console: [], network: [], byRequest: new Map(), seq: 0 }),
+      );
     return r;
   }
 
@@ -304,7 +392,11 @@ export class CdpSessions {
   }
 
   /** Runs `work` with the tab attached. `isLive` is checked after the attach (the switch may have gone off meanwhile). */
-  async use<T>(tabId: number, work: (s: TabSession) => Promise<T>, isLive: () => void = () => {}): Promise<T> {
+  async use<T>(
+    tabId: number,
+    work: (s: TabSession) => Promise<T>,
+    isLive: () => void = () => {},
+  ): Promise<T> {
     const slot = this.slot(tabId);
     if (slot.idle) clearTimeout(slot.idle);
     slot.idle = null;
@@ -334,17 +426,20 @@ export class CdpSessions {
       const s = slot.session;
       if (s && s.consoleOn) {
         s.consoleOn = false;
-        await s.send('Runtime.disable').catch(() => {});
+        await s.send("Runtime.disable").catch(() => {});
       }
       this.scheduleIdle(tabId);
       return 0;
     }
     slot.watchUntil = this.now() + minutes * 60_000;
-    slot.watchTimer = setTimeout(() => void this.watch(tabId, 0), minutes * 60_000);
+    slot.watchTimer = setTimeout(
+      () => void this.watch(tabId, 0),
+      minutes * 60_000,
+    );
     await this.use(tabId, async (s) => {
       if (!s.consoleOn) {
         s.consoleOn = true;
-        await s.send('Runtime.enable');
+        await s.send("Runtime.enable");
       }
     });
     return slot.watchUntil;
@@ -364,9 +459,17 @@ export class CdpSessions {
       slot.pinTimer = null;
       if (!slot.pinned) return;
       slot.pinned = false;
-      this.d.log?.('info', 'agent bridge: a viewport override reached its time limit', { tabId });
+      this.d.log?.(
+        "info",
+        "agent bridge: a viewport override reached its time limit",
+        { tabId },
+      );
       const s = slot.session;
-      void (s ? s.send('Emulation.clearDeviceMetricsOverride').catch(() => {}) : Promise.resolve()).then(() => this.scheduleIdle(tabId));
+      void (
+        s
+          ? s.send("Emulation.clearDeviceMetricsOverride").catch(() => {})
+          : Promise.resolve()
+      ).then(() => this.scheduleIdle(tabId));
     }, this.pinMaxMs);
   }
 
@@ -396,7 +499,10 @@ export class CdpSessions {
     await Promise.all(
       tabIds.map(async (id) => {
         const slot = this.slots.get(id);
-        if (slot?.pinned && slot.session) await slot.session.send('Emulation.clearDeviceMetricsOverride', {}, undefined, 2_000).catch(() => {});
+        if (slot?.pinned && slot.session)
+          await slot.session
+            .send("Emulation.clearDeviceMetricsOverride", {}, undefined, 2_000)
+            .catch(() => {});
         await this.detach(id);
       }),
     );
@@ -408,8 +514,17 @@ export class CdpSessions {
    * (its "debugging" bar stays). Detach them: `detach` only ever detaches this extension's own sessions.
    */
   async detachStale(): Promise<void> {
-    const targets = await this.d.dbg.getTargets?.().catch(() => []) ?? [];
-    await Promise.all(targets.filter((t) => t.attached && t.tabId !== undefined && !this.slots.get(t.tabId)?.session).map((t) => this.d.dbg.detach({ tabId: t.tabId! }).catch(() => {})));
+    const targets = (await this.d.dbg.getTargets?.().catch(() => [])) ?? [];
+    await Promise.all(
+      targets
+        .filter(
+          (t) =>
+            t.attached &&
+            t.tabId !== undefined &&
+            !this.slots.get(t.tabId)?.session,
+        )
+        .map((t) => this.d.dbg.detach({ tabId: t.tabId! }).catch(() => {})),
+    );
   }
 
   /** The tab closed. */
@@ -441,7 +556,19 @@ export class CdpSessions {
 
   private slot(tabId: number): Slot {
     let slot = this.slots.get(tabId);
-    if (!slot) this.slots.set(tabId, (slot = { session: null, attaching: null, idle: null, watchUntil: 0, watchTimer: null, pinned: false, pinTimer: null }));
+    if (!slot)
+      this.slots.set(
+        tabId,
+        (slot = {
+          session: null,
+          attaching: null,
+          idle: null,
+          watchUntil: 0,
+          watchTimer: null,
+          pinned: false,
+          pinTimer: null,
+        }),
+      );
     return slot;
   }
 
@@ -454,7 +581,14 @@ export class CdpSessions {
 
   private scheduleIdle(tabId: number): void {
     const slot = this.slots.get(tabId);
-    if (!slot || !slot.session || slot.session.users > 0 || slot.pinned || slot.watchUntil > this.now()) return;
+    if (
+      !slot ||
+      !slot.session ||
+      slot.session.users > 0 ||
+      slot.pinned ||
+      slot.watchUntil > this.now()
+    )
+      return;
     if (slot.idle) clearTimeout(slot.idle);
     slot.idle = setTimeout(() => this.idleCheck(tabId), this.idleMs);
   }
@@ -465,23 +599,32 @@ export class CdpSessions {
     if (!slot) return;
     slot.idle = null;
     const s = slot.session;
-    if (!s || s.users > 0 || slot.pinned || slot.watchUntil > this.now()) return;
+    if (!s || s.users > 0 || slot.pinned || slot.watchUntil > this.now())
+      return;
     if (s.dialog) {
       // A JavaScript dialog can only be answered through this session, and the page is frozen until then: stay attached
       // (up to DIALOG_MAX_MS) so that handle_dialog still works after the agent paused. The closing event re-arms the window.
       const left = s.dialogAt + this.dialogMaxMs - this.now();
       if (left > 0) {
-        slot.idle = setTimeout(() => this.idleCheck(tabId), Math.min(left, 60_000));
+        slot.idle = setTimeout(
+          () => this.idleCheck(tabId),
+          Math.min(left, 60_000),
+        );
         return;
       }
       this.abandoned.set(tabId, s.dialog);
-      this.d.log?.('warn', 'agent bridge: a JavaScript dialog stayed open; letting go of the tab', { tabId });
+      this.d.log?.(
+        "warn",
+        "agent bridge: a JavaScript dialog stayed open; letting go of the tab",
+        { tabId },
+      );
     }
     void this.detach(tabId);
   }
 
   private attach(tabId: number, slot: Slot): Promise<TabSession> {
-    if (slot.session && !slot.session.detached) return Promise.resolve(slot.session);
+    if (slot.session && !slot.session.detached)
+      return Promise.resolve(slot.session);
     if (slot.attaching) return slot.attaching;
     const work = this.doAttach(tabId).finally(() => {
       if (slot.attaching === work) slot.attaching = null;
@@ -502,24 +645,35 @@ export class CdpSessions {
     }
     const url = await this.d.tabUrl(tabId);
     const refused = refusedUrl(url);
-    if (refused) throw new CdpError(`SplitSession cannot operate this tab: ${refused}`);
+    if (refused)
+      throw new CdpError(`SplitSession cannot operate this tab: ${refused}`);
     const generation = this.generation;
     try {
-      await this.d.dbg.attach({ tabId }, '1.3');
+      await this.d.dbg.attach({ tabId }, "1.3");
     } catch (error) {
       const message = cdpMessage(error);
       if (/already attached/i.test(message)) {
         // Chrome refuses a second attach by the same extension only: our own session, forgotten by a worker restart.
         await this.d.dbg.detach({ tabId }).catch(() => {});
         try {
-          await this.d.dbg.attach({ tabId }, '1.3');
+          await this.d.dbg.attach({ tabId }, "1.3");
         } catch (again) {
-          throw new CdpError(`the tab is busy: another debugger is attached and Chrome refuses a second one (${cdpMessage(again)}). Close DevTools or the other debugging tool on that tab, or use another tab.`);
+          throw new CdpError(
+            `the tab is busy: another debugger is attached and Chrome refuses a second one (${cdpMessage(again)}). Close DevTools or the other debugging tool on that tab, or use another tab.`,
+          );
         }
-      } else if (/cannot access|cannot attach|chrome:\/\/|extensions gallery|webstore|not allowed/i.test(message)) {
-        throw new CdpError(`SplitSession cannot operate this tab: Chrome refuses to let extensions debug it (${message})`);
+      } else if (
+        /cannot access|cannot attach|chrome:\/\/|extensions gallery|webstore|not allowed/i.test(
+          message,
+        )
+      ) {
+        throw new CdpError(
+          `SplitSession cannot operate this tab: Chrome refuses to let extensions debug it (${message})`,
+        );
       } else if (/no tab with/i.test(message)) {
-        throw new CdpError(`no tab with id ${tabId} (it may have been closed; call list_tabs)`);
+        throw new CdpError(
+          `no tab with id ${tabId} (it may have been closed; call list_tabs)`,
+        );
       } else {
         throw new CdpError(`could not attach to the tab: ${message}`);
       }
@@ -528,7 +682,9 @@ export class CdpSessions {
     if (generation !== this.generation) {
       // Switched off while attaching.
       await this.d.dbg.detach({ tabId }).catch(() => {});
-      throw new CdpError('the SplitSession agent bridge was switched off; the action was not performed');
+      throw new CdpError(
+        "the SplitSession agent bridge was switched off; the action was not performed",
+      );
     }
     const slot = this.slot(tabId);
     slot.session = session;
@@ -536,30 +692,51 @@ export class CdpSessions {
       // Enabling Page while an alert is already open can take the browser down (seen in Chromium 156). A page that
       // answers this probe has no dialog open.
       const probe = await Promise.race([
-        session.send('Runtime.evaluate', { expression: '1', returnByValue: true }, undefined, PROBE_MS + 500).then(() => true, () => false),
+        session
+          .send(
+            "Runtime.evaluate",
+            { expression: "1", returnByValue: true },
+            undefined,
+            PROBE_MS + 500,
+          )
+          .then(
+            () => true,
+            () => false,
+          ),
         new Promise<boolean>((r) => setTimeout(() => r(false), PROBE_MS)),
       ]);
       if (!probe) {
         const lost = this.abandoned.get(tabId);
         if (lost) {
           throw new CdpError(
-            `a JavaScript ${lost.type}${lost.message ? ` ("${lost.message.slice(0, 200)}")` : ''} has been open on this tab for more than ${Math.round(this.dialogMaxMs / 60_000)} minutes, nobody answered it, and SplitSession let go of the tab; SplitSession cannot answer it now. Ask the user to close the dialog, then try again.`,
+            `a JavaScript ${lost.type}${lost.message ? ` ("${lost.message.slice(0, 200)}")` : ""} has been open on this tab for more than ${Math.round(this.dialogMaxMs / 60_000)} minutes, nobody answered it, and SplitSession let go of the tab; SplitSession cannot answer it now. Ask the user to close the dialog, then try again.`,
           );
         }
         throw new CdpError(
-          'the page does not respond: it is busy, or a JavaScript dialog (alert / confirm / prompt) opened while SplitSession was not attached, which SplitSession cannot answer. Ask the user to close the dialog, then try again.',
+          "the page does not respond: it is busy, or a JavaScript dialog (alert / confirm / prompt) opened while SplitSession was not attached, which SplitSession cannot answer. Ask the user to close the dialog, then try again.",
         );
       }
-      await session.send('Page.enable');
+      await session.send("Page.enable");
       // Typing and focus behave as in the front tab even when the tab is in the background (as Playwright does).
-      await session.send('Emulation.setFocusEmulationEnabled', { enabled: true }).catch(() => {});
-      await session.send('Network.enable', { maxTotalBufferSize: 1_000_000, maxResourceBufferSize: 500_000 }).catch(() => {});
-      await session.send('Log.enable').catch(() => {});
+      await session
+        .send("Emulation.setFocusEmulationEnabled", { enabled: true })
+        .catch(() => {});
+      await session
+        .send("Network.enable", {
+          maxTotalBufferSize: 1_000_000,
+          maxResourceBufferSize: 500_000,
+        })
+        .catch(() => {});
+      await session.send("Log.enable").catch(() => {});
       if (slot.watchUntil > this.now()) {
         session.consoleOn = true;
-        await session.send('Runtime.enable').catch(() => {});
+        await session.send("Runtime.enable").catch(() => {});
       }
-      const tree = await session.send<{ frameTree: { frame: { loaderId: string } } }>('Page.getFrameTree').catch(() => null);
+      const tree = await session
+        .send<{ frameTree: { frame: { loaderId: string } } }>(
+          "Page.getFrameTree",
+        )
+        .catch(() => null);
       session.mainLoaderId = tree?.frameTree.frame.loaderId ?? null;
     } catch (error) {
       slot.session = null;
@@ -568,7 +745,7 @@ export class CdpSessions {
       throw error;
     }
     this.abandoned.delete(tabId);
-    this.d.log?.('info', 'agent bridge: debugger attached', { tabId });
+    this.d.log?.("info", "agent bridge: debugger attached", { tabId });
     return session;
   }
 
@@ -584,10 +761,12 @@ export class CdpSessions {
       slot.pinned = false;
     }
     s?.gone();
-    if (reason === 'canceled_by_user') {
+    if (reason === "canceled_by_user") {
       this.revoked.set(tabId, this.now() + REVOKE_MS);
-      this.d.log?.('warn', 'agent bridge: the user cancelled debugging', { tabId });
-    } else if (reason === 'target_closed') {
+      this.d.log?.("warn", "agent bridge: the user cancelled debugging", {
+        tabId,
+      });
+    } else if (reason === "target_closed") {
       this.records.delete(tabId);
     }
   }
@@ -604,22 +783,29 @@ export class CdpSessions {
 
   private track(tabId: number, s: TabSession, method: string, p: any): void {
     switch (method) {
-      case 'Page.javascriptDialogOpening':
+      case "Page.javascriptDialogOpening":
         s.dialogAt = this.now();
-        s.dialog = { type: String(p.type ?? 'dialog'), message: String(p.message ?? ''), ...(p.defaultPrompt ? { defaultPrompt: String(p.defaultPrompt) } : {}), ...(p.url ? { url: String(p.url) } : {}) };
+        s.dialog = {
+          type: String(p.type ?? "dialog"),
+          message: String(p.message ?? ""),
+          ...(p.defaultPrompt
+            ? { defaultPrompt: String(p.defaultPrompt) }
+            : {}),
+          ...(p.url ? { url: String(p.url) } : {}),
+        };
         return;
-      case 'Page.javascriptDialogClosed':
+      case "Page.javascriptDialogClosed":
         s.dialog = null;
         this.scheduleIdle(tabId); // answered by the user or the page: the normal idle window starts again
         return;
-      case 'Page.frameNavigated':
+      case "Page.frameNavigated":
         if (!p.frame?.parentId) s.mainLoaderId = p.frame?.loaderId ?? null;
         return;
     }
     const r = this.record(tabId);
     const at = this.now();
     switch (method) {
-      case 'Network.requestWillBeSent': {
+      case "Network.requestWillBeSent": {
         const previous = r.byRequest.get(p.requestId);
         if (previous && p.redirectResponse) {
           previous.status = p.redirectResponse.status;
@@ -629,26 +815,33 @@ export class CdpSessions {
           seq: ++r.seq,
           at,
           requestId: String(p.requestId),
-          method: String(p.request?.method ?? 'GET'),
-          url: String(p.request?.url ?? '').slice(0, 2000),
-          type: String(p.type ?? 'Other'),
-          ...(p.request?.headers ? { requestHeaders: redactHeaders(p.request.headers) } : {}),
+          method: String(p.request?.method ?? "GET"),
+          url: String(p.request?.url ?? "").slice(0, 2000),
+          type: String(p.type ?? "Other"),
+          ...(p.request?.headers
+            ? { requestHeaders: redactHeaders(p.request.headers) }
+            : {}),
         };
         r.byRequest.set(entry.requestId, entry);
         push(r.network, entry);
         return;
       }
-      case 'Network.responseReceived': {
+      case "Network.responseReceived": {
         const e = r.byRequest.get(p.requestId);
         if (!e) return;
         e.status = p.response?.status;
         e.statusText = p.response?.statusText;
         e.mimeType = p.response?.mimeType;
-        e.fromCache = !!(p.response?.fromDiskCache || p.response?.fromServiceWorker || p.response?.fromPrefetchCache);
-        if (p.response?.headers) e.responseHeaders = redactHeaders(p.response.headers);
+        e.fromCache = !!(
+          p.response?.fromDiskCache ||
+          p.response?.fromServiceWorker ||
+          p.response?.fromPrefetchCache
+        );
+        if (p.response?.headers)
+          e.responseHeaders = redactHeaders(p.response.headers);
         return;
       }
-      case 'Network.loadingFinished': {
+      case "Network.loadingFinished": {
         const e = r.byRequest.get(p.requestId);
         if (!e) return;
         e.bytes = p.encodedDataLength;
@@ -656,49 +849,73 @@ export class CdpSessions {
         r.byRequest.delete(p.requestId);
         return;
       }
-      case 'Network.loadingFailed': {
+      case "Network.loadingFailed": {
         const e = r.byRequest.get(p.requestId);
         if (!e) return;
-        e.failed = String(p.blockedReason ? `blocked: ${p.blockedReason}` : (p.errorText ?? 'failed'));
+        e.failed = String(
+          p.blockedReason
+            ? `blocked: ${p.blockedReason}`
+            : (p.errorText ?? "failed"),
+        );
         e.ms = at - e.at;
         r.byRequest.delete(p.requestId);
         return;
       }
-      case 'Runtime.consoleAPICalled': {
+      case "Runtime.consoleAPICalled": {
         const frame = p.stackTrace?.callFrames?.[0];
         push(r.console, {
           seq: ++r.seq,
           at,
           level: consoleLevel(String(p.type)),
-          source: 'console',
-          text: (p.args ?? []).map(remoteText).join(' ').slice(0, 4000),
-          ...(frame?.url ? { url: String(frame.url), line: Number(frame.lineNumber) + 1 } : {}),
+          source: "console",
+          text: (p.args ?? []).map(remoteText).join(" ").slice(0, 4000),
+          ...(frame?.url
+            ? { url: String(frame.url), line: Number(frame.lineNumber) + 1 }
+            : {}),
         });
         return;
       }
-      case 'Runtime.exceptionThrown': {
+      case "Runtime.exceptionThrown": {
         const d = p.exceptionDetails ?? {};
         push(r.console, {
           seq: ++r.seq,
           at,
-          level: 'error',
-          source: 'exception',
-          text: String(d.exception?.description ?? d.text ?? 'exception').slice(0, 4000),
-          ...(d.url ? { url: String(d.url), line: Number(d.lineNumber) + 1 } : {}),
+          level: "error",
+          source: "exception",
+          text: String(d.exception?.description ?? d.text ?? "exception").slice(
+            0,
+            4000,
+          ),
+          ...(d.url
+            ? { url: String(d.url), line: Number(d.lineNumber) + 1 }
+            : {}),
         });
         return;
       }
-      case 'Log.entryAdded': {
+      case "Log.entryAdded": {
         const e = p.entry ?? {};
         push(r.console, {
           seq: ++r.seq,
           at,
-          level: e.level === 'verbose' ? 'debug' : e.level === 'warning' ? 'warning' : e.level === 'error' ? 'error' : 'info',
-          source: 'browser',
-          text: String(e.text ?? '').slice(0, 4000),
-          ...(e.url ? { url: String(e.url), ...(typeof e.lineNumber === 'number' ? { line: e.lineNumber + 1 } : {}) } : {}),
+          level:
+            e.level === "verbose"
+              ? "debug"
+              : e.level === "warning"
+                ? "warning"
+                : e.level === "error"
+                  ? "error"
+                  : "info",
+          source: "browser",
+          text: String(e.text ?? "").slice(0, 4000),
+          ...(e.url
+            ? {
+                url: String(e.url),
+                ...(typeof e.lineNumber === "number"
+                  ? { line: e.lineNumber + 1 }
+                  : {}),
+              }
+            : {}),
         });
-        return;
       }
     }
   }
@@ -709,23 +926,32 @@ function push<T>(list: T[], item: T): void {
   if (list.length > BUFFER) list.splice(0, list.length - BUFFER);
 }
 
-function consoleLevel(type: string): ConsoleEntry['level'] {
-  if (type === 'error' || type === 'assert') return 'error';
-  if (type === 'warning') return 'warning';
-  if (type === 'info') return 'info';
-  if (type === 'debug') return 'debug';
-  return 'log';
+function consoleLevel(type: string): ConsoleEntry["level"] {
+  if (type === "error" || type === "assert") return "error";
+  if (type === "warning") return "warning";
+  if (type === "info") return "info";
+  if (type === "debug") return "debug";
+  return "log";
 }
 
 /** A console argument as text: primitives by value, objects by their preview or description. */
 export function remoteText(o: any): string {
-  if (!o || typeof o !== 'object') return String(o);
-  if (o.type === 'string') return String(o.value);
-  if ('value' in o) return typeof o.value === 'object' ? JSON.stringify(o.value) : String(o.value);
+  if (!o || typeof o !== "object") return String(o);
+  if (o.type === "string") return String(o.value);
+  if ("value" in o)
+    return typeof o.value === "object"
+      ? JSON.stringify(o.value)
+      : String(o.value);
   if (o.unserializableValue) return String(o.unserializableValue);
-  if (o.preview?.properties && o.type === 'object' && o.subtype !== 'error') {
-    const inner = o.preview.properties.map((p: { name: string; value?: string }) => (o.subtype === 'array' ? `${p.value}` : `${p.name}: ${p.value}`)).join(', ');
-    return o.subtype === 'array' ? `[${inner}${o.preview.overflow ? ', …' : ''}]` : `{${inner}${o.preview.overflow ? ', …' : ''}}`;
+  if (o.preview?.properties && o.type === "object" && o.subtype !== "error") {
+    const inner = o.preview.properties
+      .map((p: { name: string; value?: string }) =>
+        o.subtype === "array" ? `${p.value}` : `${p.name}: ${p.value}`,
+      )
+      .join(", ");
+    return o.subtype === "array"
+      ? `[${inner}${o.preview.overflow ? ", …" : ""}]`
+      : `{${inner}${o.preview.overflow ? ", …" : ""}}`;
   }
   return String(o.description ?? o.type);
 }

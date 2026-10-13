@@ -1,0 +1,8 @@
+.output/
+.wxt/
+node_modules/
+bridge/dist/
+test-results/
+playwright-report/
+coverage/
+keys/

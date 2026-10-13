@@ -1,7 +1,9 @@
-import { render } from 'preact';
-import '../theme.css';
-import '../components.css';
-import './options.css';
-import { Options } from './Options';
+import { render } from "preact";
 
-render(<Options />, document.getElementById('app')!);
+import { Options } from "./Options";
+
+import "../theme.css";
+import "../components.css";
+import "./options.css";
+
+render(<Options />, document.getElementById("app")!);

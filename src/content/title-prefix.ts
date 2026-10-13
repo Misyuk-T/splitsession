@@ -1,9 +1,10 @@
-import { browser } from 'wxt/browser';
-import { prefixedTitle, titlePrefixFor } from '../core/indicators';
-import { normalizeSettings, SETTINGS_KEY } from '../core/settings';
+import { browser } from "wxt/browser";
+
+import { prefixedTitle, titlePrefixFor } from "../core/indicators";
+import { normalizeSettings, SETTINGS_KEY } from "../core/settings";
 
 /** Same literal as `RENAMED_MESSAGE` in the background (kept apart so this bundle stays small). */
-const RENAMED = 'facet/renamed';
+const RENAMED = "facet/renamed";
 /** If the page keeps undoing our prefix, give up for this document instead of fighting it forever. */
 const MAX_WRITES = 25;
 const WRITE_WINDOW_MS = 3_000;
@@ -32,7 +33,8 @@ export function startPageName(root: HTMLElement, initialName: string): void {
 
   const budgetLeft = (): boolean => {
     const now = Date.now();
-    while (writes.length > 0 && now - writes[0]! > WRITE_WINDOW_MS) writes.shift();
+    while (writes.length > 0 && now - writes[0]! > WRITE_WINDOW_MS)
+      writes.shift();
     if (writes.length >= MAX_WRITES) return false;
     writes.push(now);
     return true;
@@ -46,7 +48,10 @@ export function startPageName(root: HTMLElement, initialName: string): void {
     if (wanted !== current) {
       if (!budgetLeft()) {
         enabled = false; // the page is fighting us
-        console.debug('[splitsession] title prefix disabled on this page: the page keeps rewriting its title');
+        // eslint-disable-next-line no-console -- a debug line in the page's console is the only way to say why the prefix went away
+        console.debug(
+          "[splitsession] title prefix disabled on this page: the page keeps rewriting its title",
+        );
         return;
       }
       document.title = wanted;
@@ -55,7 +60,8 @@ export function startPageName(root: HTMLElement, initialName: string): void {
   }
 
   function strip(): void {
-    if (applied !== null && document.title.startsWith(applied)) document.title = document.title.slice(applied.length);
+    if (applied !== null && document.title.startsWith(applied))
+      document.title = document.title.slice(applied.length);
     applied = null;
   }
 
@@ -66,11 +72,16 @@ export function startPageName(root: HTMLElement, initialName: string): void {
       headObserver.observe(head, { childList: true });
       observedHead = head;
     }
-    const element = document.querySelector('title');
+    const element = document.querySelector("title");
     if (element !== titleElement) {
       titleObserver.disconnect();
       titleElement = element;
-      if (element) titleObserver.observe(element, { childList: true, characterData: true, subtree: true });
+      if (element)
+        titleObserver.observe(element, {
+          childList: true,
+          characterData: true,
+          subtree: true,
+        });
     }
     sync();
   }
@@ -83,7 +94,8 @@ export function startPageName(root: HTMLElement, initialName: string): void {
   };
 
   // <head> does not exist yet at document_start: watch the root until it does.
-  if (document.documentElement) headObserver.observe(document.documentElement, { childList: true });
+  if (document.documentElement)
+    headObserver.observe(document.documentElement, { childList: true });
   attach();
 
   const applySettings = (raw: unknown): void => {
@@ -98,11 +110,12 @@ export function startPageName(root: HTMLElement, initialName: string): void {
     () => setEnabled(true),
   );
   browser.storage.onChanged.addListener((changes, area) => {
-    if (area === 'local' && changes[SETTINGS_KEY]) applySettings(changes[SETTINGS_KEY].newValue);
+    if (area === "local" && changes[SETTINGS_KEY])
+      applySettings(changes[SETTINGS_KEY].newValue);
   });
   browser.runtime.onMessage.addListener((message: unknown) => {
     const m = message as { type?: string; name?: unknown };
-    if (m?.type === RENAMED && typeof m.name === 'string') {
+    if (m?.type === RENAMED && typeof m.name === "string") {
       name = m.name;
       if (shown) root.dataset.ctr = name;
       if (enabled) sync();

@@ -1,19 +1,25 @@
-import { useEffect, useRef, useState } from 'preact/hooks';
-import { browser } from 'wxt/browser';
-import { CONTAINER_COLORS, CONTAINER_HEX, parseChooseParams, ruleKeyOf } from '../../core';
-import { facetApi } from '../../engine/api-client';
-import { Button, Dot } from '../components/Button';
-import { ContainerForm } from '../components/ContainerForm';
-import { Logo } from '../components/Logo';
-import { Switch } from '../components/Toggle';
-import { describeError, tabsLabel } from '../format';
-import { useContainers } from '../useContainers';
+import { useEffect, useRef, useState } from "preact/hooks";
+import { browser } from "wxt/browser";
+
+import {
+  CONTAINER_COLORS,
+  CONTAINER_HEX,
+  parseChooseParams,
+  ruleKeyOf,
+} from "../../core";
+import { facetApi } from "../../engine/api-client";
+import { Button, Dot } from "../components/Button";
+import { ContainerForm } from "../components/ContainerForm";
+import { Logo } from "../components/Logo";
+import { Switch } from "../components/Toggle";
+import { describeError, tabsLabel } from "../format";
+import { useContainers } from "../useContainers";
 
 /**
  * `choose.html?url=<target>&tab=<id>`: where a domain rule with "ask" sends a tab. The user picks a container (or none),
  * optionally remembers the choice as a rule, and the tab continues to the address, already placed.
  */
-export function Choose() {
+export const Choose = () => {
   const params = parseChooseParams(location.search);
   const site = params.url ? ruleKeyOf(params.url) : null;
   const { containers, error: loadError, reload } = useContainers();
@@ -24,20 +30,29 @@ export function Choose() {
   const list = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    document.title = site ? `SplitSession: open ${site} in…` : 'SplitSession';
+    document.title = site ? `SplitSession: open ${site} in…` : "SplitSession";
   }, [site]);
   useEffect(() => {
-    if (containers) list.current?.querySelector<HTMLElement>('button')?.focus();
+    if (containers) list.current?.querySelector<HTMLElement>("button")?.focus();
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- run once when the list first appears (containers goes from null to loaded), not on every change
   }, [containers !== null]);
 
   if (!params.url || !site) {
     return (
       <main class="choose">
-        <header class="choose__head"><Logo size={28} /><h1>SplitSession</h1></header>
+        <header class="choose__head">
+          <Logo size={28} />
+          <h1>SplitSession</h1>
+        </header>
         <p class="fx-notice fx-notice--info" role="status">
-          This page opens when a domain rule asks where a site should open. It was opened without an address, so there is nothing to choose.
+          This page opens when a domain rule asks where a site should open. It
+          was opened without an address, so there is nothing to choose.
         </p>
-        <div><Button onClick={() => void browser.runtime.openOptionsPage()}>Open settings</Button></div>
+        <div>
+          <Button onClick={() => void browser.runtime.openOptionsPage()}>
+            Open settings
+          </Button>
+        </div>
       </main>
     );
   }
@@ -50,8 +65,14 @@ export function Choose() {
     try {
       const tab = await browser.tabs.getCurrent();
       const tabId = tab?.id ?? params.tab;
-      if (tabId === undefined || tabId === null) throw new Error('This page must be opened in a tab.');
-      const { replaced } = await facetApi.applyChoice({ tabId, url, containerId, remember });
+      if (tabId === undefined || tabId === null)
+        throw new Error("This page must be opened in a tab.");
+      const { replaced } = await facetApi.applyChoice({
+        tabId,
+        url,
+        containerId,
+        remember,
+      });
       // Replaced: the address opened in a fresh tab (no opener link) and this tab is being closed.
       if (!replaced) location.replace(url);
     } catch (e) {
@@ -61,17 +82,33 @@ export function Choose() {
   };
 
   const onKeyDown = (event: KeyboardEvent) => {
-    const buttons = [...(list.current?.querySelectorAll<HTMLButtonElement>('button.choose__option') ?? [])];
+    const buttons = [
+      ...(list.current?.querySelectorAll<HTMLButtonElement>(
+        "button.choose__option",
+      ) ?? []),
+    ];
     const at = buttons.indexOf(document.activeElement as HTMLButtonElement);
     if (at === -1) return;
-    const next = event.key === 'ArrowDown' ? at + 1 : event.key === 'ArrowUp' ? at - 1 : event.key === 'Home' ? 0 : event.key === 'End' ? buttons.length - 1 : null;
+    const next =
+      event.key === "ArrowDown"
+        ? at + 1
+        : event.key === "ArrowUp"
+          ? at - 1
+          : event.key === "Home"
+            ? 0
+            : event.key === "End"
+              ? buttons.length - 1
+              : null;
     if (next === null) return;
     event.preventDefault();
     buttons[(next + buttons.length) % buttons.length]?.focus();
   };
 
   const names = (containers ?? []).map((c) => c.name);
-  const nextColor = CONTAINER_COLORS.find((c) => !(containers ?? []).some((x) => x.color === c)) ?? CONTAINER_COLORS[0]!;
+  const nextColor =
+    CONTAINER_COLORS.find(
+      (c) => !(containers ?? []).some((x) => x.color === c),
+    ) ?? CONTAINER_COLORS[0]!;
 
   return (
     <main class="choose">
@@ -81,7 +118,9 @@ export function Choose() {
       </header>
       <section class="choose__card" aria-labelledby="choose-title">
         <h2 id="choose-title">Open {site} in which container?</h2>
-        <p class="fx-secondary choose__url" data-testid="choose-url">{url}</p>
+        <p class="fx-secondary choose__url" data-testid="choose-url">
+          {url}
+        </p>
 
         <Switch
           label={`Remember my choice for ${site}`}
@@ -90,24 +129,52 @@ export function Choose() {
           onChange={setRemember}
         />
 
-        {loadError && <p class="fx-notice fx-notice--error" role="alert">{loadError}</p>}
+        {loadError && (
+          <p class="fx-notice fx-notice--error" role="alert">
+            {loadError}
+          </p>
+        )}
 
-        <div ref={list} class="choose__options" role="group" aria-label="Containers" onKeyDown={onKeyDown}>
+        {/* eslint-disable-next-line jsx-a11y/no-noninteractive-element-interactions -- arrow keys move focus between the option buttons; the group itself is not a control */}
+        <div
+          ref={list}
+          class="choose__options"
+          role="group"
+          aria-label="Containers"
+          onKeyDown={onKeyDown}
+        >
           {(containers ?? []).map((c) => (
-            <button key={c.id} type="button" class="choose__option" disabled={busy} onClick={() => void go(c.id)} data-testid="choose-container">
+            <button
+              key={c.id}
+              type="button"
+              class="choose__option"
+              disabled={busy}
+              onClick={() => void go(c.id)}
+              data-testid="choose-container"
+            >
               <Dot color={CONTAINER_HEX[c.color]} />
               <span class="choose__name">{c.name}</span>
               <span class="fx-secondary">{tabsLabel(c.tabCount)}</span>
             </button>
           ))}
-          <button type="button" class="choose__option choose__option--plain" disabled={busy} onClick={() => void go(null)} data-testid="choose-none">
+          <button
+            type="button"
+            class="choose__option choose__option--plain"
+            disabled={busy}
+            onClick={() => void go(null)}
+            data-testid="choose-none"
+          >
             <span class="popup-nodot" aria-hidden="true" />
             <span class="choose__name">Open without a container</span>
             <span class="fx-secondary">Regular Chrome profile</span>
           </button>
         </div>
 
-        {containers && containers.length === 0 && <p class="fx-secondary">You have no containers yet. Create one to open this site in it.</p>}
+        {containers && containers.length === 0 && (
+          <p class="fx-secondary">
+            You have no containers yet. Create one to open this site in it.
+          </p>
+        )}
 
         {creating ? (
           <div class="choose__create">
@@ -125,11 +192,17 @@ export function Choose() {
           </div>
         ) : (
           <div>
-            <Button small onClick={() => setCreating(true)} disabled={busy}>New container…</Button>
+            <Button small onClick={() => setCreating(true)} disabled={busy}>
+              New container…
+            </Button>
           </div>
         )}
-        {error && <p class="fx-notice fx-notice--error" role="alert">{error}</p>}
+        {error && (
+          <p class="fx-notice fx-notice--error" role="alert">
+            {error}
+          </p>
+        )}
       </section>
     </main>
   );
-}
+};

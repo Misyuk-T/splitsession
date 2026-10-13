@@ -1,6 +1,15 @@
-import type { BeaconPayload, ContainerId, Cookie } from '../types';
-import { isExpired, serializeCookieHeader, type CookieJar } from '../jar/cookie-jar';
-import { isPotentiallyTrustworthyHost, isSameOrSubdomain, labelCount, registrableDomain } from '../site';
+import {
+  type CookieJar,
+  isExpired,
+  serializeCookieHeader,
+} from "../jar/cookie-jar";
+import {
+  isPotentiallyTrustworthyHost,
+  isSameOrSubdomain,
+  labelCount,
+  registrableDomain,
+} from "../site";
+import type { BeaconPayload, ContainerId, Cookie } from "../types";
 
 /**
  * Compiles one container jar into declarativeNetRequest session rules for a GROUP of tabs (every tab of the
@@ -62,9 +71,9 @@ export const BEACON_PRIORITY = 1000;
 /** Hosts cannot have more than 127 labels; capping keeps the priority bands apart. */
 const MAX_PRIORITY_LABELS = 63;
 
-export const BEACON_URL = 'http://ctr.localhost/whoami';
+export const BEACON_URL = "http://ctr.localhost/whoami";
 /** `|` anchors the start, `^` accepts end-of-URL or a separator such as `?`, so cache-busting queries still match. */
-export const BEACON_URL_FILTER = '|http://ctr.localhost/whoami^';
+export const BEACON_URL_FILTER = "|http://ctr.localhost/whoami^";
 /** Above this many bytes of JSON a site's cookie snapshot is left out of the beacon (`o: 1` instead). */
 export const BEACON_COOKIE_BYTE_LIMIT = 200_000;
 
@@ -73,27 +82,27 @@ export const BEACON_COOKIE_BYTE_LIMIT = 200_000;
  * cookies and a 302 login's `Set-Cookie` would land in the real profile.
  */
 export const ALL_RESOURCE_TYPES = [
-  'main_frame',
-  'sub_frame',
-  'xmlhttprequest',
-  'websocket',
-  'script',
-  'stylesheet',
-  'image',
-  'font',
-  'media',
-  'ping',
-  'csp_report',
-  'object',
-  'webtransport',
-  'webbundle',
-  'other',
+  "main_frame",
+  "sub_frame",
+  "xmlhttprequest",
+  "websocket",
+  "script",
+  "stylesheet",
+  "image",
+  "font",
+  "media",
+  "ping",
+  "csp_report",
+  "object",
+  "webtransport",
+  "webbundle",
+  "other",
 ] as const;
 export type DnrResourceType = (typeof ALL_RESOURCE_TYPES)[number];
 
 export interface DnrHeaderOperation {
   header: string;
-  operation: 'set' | 'remove' | 'append';
+  operation: "set" | "remove" | "append";
   value?: string;
 }
 
@@ -106,7 +115,7 @@ export interface DnrRule {
     tabIds?: number[];
     resourceTypes: DnrResourceType[];
     /** Chrome compares the request URL with its initiator; no initiator (browser-initiated) counts as third-party. */
-    domainType?: 'firstParty' | 'thirdParty';
+    domainType?: "firstParty" | "thirdParty";
     requestMethods?: string[];
     requestDomains?: string[];
     initiatorDomains?: string[];
@@ -114,11 +123,15 @@ export interface DnrRule {
     regexFilter?: string;
   };
   action:
-    | { type: 'modifyHeaders'; requestHeaders?: DnrHeaderOperation[]; responseHeaders?: DnrHeaderOperation[] }
-    | { type: 'redirect'; redirect: { url: string } }
-    | { type: 'block' }
+    | {
+        type: "modifyHeaders";
+        requestHeaders?: DnrHeaderOperation[];
+        responseHeaders?: DnrHeaderOperation[];
+      }
+    | { type: "redirect"; redirect: { url: string } }
+    | { type: "block" }
     /** Only the restore gate's openers (`core/restore.ts`); it cancels modifyHeaders rules of its priority and below. */
-    | { type: 'allow' };
+    | { type: "allow" };
 }
 
 /** Hands out rule IDs; the engine implements it on top of its ID pool. */
@@ -157,59 +170,87 @@ export interface CompiledRules {
   regexRuleCount: number;
 }
 
-export interface CompileTabInput extends Omit<CompileGroupInput, 'tabIds'> {
+export interface CompileTabInput extends Omit<CompileGroupInput, "tabIds"> {
   tabId: number;
 }
 
 /** @deprecated name kept for Stage A callers; same shape as `CompiledRules`. */
 export type CompiledTabRules = CompiledRules;
 
-const labels = (host: string): number => Math.min(labelCount(host), MAX_PRIORITY_LABELS);
+const labels = (host: string): number =>
+  Math.min(labelCount(host), MAX_PRIORITY_LABELS);
 /**
  * Four steps per label: WIDE, WIDE cross-site navigation, EXACT, EXACT cross-site navigation. A deeper host's lowest
  * rule still beats every rule of its parent.
  */
-export const hostRulePriority = (host: string): number => HOST_PRIORITY_BASE + 4 * labels(host);
-export const exactHostRulePriority = (host: string): number => HOST_PRIORITY_BASE + 4 * labels(host) + 2;
-export const insecureHostRulePriority = (host: string): number => INSECURE_PRIORITY_BASE + 4 * labels(host);
-export const insecureExactHostRulePriority = (host: string): number => INSECURE_PRIORITY_BASE + 4 * labels(host) + 2;
+export const hostRulePriority = (host: string): number =>
+  HOST_PRIORITY_BASE + 4 * labels(host);
+export const exactHostRulePriority = (host: string): number =>
+  HOST_PRIORITY_BASE + 4 * labels(host) + 2;
+export const insecureHostRulePriority = (host: string): number =>
+  INSECURE_PRIORITY_BASE + 4 * labels(host);
+export const insecureExactHostRulePriority = (host: string): number =>
+  INSECURE_PRIORITY_BASE + 4 * labels(host) + 2;
 /** Offset of the `thirdParty` + `main_frame` + GET rule above its host rule. */
 export const CROSS_SITE_NAVIGATION_STEP = 1;
-export const beaconSitePriority = (site: string): number => BEACON_PRIORITY + labels(site);
+export const beaconSitePriority = (site: string): number =>
+  BEACON_PRIORITY + labels(site);
 
 /** Key used to group cookies into beacon snapshots: the registrable domain, or the host itself when it has none. */
 export function beaconSiteOf(host: string): string {
   return registrableDomain(host) ?? host;
 }
 
-const urlHost = (host: string): string => (host.includes(':') && !host.startsWith('[') ? `[${host}]` : host);
-const escapeRegex = (s: string): string => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+const urlHost = (host: string): string =>
+  host.includes(":") && !host.startsWith("[") ? `[${host}]` : host;
+const escapeRegex = (s: string): string =>
+  s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
-type SchemeSet = 'any' | 'insecure';
+type SchemeSet = "any" | "insecure";
 const SCHEMES: Record<SchemeSet, readonly string[]> = {
-  any: ['http', 'https', 'ws', 'wss'],
-  insecure: ['http', 'ws'],
+  any: ["http", "https", "ws", "wss"],
+  insecure: ["http", "ws"],
 };
 
 /** Regex that matches URLs whose host is exactly `host` (any port), for the given schemes. */
-export function exactHostRegex(host: string, schemes: SchemeSet = 'any'): string {
-  const scheme = schemes === 'any' ? '(?:https?|wss?)' : '(?:http|ws)';
+export function exactHostRegex(
+  host: string,
+  schemes: SchemeSet = "any",
+): string {
+  const scheme = schemes === "any" ? "(?:https?|wss?)" : "(?:http|ws)";
   return `^${scheme}://${escapeRegex(urlHost(host))}(?::[0-9]+)?/`;
 }
 
 /** Fallback when the regex budget is spent: `|scheme://host^` per scheme (`^` = `/`, `:` or `?`, never `.`). */
-export function exactHostUrlFilters(host: string, schemes: SchemeSet = 'any'): string[] {
+export function exactHostUrlFilters(
+  host: string,
+  schemes: SchemeSet = "any",
+): string[] {
   return SCHEMES[schemes].map((scheme) => `|${scheme}://${urlHost(host)}^`);
 }
 
-export function compileTabRules(input: CompileTabInput, allocator: RuleIdAllocator): CompiledRules {
+export function compileTabRules(
+  input: CompileTabInput,
+  allocator: RuleIdAllocator,
+): CompiledRules {
   const { tabId, ...rest } = input;
   return compileGroupRules({ ...rest, tabIds: [tabId] }, allocator);
 }
 
-export function compileGroupRules(input: CompileGroupInput, allocator: RuleIdAllocator): CompiledRules {
-  const { tabIds, containerName, jar, topLevelSite = null, now = Date.now(), pageKeyOf } = input;
-  if (tabIds.length === 0) throw new RangeError('compileGroupRules: empty tab group');
+export function compileGroupRules(
+  input: CompileGroupInput,
+  allocator: RuleIdAllocator,
+): CompiledRules {
+  const {
+    tabIds,
+    containerName,
+    jar,
+    topLevelSite = null,
+    now = Date.now(),
+    pageKeyOf,
+  } = input;
+  if (tabIds.length === 0)
+    throw new RangeError("compileGroupRules: empty tab group");
   for (const tabId of tabIds) {
     if (!Number.isInteger(tabId) || tabId < 0) {
       // tabId -1 would match every request that does not belong to a tab (service workers, other extensions).
@@ -220,64 +261,107 @@ export function compileGroupRules(input: CompileGroupInput, allocator: RuleIdAll
   let regexRuleCount = 0;
 
   const addRules: DnrRule[] = [];
-  const emit = (rule: Omit<DnrRule, 'id'>): void => {
+  const emit = (rule: Omit<DnrRule, "id">): void => {
     if (rule.condition.regexFilter !== undefined) regexRuleCount++;
     addRules.push({ id: allocator.next(), ...rule });
   };
   // Fresh arrays per rule: the engine may mutate or serialise rules independently.
-  const base = () => ({ tabIds: [...tabIds], resourceTypes: [...ALL_RESOURCE_TYPES] });
-  const stripSetCookie = (): DnrHeaderOperation[] => [{ header: 'set-cookie', operation: 'remove' }];
-  const cookieAction = (cookies: Cookie[]): DnrRule['action'] => ({
-    type: 'modifyHeaders',
+  const base = () => ({
+    tabIds: [...tabIds],
+    resourceTypes: [...ALL_RESOURCE_TYPES],
+  });
+  const stripSetCookie = (): DnrHeaderOperation[] => [
+    { header: "set-cookie", operation: "remove" },
+  ];
+  const cookieAction = (cookies: Cookie[]): DnrRule["action"] => ({
+    type: "modifyHeaders",
     requestHeaders:
       cookies.length > 0
-        ? [{ header: 'cookie', operation: 'set', value: serializeCookieHeader(cookies) }]
-        : [{ header: 'cookie', operation: 'remove' }],
+        ? [
+            {
+              header: "cookie",
+              operation: "set",
+              value: serializeCookieHeader(cookies),
+            },
+          ]
+        : [{ header: "cookie", operation: "remove" }],
     responseHeaders: stripSetCookie(),
   });
 
-  type Fragment = Partial<DnrRule['condition']>;
+  type Fragment = Partial<DnrRule["condition"]>;
   /** How many rules one matcher fragment turns into for these cookies (see the SameSite split). */
   const splitSize = (cookies: Cookie[]): number => {
-    const none = cookies.filter((c) => c.sameSite === 'none').length;
+    const none = cookies.filter((c) => c.sameSite === "none").length;
     if (none === cookies.length) return 1;
-    const lax = cookies.filter((c) => c.sameSite !== 'strict').length;
+    const lax = cookies.filter((c) => c.sameSite !== "strict").length;
     return lax === none ? 2 : 3;
   };
   /** Cookie rules for one matcher fragment, split by SameSite (see the file comment). */
-  const emitCookieRules = (fragment: Fragment, priority: number, cookies: Cookie[]): void => {
-    const none = cookies.filter((c) => c.sameSite === 'none');
+  const emitCookieRules = (
+    fragment: Fragment,
+    priority: number,
+    cookies: Cookie[],
+  ): void => {
+    const none = cookies.filter((c) => c.sameSite === "none");
     if (none.length === cookies.length) {
-      emit({ priority, condition: { ...base(), ...fragment }, action: cookieAction(cookies) });
+      emit({
+        priority,
+        condition: { ...base(), ...fragment },
+        action: cookieAction(cookies),
+      });
       return;
     }
-    emit({ priority, condition: { ...base(), ...fragment, domainType: 'firstParty' }, action: cookieAction(cookies) });
-    emit({ priority, condition: { ...base(), ...fragment, domainType: 'thirdParty' }, action: cookieAction(none) });
-    const lax = cookies.filter((c) => c.sameSite !== 'strict');
+    emit({
+      priority,
+      condition: { ...base(), ...fragment, domainType: "firstParty" },
+      action: cookieAction(cookies),
+    });
+    emit({
+      priority,
+      condition: { ...base(), ...fragment, domainType: "thirdParty" },
+      action: cookieAction(none),
+    });
+    const lax = cookies.filter((c) => c.sameSite !== "strict");
     if (lax.length === none.length) return; // the thirdParty rule already says it
     emit({
       priority: priority + CROSS_SITE_NAVIGATION_STEP,
-      condition: { ...base(), ...fragment, domainType: 'thirdParty', resourceTypes: ['main_frame'], requestMethods: ['get'] },
+      condition: {
+        ...base(),
+        ...fragment,
+        domainType: "thirdParty",
+        resourceTypes: ["main_frame"],
+        requestMethods: ["get"],
+      },
       action: cookieAction(lax),
     });
   };
-  const emitExact = (host: string, schemes: SchemeSet, priority: number, cookies: Cookie[]): void => {
+  const emitExact = (
+    host: string,
+    schemes: SchemeSet,
+    priority: number,
+    cookies: Cookie[],
+  ): void => {
     const needed = splitSize(cookies);
     if (regexLeft >= needed) {
       regexLeft -= needed;
-      emitCookieRules({ requestDomains: [host], regexFilter: exactHostRegex(host, schemes) }, priority, cookies);
+      emitCookieRules(
+        { requestDomains: [host], regexFilter: exactHostRegex(host, schemes) },
+        priority,
+        cookies,
+      );
       return;
     }
     regexLeft = 0; // keep the fallback decision stable for the rest of this compile
-    for (const urlFilter of exactHostUrlFilters(host, schemes)) emitCookieRules({ requestDomains: [host], urlFilter }, priority, cookies);
+    for (const urlFilter of exactHostUrlFilters(host, schemes))
+      emitCookieRules({ requestDomains: [host], urlFilter }, priority, cookies);
   };
 
   emit({
     priority: CATCH_ALL_PRIORITY,
     condition: base(),
     action: {
-      type: 'modifyHeaders',
-      requestHeaders: [{ header: 'cookie', operation: 'remove' }],
+      type: "modifyHeaders",
+      requestHeaders: [{ header: "cookie", operation: "remove" }],
       responseHeaders: stripSetCookie(),
     },
   });
@@ -297,7 +381,11 @@ export function compileGroupRules(input: CompileGroupInput, allocator: RuleIdAll
   for (const host of jar.hosts(now)) {
     const full = jar.cookiesForHost(host, { secure: true, topLevelSite, now });
     if (full.length === 0) continue; // e.g. only partitioned cookies of another site
-    const plain = jar.cookiesForHost(host, { secure: false, topLevelSite, now });
+    const plain = jar.cookiesForHost(host, {
+      secure: false,
+      topLevelSite,
+      now,
+    });
     plans.push({
       host,
       full,
@@ -311,25 +399,44 @@ export function compileGroupRules(input: CompileGroupInput, allocator: RuleIdAll
   for (const { host, full, wide, hasHostOnly } of plans) {
     // With no Domain cookie matching `host`, no ancestor has one either, so subdomains correctly fall through to
     // the catch-all (or to an ancestor rule that is equally empty of matching cookies).
-    if (wide.length > 0) emitCookieRules({ requestDomains: [host] }, hostRulePriority(host), wide);
-    if (hasHostOnly) emitExact(host, 'any', exactHostRulePriority(host), full);
+    if (wide.length > 0)
+      emitCookieRules({ requestDomains: [host] }, hostRulePriority(host), wide);
+    if (hasHostOnly) emitExact(host, "any", exactHostRulePriority(host), full);
   }
 
   // A host needs its own http rules if it holds Secure cookies, or if an ancestor does (the ancestor's higher-band
   // http rule would otherwise also win for this host and hide this host's own cookies).
   const insecureHosts: string[] = [];
-  const byDepth = [...plans].sort((a, b) => labelCount(a.host) - labelCount(b.host) || (a.host < b.host ? -1 : 1));
+  const byDepth = [...plans].sort(
+    (a, b) =>
+      labelCount(a.host) - labelCount(b.host) || (a.host < b.host ? -1 : 1),
+  );
   for (const { host, full, plain } of byDepth) {
     if (isPotentiallyTrustworthyHost(host)) continue;
     const differs = plain.length !== full.length;
-    if (differs || insecureHosts.some((parent) => isSameOrSubdomain(host, parent))) insecureHosts.push(host);
+    if (
+      differs ||
+      insecureHosts.some((parent) => isSameOrSubdomain(host, parent))
+    )
+      insecureHosts.push(host);
   }
   for (const host of insecureHosts) {
     const plan = plans.find((p) => p.host === host)!;
     // `emitCookieRules` covers every request category (one rule without domainType, or the split), also with an empty
     // list: a missing http rule would let the secure-band rule (Secure cookies included) answer plain http.
-    if (plan.wide.length > 0) emitCookieRules({ requestDomains: [host], urlFilter: '|http://' }, insecureHostRulePriority(host), plan.widePlain);
-    if (plan.hasHostOnly) emitExact(host, 'insecure', insecureExactHostRulePriority(host), plan.plain);
+    if (plan.wide.length > 0)
+      emitCookieRules(
+        { requestDomains: [host], urlFilter: "|http://" },
+        insecureHostRulePriority(host),
+        plan.widePlain,
+      );
+    if (plan.hasHostOnly)
+      emitExact(
+        host,
+        "insecure",
+        insecureExactHostRulePriority(host),
+        plan.plain,
+      );
   }
 
   // Beacon: a generic "ask again" answer, and one answer per site with that site's page key and cookie snapshot.
@@ -337,29 +444,52 @@ export function compileGroupRules(input: CompileGroupInput, allocator: RuleIdAll
   emit({
     priority: BEACON_PRIORITY,
     condition: { ...base(), urlFilter: BEACON_URL_FILTER },
-    action: { type: 'redirect', redirect: { url: beaconDataUrl({ p: 1, ...named }) } },
+    action: {
+      type: "redirect",
+      redirect: { url: beaconDataUrl({ p: 1, ...named }) },
+    },
   });
-  for (const [site, payload] of buildSiteBeaconPayloads(jar, topLevelSite, now, { pageKeyOf, containerName, frameSites: input.frameSites })) {
+  for (const [site, payload] of buildSiteBeaconPayloads(
+    jar,
+    topLevelSite,
+    now,
+    { pageKeyOf, containerName, frameSites: input.frameSites },
+  )) {
     emit({
       priority: beaconSitePriority(site),
-      condition: { ...base(), urlFilter: BEACON_URL_FILTER, initiatorDomains: [site] },
-      action: { type: 'redirect', redirect: { url: beaconDataUrl(payload) } },
+      condition: {
+        ...base(),
+        urlFilter: BEACON_URL_FILTER,
+        initiatorDomains: [site],
+      },
+      action: { type: "redirect", redirect: { url: beaconDataUrl(payload) } },
     });
   }
 
   return { addRules, ruleIds: addRules.map((rule) => rule.id), regexRuleCount };
 }
 
-
 /** Non-HttpOnly, unexpired cookies a page of this group could see through `document.cookie` (on some host). */
-export function scriptVisibleCookies(jar: CookieJar, topLevelSite: string | null, now: number): Cookie[] {
+export function scriptVisibleCookies(
+  jar: CookieJar,
+  topLevelSite: string | null,
+  now: number,
+): Cookie[] {
   return jar
     .all()
-    .filter((c) => !c.httpOnly && !isExpired(c, now) && (!c.partitioned || (topLevelSite !== null && c.partitionKey === topLevelSite)));
+    .filter(
+      (c) =>
+        !c.httpOnly &&
+        !isExpired(c, now) &&
+        (!c.partitioned ||
+          (topLevelSite !== null && c.partitionKey === topLevelSite)),
+    );
 }
 
 /** Script-visible cookies grouped by `beaconSiteOf(cookie.domain)`, sorted by site. */
-export function groupCookiesBySite(cookies: readonly Cookie[]): Map<string, Cookie[]> {
+export function groupCookiesBySite(
+  cookies: readonly Cookie[],
+): Map<string, Cookie[]> {
   const bySite = new Map<string, Cookie[]>();
   for (const cookie of cookies) {
     const site = beaconSiteOf(cookie.domain);
@@ -379,16 +509,31 @@ export function buildSiteBeaconPayloads(
   jar: CookieJar,
   topLevelSite: string | null,
   now: number,
-  options: { pageKeyOf(site: string): string; containerName?: string; frameSites?: Iterable<string> },
+  options: {
+    pageKeyOf(site: string): string;
+    containerName?: string;
+    frameSites?: Iterable<string>;
+  },
 ): Map<string, BeaconPayload> {
-  const bySite = groupCookiesBySite(scriptVisibleCookies(jar, topLevelSite, now));
-  for (const site of options.frameSites ?? []) if (!bySite.has(site)) bySite.set(site, []);
+  const bySite = groupCookiesBySite(
+    scriptVisibleCookies(jar, topLevelSite, now),
+  );
+  for (const site of options.frameSites ?? [])
+    if (!bySite.has(site)) bySite.set(site, []);
   const result = new Map<string, BeaconPayload>();
   for (const site of [...bySite.keys()].sort()) {
     const cookies = bySite.get(site)!;
-    const identity: BeaconPayload = options.containerName === undefined ? { c: options.pageKeyOf(site) } : { c: options.pageKeyOf(site), n: options.containerName };
+    const identity: BeaconPayload =
+      options.containerName === undefined
+        ? { c: options.pageKeyOf(site) }
+        : { c: options.pageKeyOf(site), n: options.containerName };
     const tooBig = JSON.stringify(cookies).length > BEACON_COOKIE_BYTE_LIMIT;
-    result.set(site, tooBig ? { ...identity, o: 1 } : { ...identity, k: cookies, s: topLevelSite });
+    result.set(
+      site,
+      tooBig
+        ? { ...identity, o: 1 }
+        : { ...identity, k: cookies, s: topLevelSite },
+    );
   }
   return result;
 }
@@ -401,13 +546,20 @@ export function beaconDataUrl(payload: object): string {
  * Global answer for frames on origins SplitSession has seen inside containers, in tabs WITHOUT a container: tells the
  * shim to keep service workers away and to hide container-namespaced storage. Not tab-scoped; dynamic rule.
  */
-export function compileManagedBeaconRule(id: number, managedSites: readonly string[]): DnrRule | null {
+export function compileManagedBeaconRule(
+  id: number,
+  managedSites: readonly string[],
+): DnrRule | null {
   if (managedSites.length === 0) return null;
   return {
     id,
     priority: MANAGED_BEACON_PRIORITY,
-    condition: { resourceTypes: ['xmlhttprequest'], urlFilter: BEACON_URL_FILTER, initiatorDomains: [...managedSites] },
-    action: { type: 'redirect', redirect: { url: beaconDataUrl({ m: 1 }) } },
+    condition: {
+      resourceTypes: ["xmlhttprequest"],
+      urlFilter: BEACON_URL_FILTER,
+      initiatorDomains: [...managedSites],
+    },
+    action: { type: "redirect", redirect: { url: beaconDataUrl({ m: 1 }) } },
   };
 }
 
@@ -416,8 +568,11 @@ export function compileStrictGuardRule(id: number): DnrRule {
   return {
     id,
     priority: STRICT_GUARD_PRIORITY,
-    condition: { resourceTypes: ['xmlhttprequest'], urlFilter: BEACON_URL_FILTER },
-    action: { type: 'redirect', redirect: { url: beaconDataUrl({ g: 1 }) } },
+    condition: {
+      resourceTypes: ["xmlhttprequest"],
+      urlFilter: BEACON_URL_FILTER,
+    },
+    action: { type: "redirect", redirect: { url: beaconDataUrl({ g: 1 }) } },
   };
 }
 
@@ -433,7 +588,10 @@ export function compileStrictGuardRule(id: number): DnrRule {
  * Cost: requests of the real profile that a managed site's worker or shared worker starts go without cookies too.
  * Strict mode only.
  */
-export function compileNoTabRule(id: number, managedSites: readonly string[]): DnrRule | null {
+export function compileNoTabRule(
+  id: number,
+  managedSites: readonly string[],
+): DnrRule | null {
   if (managedSites.length === 0) return null;
   return {
     id,
@@ -445,9 +603,9 @@ export function compileNoTabRule(id: number, managedSites: readonly string[]): D
       resourceTypes: [...ALL_RESOURCE_TYPES],
     },
     action: {
-      type: 'modifyHeaders',
-      requestHeaders: [{ header: 'cookie', operation: 'remove' }],
-      responseHeaders: [{ header: 'set-cookie', operation: 'remove' }],
+      type: "modifyHeaders",
+      requestHeaders: [{ header: "cookie", operation: "remove" }],
+      responseHeaders: [{ header: "set-cookie", operation: "remove" }],
     },
   };
 }
@@ -465,8 +623,8 @@ export function compileNoTabWorkerScriptRule(id: number): DnrRule {
   return {
     id,
     priority: CATCH_ALL_PRIORITY,
-    condition: { tabIds: [TAB_ID_NONE], resourceTypes: ['script'] },
-    action: { type: 'block' },
+    condition: { tabIds: [TAB_ID_NONE], resourceTypes: ["script"] },
+    action: { type: "block" },
   };
 }
 
@@ -479,17 +637,27 @@ export function compileNoTabWorkerScriptRule(id: number): DnrRule {
  * import scripts from a managed site (a CDN). Cost: shared workers of managed sites cannot `importScripts` or
  * statically import modules from their own site. Strict mode replaces it with the global block above.
  */
-export function compileManagedWorkerScriptRule(id: number, managedSites: readonly string[]): DnrRule | null {
+export function compileManagedWorkerScriptRule(
+  id: number,
+  managedSites: readonly string[],
+): DnrRule | null {
   if (managedSites.length === 0) return null;
   return {
     id,
     priority: CATCH_ALL_PRIORITY,
-    condition: { tabIds: [TAB_ID_NONE], resourceTypes: ['script'], requestDomains: [...managedSites], initiatorDomains: [...managedSites] },
-    action: { type: 'block' },
+    condition: {
+      tabIds: [TAB_ID_NONE],
+      resourceTypes: ["script"],
+      requestDomains: [...managedSites],
+      initiatorDomains: [...managedSites],
+    },
+    action: { type: "block" },
   };
 }
 
-export function totalRuleCount(compiled: Iterable<Pick<CompiledRules, 'ruleIds'>>): number {
+export function totalRuleCount(
+  compiled: Iterable<Pick<CompiledRules, "ruleIds">>,
+): number {
   let total = 0;
   for (const { ruleIds } of compiled) total += ruleIds.length;
   return total;

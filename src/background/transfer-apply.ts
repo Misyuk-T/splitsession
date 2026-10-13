@@ -1,12 +1,12 @@
 import {
   buildExport,
-  parseExport,
   type ContainerId,
   type DomainRule,
   type ExportFile,
-} from '../core';
-import type { Facet } from './facet';
-import type { RuleStore } from './rule-store';
+  parseExport,
+} from "../core";
+import type { Facet } from "./facet";
+import type { RuleStore } from "./rule-store";
 
 export interface ImportSummary {
   createdContainers: number;
@@ -16,13 +16,19 @@ export interface ImportSummary {
 }
 
 /** Containers and rules as an export file; cookie jars only when `includeJars` is true. */
-export async function exportData(facet: Facet, rules: RuleStore, includeJars: boolean): Promise<ExportFile> {
+export async function exportData(
+  facet: Facet,
+  rules: RuleStore,
+  includeJars: boolean,
+): Promise<ExportFile> {
   await facet.ready;
   const containers = facet.containers.list();
   return buildExport({
     containers,
     rules: rules.list(),
-    jars: includeJars ? Object.fromEntries(containers.map((c) => [c.id, facet.getJar(c.id)])) : undefined,
+    jars: includeJars
+      ? Object.fromEntries(containers.map((c) => [c.id, facet.getJar(c.id)]))
+      : undefined,
   });
 }
 
@@ -31,7 +37,11 @@ export async function exportData(facet: Facet, rules: RuleStore, includeJars: bo
  * name (case-insensitively) and created when missing, imported rules replace rules for the same domain, and cookies
  * (when the file has them) are merged into the matching container's jar.
  */
-export async function importData(facet: Facet, rules: RuleStore, raw: unknown): Promise<ImportSummary> {
+export async function importData(
+  facet: Facet,
+  rules: RuleStore,
+  raw: unknown,
+): Promise<ImportSummary> {
   await facet.ready;
   const parsed = parseExport(raw);
   if (!parsed.ok) throw new Error(parsed.error);
@@ -46,7 +56,10 @@ export async function importData(facet: Facet, rules: RuleStore, raw: unknown): 
       local.set(c.id, existing.id);
       matched++;
     } else {
-      const made = await facet.createContainer({ name: c.name, color: c.color });
+      const made = await facet.createContainer({
+        name: c.name,
+        color: c.color,
+      });
       local.set(c.id, made.id);
       created++;
     }
@@ -60,7 +73,7 @@ export async function importData(facet: Facet, rules: RuleStore, raw: unknown): 
     const now = Date.now();
     for (const cookie of list) {
       const outcome = jar.upsert(cookie, { now });
-      if (outcome === 'added' || outcome === 'updated') cookies++;
+      if (outcome === "added" || outcome === "updated") cookies++;
     }
     facet.containers.touchJar(id);
     if (facet.tabs.tabsOf(id).length > 0) await facet.rules.invalidate(id);
@@ -68,9 +81,23 @@ export async function importData(facet: Facet, rules: RuleStore, raw: unknown): 
 
   for (const rule of file.rules) {
     const mapped: DomainRule =
-      rule.action === 'ask' ? { domain: rule.domain, action: 'ask' } : { domain: rule.domain, action: 'always', containerId: local.get(rule.containerId!) };
+      rule.action === "ask"
+        ? { domain: rule.domain, action: "ask" }
+        : {
+            domain: rule.domain,
+            action: "always",
+            containerId: local.get(rule.containerId!),
+          };
     await rules.set(mapped);
   }
-  facet.log('info', `import: ${created} containers created, ${matched} matched, ${file.rules.length} rules, ${cookies} cookies`);
-  return { createdContainers: created, matchedContainers: matched, rules: file.rules.length, cookies };
+  facet.log(
+    "info",
+    `import: ${created} containers created, ${matched} matched, ${file.rules.length} rules, ${cookies} cookies`,
+  );
+  return {
+    createdContainers: created,
+    matchedContainers: matched,
+    rules: file.rules.length,
+    cookies,
+  };
 }

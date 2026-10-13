@@ -1,4 +1,4 @@
-import { parse } from 'tldts';
+import { parse } from "tldts";
 
 // Private-registry suffixes (github.io, blogspot.com, ...) count as public suffixes, as in Chrome.
 const TLDTS_OPTIONS = { allowPrivateDomains: true } as const;
@@ -43,13 +43,18 @@ export function isSameOrSubdomain(host: string, ancestor: string): boolean {
 }
 
 export function labelCount(host: string): number {
-  return host.split('.').length;
+  return host.split(".").length;
 }
 
 /** Hosts Chrome treats as secure contexts even over plain HTTP (so `Secure` cookies work there). */
 export function isPotentiallyTrustworthyHost(host: string): boolean {
   const h = hostnameOf(host);
-  return h === 'localhost' || h.endsWith('.localhost') || h === '::1' || /^127(?:\.\d{1,3}){3}$/.test(h);
+  return (
+    h === "localhost" ||
+    h.endsWith(".localhost") ||
+    h === "::1" ||
+    /^127(?:\.\d{1,3}){3}$/.test(h)
+  );
 }
 
 /** https/wss, or any scheme over a trustworthy host: the requests on which `Secure` cookies may be sent. */
@@ -60,8 +65,9 @@ export function isSecureUrl(url: string): boolean {
   } catch {
     return false;
   }
-  if (parsed.protocol === 'https:' || parsed.protocol === 'wss:') return true;
-  if (parsed.protocol === 'http:' || parsed.protocol === 'ws:') return isPotentiallyTrustworthyHost(parsed.hostname);
+  if (parsed.protocol === "https:" || parsed.protocol === "wss:") return true;
+  if (parsed.protocol === "http:" || parsed.protocol === "ws:")
+    return isPotentiallyTrustworthyHost(parsed.hostname);
   return false;
 }
 
@@ -71,3 +77,7 @@ export function siteOf(url: string): string {
   const host = hostnameOf(parsed.hostname);
   return `${parsed.protocol.slice(0, -1)}://${registrableDomain(host) ?? host}`;
 }
+
+/** An http(s) address (the only kind containers, rules and the restore gate deal with). */
+export const isHttpUrl = (url: string | null | undefined): url is string =>
+  !!url && /^https?:\/\//i.test(url);

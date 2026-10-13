@@ -1,4 +1,9 @@
-import { domainMatches, hostnameOf, isSecureUrl, type ContainerId } from '../../core';
+import {
+  type ContainerId,
+  domainMatches,
+  hostnameOf,
+  isSecureUrl,
+} from "../../core";
 
 /**
  * Finds top-level navigations that went out with outdated cookies, so they can be repeated once.
@@ -41,7 +46,7 @@ export interface CookieChange {
    * `strict` cookies are not used as expectations: a cross-site (or browser-initiated) top-level navigation
    * legitimately goes without them (the rules split cookies by SameSite).
    */
-  sameSite?: 'strict' | 'lax' | 'none' | 'unspecified';
+  sameSite?: "strict" | "lax" | "none" | "unspecified";
 }
 
 export interface ChangeWindow {
@@ -56,7 +61,7 @@ export interface Renavigation {
   url: string;
   /** The stale request; re-navigate once it finished (a same-URL navigation while it is in flight can be dropped). */
   requestId: string;
-  reason: 'stale-cookies' | 'pre-assignment';
+  reason: "stale-cookies" | "pre-assignment";
 }
 
 export interface StaleDetectorOptions {
@@ -82,19 +87,24 @@ interface AssignmentWindow {
 const RENAVIGABLE = /^https?:/i;
 
 /** `a=1; b=2` -> [['a','1'], ['b','2']]; a pair without `=` is a nameless cookie. */
-export function parseCookieHeader(header: string | null): Array<[string, string]> {
+export function parseCookieHeader(
+  header: string | null,
+): Array<[string, string]> {
   if (!header) return [];
   return header
-    .split(';')
+    .split(";")
     .map((part) => part.trim())
-    .filter((part) => part !== '')
+    .filter((part) => part !== "")
     .map((part) => {
-      const eq = part.indexOf('=');
-      return eq === -1 ? ['', part] : [part.slice(0, eq), part.slice(eq + 1)];
+      const eq = part.indexOf("=");
+      return eq === -1 ? ["", part] : [part.slice(0, eq), part.slice(eq + 1)];
     });
 }
 
-export function violates(send: Pick<MainFrameSend, 'url' | 'cookie'>, changes: readonly CookieChange[]): boolean {
+export function violates(
+  send: Pick<MainFrameSend, "url" | "cookie">,
+  changes: readonly CookieChange[],
+): boolean {
   let host: string;
   try {
     host = hostnameOf(new URL(send.url).hostname);
@@ -104,10 +114,19 @@ export function violates(send: Pick<MainFrameSend, 'url' | 'cookie'>, changes: r
   const secureRequest = isSecureUrl(send.url);
   const pairs = parseCookieHeader(send.cookie);
   for (const change of changes) {
-    const applies = change.hostOnly ? host === change.domain : domainMatches(host, change.domain);
-    if (!applies || change.partitioned || change.sameSite === 'strict' || (change.secure && !secureRequest)) continue;
+    const applies = change.hostOnly
+      ? host === change.domain
+      : domainMatches(host, change.domain);
+    if (
+      !applies ||
+      change.partitioned ||
+      change.sameSite === "strict" ||
+      (change.secure && !secureRequest)
+    )
+      continue;
     if (change.value !== null) {
-      if (!pairs.some(([n, v]) => n === change.name && v === change.value)) return true;
+      if (!pairs.some(([n, v]) => n === change.name && v === change.value))
+        return true;
     } else if (pairs.some(([n]) => n === change.name)) {
       return true;
     }
@@ -144,12 +163,17 @@ export class StaleNavigationDetector {
   noteSend(send: MainFrameSend): Renavigation[] {
     this.prune();
     this.sends.set(send.requestId, { ...send });
-    const assignment = this.assignments.find((a) => a.tabId === send.tabId && this.inAssignment(send, a));
-    if (assignment) return this.claim(send, 'pre-assignment', `a${assignment.activeAt}`);
+    const assignment = this.assignments.find(
+      (a) => a.tabId === send.tabId && this.inAssignment(send, a),
+    );
+    if (assignment)
+      return this.claim(send, "pre-assignment", `a${assignment.activeAt}`);
     const containerId = this.containerOf(send.tabId);
     if (!containerId) return [];
-    const hit = this.windows.find((w) => w.containerId === containerId && this.inWindow(send, w));
-    return hit ? this.claim(send, 'stale-cookies', `w${hit.from}`) : [];
+    const hit = this.windows.find(
+      (w) => w.containerId === containerId && this.inWindow(send, w),
+    );
+    return hit ? this.claim(send, "stale-cookies", `w${hit.from}`) : [];
   }
 
   noteChange(window: ChangeWindow): Renavigation[] {
@@ -159,13 +183,18 @@ export class StaleNavigationDetector {
     const out: Renavigation[] = [];
     for (const send of this.sends.values()) {
       if (this.containerOf(send.tabId) !== window.containerId) continue;
-      if (this.inWindow(send, window)) out.push(...this.claim(send, 'stale-cookies', `w${window.from}`));
+      if (this.inWindow(send, window))
+        out.push(...this.claim(send, "stale-cookies", `w${window.from}`));
     }
     return out;
   }
 
   /** The tab's rules became active at `activeAt`; its main-frame requests before (or racing) that were not isolated. */
-  noteAssignment(tabId: number, activeAt: number, isForeign: (send: MainFrameSend) => boolean): Renavigation[] {
+  noteAssignment(
+    tabId: number,
+    activeAt: number,
+    isForeign: (send: MainFrameSend) => boolean,
+  ): Renavigation[] {
     this.prune();
     const window: AssignmentWindow = { tabId, activeAt, isForeign };
     this.assignments = this.assignments.filter((a) => a.tabId !== tabId);
@@ -175,7 +204,7 @@ export class StaleNavigationDetector {
       if (send.tabId !== tabId || !this.inAssignment(send, window)) continue;
       if (!latest || send.sentAt > latest.sentAt) latest = send;
     }
-    return latest ? this.claim(latest, 'pre-assignment', `a${activeAt}`) : [];
+    return latest ? this.claim(latest, "pre-assignment", `a${activeAt}`) : [];
   }
 
   /** The caller navigates this tab itself (e.g. `#ctr=` handling): do not re-navigate it for a while. */
@@ -186,45 +215,72 @@ export class StaleNavigationDetector {
   /** Most recent main-frame send of a tab, if still remembered. */
   latestSend(tabId: number): MainFrameSend | undefined {
     let latest: MainFrameSend | undefined;
-    for (const send of this.sends.values()) if (send.tabId === tabId && (!latest || send.sentAt >= latest.sentAt)) latest = send;
+    for (const send of this.sends.values())
+      if (send.tabId === tabId && (!latest || send.sentAt >= latest.sentAt))
+        latest = send;
     return latest;
   }
 
   forgetTab(tabId: number): void {
-    for (const [id, send] of this.sends) if (send.tabId === tabId) this.sends.delete(id);
+    for (const [id, send] of this.sends)
+      if (send.tabId === tabId) this.sends.delete(id);
     this.assignments = this.assignments.filter((a) => a.tabId !== tabId);
   }
 
   private inWindow(send: MainFrameSend, w: ChangeWindow): boolean {
-    return send.sentAt >= w.from && send.sentAt < w.until + this.lagMs && violates(send, w.changes);
+    return (
+      send.sentAt >= w.from &&
+      send.sentAt < w.until + this.lagMs &&
+      violates(send, w.changes)
+    );
   }
 
   private inAssignment(send: MainFrameSend, a: AssignmentWindow): boolean {
-    if (send.sentAt < a.activeAt - this.lookbackMs || send.sentAt >= a.activeAt + this.lagMs) return false;
+    if (
+      send.sentAt < a.activeAt - this.lookbackMs ||
+      send.sentAt >= a.activeAt + this.lagMs
+    )
+      return false;
     return send.sentAt < a.activeAt || a.isForeign(send);
   }
 
-  private claim(send: MainFrameSend, reason: Renavigation['reason'], windowKey: string): Renavigation[] {
-    if (send.method.toUpperCase() !== 'GET' || !RENAVIGABLE.test(send.url)) return [];
+  private claim(
+    send: MainFrameSend,
+    reason: Renavigation["reason"],
+    windowKey: string,
+  ): Renavigation[] {
+    if (send.method.toUpperCase() !== "GET" || !RENAVIGABLE.test(send.url))
+      return [];
     const now = this.now();
     if ((this.suppressedUntil.get(send.tabId) ?? 0) > now) return [];
     const key = `${send.tabId} ${send.url} ${windowKey}`;
     if (this.claimed.has(key)) return [];
-    const recent = (this.perTab.get(send.tabId) ?? []).filter((at) => now - at < this.dedupeMs);
+    const recent = (this.perTab.get(send.tabId) ?? []).filter(
+      (at) => now - at < this.dedupeMs,
+    );
     if (recent.length >= this.maxPerTab) return [];
     this.claimed.set(key, now);
     this.perTab.set(send.tabId, [...recent, now]);
-    return [{ tabId: send.tabId, url: send.url, requestId: send.requestId, reason }];
+    return [
+      { tabId: send.tabId, url: send.url, requestId: send.requestId, reason },
+    ];
   }
 
   private prune(): void {
     const now = this.now();
     const cutoff = now - this.retentionMs;
-    for (const [id, send] of this.sends) if (send.sentAt < cutoff) this.sends.delete(id);
+    for (const [id, send] of this.sends)
+      if (send.sentAt < cutoff) this.sends.delete(id);
     this.windows = this.windows.filter((w) => w.until + this.lagMs >= cutoff);
-    this.assignments = this.assignments.filter((a) => a.activeAt + this.lagMs >= cutoff);
-    for (const [key, at] of this.claimed) if (now - at >= this.retentionMs) this.claimed.delete(key);
-    for (const [tabId, list] of this.perTab) if (list.every((at) => now - at >= this.dedupeMs)) this.perTab.delete(tabId);
-    for (const [tabId, until] of this.suppressedUntil) if (until < now) this.suppressedUntil.delete(tabId);
+    this.assignments = this.assignments.filter(
+      (a) => a.activeAt + this.lagMs >= cutoff,
+    );
+    for (const [key, at] of this.claimed)
+      if (now - at >= this.retentionMs) this.claimed.delete(key);
+    for (const [tabId, list] of this.perTab)
+      if (list.every((at) => now - at >= this.dedupeMs))
+        this.perTab.delete(tabId);
+    for (const [tabId, until] of this.suppressedUntil)
+      if (until < now) this.suppressedUntil.delete(tabId);
   }
 }

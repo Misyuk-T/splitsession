@@ -1,16 +1,24 @@
-import { CONTAINER_HEX, readableTextColor, type Container, type ContainerId } from '../core';
+import {
+  type Container,
+  CONTAINER_HEX,
+  type ContainerId,
+  readableTextColor,
+} from "../core";
 
 export interface ActionApi {
   setBadgeText(details: { tabId?: number; text: string }): Promise<void>;
-  setBadgeBackgroundColor(details: { tabId?: number; color: string }): Promise<void>;
+  setBadgeBackgroundColor(details: {
+    tabId?: number;
+    color: string;
+  }): Promise<void>;
   setBadgeTextColor?(details: { tabId?: number; color: string }): Promise<void>;
   setTitle?(details: { tabId?: number; title: string }): Promise<void>;
 }
 
 /** The badge colour while the agent bridge is on (the popup's amber). */
-export const BRIDGE_ON_COLOR = '#f59e0b';
+export const BRIDGE_ON_COLOR = "#f59e0b";
 /** The badge of a tab that waits for the user to choose its container (restore): bright, on purpose. */
-export const HELD_COLOR = '#ef2d2d';
+export const HELD_COLOR = "#ef2d2d";
 
 /** How long a notice ("moved to …") replaces the container's colour dot on the badge. */
 export const NOTICE_MS = 4_000;
@@ -29,7 +37,10 @@ export const NOTICE_MS = 4_000;
  */
 export class BadgeIndicator {
   /** Per tab: a notice shown instead of the usual badge until `until` (survives the re-application after navigation). */
-  private readonly notices = new Map<number, { text: string; title: string; until: number }>();
+  private readonly notices = new Map<
+    number,
+    { text: string; title: string; until: number }
+  >();
 
   constructor(
     private readonly action: ActionApi,
@@ -50,10 +61,12 @@ export class BadgeIndicator {
     const held = this.lookup.heldCount?.() ?? 0;
     try {
       const color = on ? BRIDGE_ON_COLOR : held > 0 ? HELD_COLOR : null;
-      await this.action.setBadgeText({ text: on ? 'ON' : held > 0 ? '!' : '' });
+      await this.action.setBadgeText({ text: on ? "ON" : held > 0 ? "!" : "" });
       if (color) {
         await this.action.setBadgeBackgroundColor({ color });
-        await this.action.setBadgeTextColor?.({ color: readableTextColor(color) });
+        await this.action.setBadgeTextColor?.({
+          color: readableTextColor(color),
+        });
       }
       await this.action.setTitle?.({ title: this.globalTitle() });
     } catch {
@@ -66,10 +79,16 @@ export class BadgeIndicator {
     const on = __FULL__ && (this.lookup.bridgeOn?.() ?? false);
     const held = this.lookup.heldCount?.() ?? 0;
     const notes = [
-      ...(on ? ['agent bridge ON: an agent has full access to your tabs'] : []),
-      ...(held > 0 ? [`${held === 1 ? '1 tab is' : `${held} tabs are`} waiting for you to choose a container (open SplitSession)`] : []),
+      ...(on ? ["agent bridge ON: an agent has full access to your tabs"] : []),
+      ...(held > 0
+        ? [
+            `${held === 1 ? "1 tab is" : `${held} tabs are`} waiting for you to choose a container (open SplitSession)`,
+          ]
+        : []),
     ];
-    return notes.length > 0 ? `SplitSession — ${notes.join('; ')}` : 'SplitSession';
+    return notes.length > 0
+      ? `SplitSession — ${notes.join("; ")}`
+      : "SplitSession";
   }
 
   /**
@@ -78,7 +97,11 @@ export class BadgeIndicator {
    */
   async notice(tabId: number, message: string, ms = NOTICE_MS): Promise<void> {
     if (tabId < 0) return;
-    this.notices.set(tabId, { text: '→', title: `SplitSession — ${message}`, until: Date.now() + ms });
+    this.notices.set(tabId, {
+      text: "→",
+      title: `SplitSession — ${message}`,
+      until: Date.now() + ms,
+    });
     await this.apply(tabId);
     setTimeout(() => {
       const current = this.notices.get(tabId);
@@ -99,31 +122,51 @@ export class BadgeIndicator {
         const color = CONTAINER_HEX[container.color];
         await this.action.setBadgeText({ tabId, text: notice.text });
         await this.action.setBadgeBackgroundColor({ tabId, color });
-        await this.action.setBadgeTextColor?.({ tabId, color: readableTextColor(color) });
+        await this.action.setBadgeTextColor?.({
+          tabId,
+          color: readableTextColor(color),
+        });
         await this.action.setTitle?.({ tabId, title: notice.title });
         return;
       }
-      if (notice) await this.action.setTitle?.({ tabId, title: this.globalTitle() });
+      if (notice)
+        await this.action.setTitle?.({ tabId, title: this.globalTitle() });
       if (!container && this.lookup.isHeld?.(tabId)) {
-        await this.action.setBadgeText({ tabId, text: '!' });
+        await this.action.setBadgeText({ tabId, text: "!" });
         await this.action.setBadgeBackgroundColor({ tabId, color: HELD_COLOR });
-        await this.action.setBadgeTextColor?.({ tabId, color: readableTextColor(HELD_COLOR) });
-        await this.action.setTitle?.({ tabId, title: 'SplitSession — this tab is waiting for you to choose its container' });
+        await this.action.setBadgeTextColor?.({
+          tabId,
+          color: readableTextColor(HELD_COLOR),
+        });
+        await this.action.setTitle?.({
+          tabId,
+          title:
+            "SplitSession — this tab is waiting for you to choose its container",
+        });
         return;
       }
       if (!container) {
-        await this.action.setBadgeText({ tabId, text: on ? 'ON' : '' });
+        await this.action.setBadgeText({ tabId, text: on ? "ON" : "" });
         if (on) {
-          await this.action.setBadgeBackgroundColor({ tabId, color: BRIDGE_ON_COLOR });
-          await this.action.setBadgeTextColor?.({ tabId, color: readableTextColor(BRIDGE_ON_COLOR) });
+          await this.action.setBadgeBackgroundColor({
+            tabId,
+            color: BRIDGE_ON_COLOR,
+          });
+          await this.action.setBadgeTextColor?.({
+            tabId,
+            color: readableTextColor(BRIDGE_ON_COLOR),
+          });
         }
         return;
       }
       // A colour, not letters: initials like "12" (container "123") read as a count. The bridge's "ON" keeps the container colour.
       const color = CONTAINER_HEX[container.color];
-      await this.action.setBadgeText({ tabId, text: on ? 'ON' : ' ' });
+      await this.action.setBadgeText({ tabId, text: on ? "ON" : " " });
       await this.action.setBadgeBackgroundColor({ tabId, color });
-      await this.action.setBadgeTextColor?.({ tabId, color: readableTextColor(color) });
+      await this.action.setBadgeTextColor?.({
+        tabId,
+        color: readableTextColor(color),
+      });
     } catch {
       // the tab closed while we were setting its badge
     }

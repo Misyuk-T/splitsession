@@ -1,4 +1,4 @@
-import type { RuleIdAllocator } from '../../core';
+import type { RuleIdAllocator } from "../../core";
 
 /**
  * Session-rule ID pool. IDs released by a batch may be handed out again in the same batch: Chrome applies

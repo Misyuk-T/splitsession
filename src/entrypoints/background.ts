@@ -1,6 +1,6 @@
-import { main } from '../background';
+import { main } from "../background";
 
 export default defineBackground({
-  type: 'module',
+  type: "module",
   main,
 });

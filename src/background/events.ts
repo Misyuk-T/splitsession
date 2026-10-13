@@ -1,15 +1,20 @@
-import type { Container, ContainerId } from '../core';
+import type { Container, ContainerId } from "../core";
 
 /** What the engine tells the Stage C modules (tab groups, badges, domain rules). Emitted by `Facet`. */
 export type FacetEvent =
-  | { type: 'tab-assigned'; tabId: number; containerId: ContainerId }
+  | { type: "tab-assigned"; tabId: number; containerId: ContainerId }
   /** Also emitted when a tab is closed; the tab may already be gone. */
-  | { type: 'tab-unassigned'; tabId: number; containerId: ContainerId }
-  | { type: 'tab-replaced'; added: number; removed: number }
-  | { type: 'container-updated'; container: Container; renamed: boolean; recolored: boolean }
-  | { type: 'container-deleted'; id: ContainerId }
+  | { type: "tab-unassigned"; tabId: number; containerId: ContainerId }
+  | { type: "tab-replaced"; added: number; removed: number }
+  | {
+      type: "container-updated";
+      container: Container;
+      renamed: boolean;
+      recolored: boolean;
+    }
+  | { type: "container-deleted"; id: ContainerId }
   /** Tabs waiting for the user's choice (restore) were added or removed; `tabIds` are the tabs concerned. */
-  | { type: 'restore-held'; tabIds: number[] };
+  | { type: "restore-held"; tabIds: number[] };
 
 export type FacetEventListener = (event: FacetEvent) => void;
 
@@ -27,7 +32,7 @@ export class FacetEvents {
       try {
         listener(event);
       } catch (error) {
-        console.error('[splitsession] event listener failed', error);
+        console.error("[splitsession] event listener failed", error);
       }
     }
   }

@@ -1,7 +1,9 @@
-import { render } from 'preact';
-import '../theme.css';
-import '../components.css';
-import './held.css';
-import { Held } from './Held';
+import { render } from "preact";
 
-render(<Held />, document.getElementById('app')!);
+import { Held } from "./Held";
+
+import "../theme.css";
+import "../components.css";
+import "./held.css";
+
+render(<Held />, document.getElementById("app")!);

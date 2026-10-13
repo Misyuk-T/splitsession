@@ -1,4 +1,4 @@
-import type { ContainerId } from './types';
+import type { ContainerId } from "./types";
 
 interface Entry {
   /** Container the tab was in when the placement was made (null: plain). The entry dies when this changes. */
@@ -25,7 +25,8 @@ export class Exemptions {
     if (!initial) return;
     for (const [key, entry] of Object.entries(initial)) {
       const tabId = Number(key);
-      if (Number.isInteger(tabId) && isEntry(entry)) this.tabs.set(tabId, { ...entry });
+      if (Number.isInteger(tabId) && isEntry(entry))
+        this.tabs.set(tabId, { ...entry });
     }
   }
 
@@ -72,7 +73,9 @@ export class Exemptions {
   }
 
   toJSON(): SerializedExemptions {
-    return Object.fromEntries([...this.tabs].map(([id, e]) => [String(id), { ...e }]));
+    return Object.fromEntries(
+      [...this.tabs].map(([id, e]) => [String(id), { ...e }]),
+    );
   }
 
   private entryFor(tabId: number, container: ContainerId | null): Entry {
@@ -86,7 +89,11 @@ export class Exemptions {
 }
 
 function isEntry(x: unknown): x is Entry {
-  if (typeof x !== 'object' || x === null) return false;
+  if (typeof x !== "object" || x === null) return false;
   const e = x as Record<string, unknown>;
-  return (e.container === null || typeof e.container === 'string') && (e.site === null || typeof e.site === 'string') && typeof e.next === 'boolean';
+  return (
+    (e.container === null || typeof e.container === "string") &&
+    (e.site === null || typeof e.site === "string") &&
+    typeof e.next === "boolean"
+  );
 }

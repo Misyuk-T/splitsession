@@ -1,20 +1,25 @@
-import { browser } from 'wxt/browser';
-import { ruleKeyOf, type ContainerId } from '../core';
-import type { StorageAreaLike } from '../engine/storage/storage-area';
-import { BadgeIndicator, type ActionApi } from './badges';
-import { GroupGuard, type GuardTab } from './group-guard';
-import { DomainRuleEngine } from './domain-rule-engine';
-import type { FacetEvent } from './events';
-import { ExemptionManager } from './exemption-manager';
-import type { Facet } from './facet';
-import { RuleStore } from './rule-store';
-import { SettingsStore } from './settings-store';
-import { TabGroupProjection, type TabGroupsLike, type TabsLike } from './tab-groups';
+import { browser } from "wxt/browser";
+
+import { type ContainerId, ruleKeyOf } from "../core";
+import type { StorageAreaLike } from "../engine/storage/storage-area";
+import { type ActionApi, BadgeIndicator } from "./badges";
+import { DomainRuleEngine } from "./domain-rule-engine";
+import type { FacetEvent } from "./events";
+import { ExemptionManager } from "./exemption-manager";
+import type { Facet } from "./facet";
+import { GroupGuard, type GuardTab } from "./group-guard";
+import { RuleStore } from "./rule-store";
+import { SettingsStore } from "./settings-store";
+import {
+  TabGroupProjection,
+  type TabGroupsLike,
+  type TabsLike,
+} from "./tab-groups";
 
 /** Message to the title-prefix content script of a container tab. */
-export const RENAMED_MESSAGE = 'facet/renamed';
+export const RENAMED_MESSAGE = "facet/renamed";
 /** Alarm of the group guard's periodic sweep (exists while some tab group stands for a container). */
-export const GROUP_SWEEP_ALARM = 'splitsession-group-sweep';
+export const GROUP_SWEEP_ALARM = "splitsession-group-sweep";
 /** The sweep after the worker starts waits this long, so the tabs Chrome restores and the restore's decisions come first. */
 const START_SWEEP_DELAY_MS = 1_500;
 
@@ -40,7 +45,10 @@ export class Extras {
     const local = b.storage.local as unknown as StorageAreaLike;
     const session = b.storage.session as unknown as StorageAreaLike;
     this.settings = new SettingsStore(local);
-    this.rules = new RuleStore(local, () => new Set(facet.containers.list().map((c) => c.id)));
+    this.rules = new RuleStore(
+      local,
+      () => new Set(facet.containers.list().map((c) => c.id)),
+    );
     this.exemptions = new ExemptionManager(session);
     this.groups = new TabGroupProjection({
       tabs: b.tabs as unknown as TabsLike,
@@ -50,7 +58,10 @@ export class Extras {
       container: (id) => facet.containers.get(id),
       containers: () => facet.containers.list(),
       updateContainer: (id, patch) => facet.updateContainer(id, patch),
-      containerTabs: () => facet.tabs.entries().map(([tabId, rec]) => ({ tabId, containerId: rec.containerId })),
+      containerTabs: () =>
+        facet.tabs
+          .entries()
+          .map(([tabId, rec]) => ({ tabId, containerId: rec.containerId })),
       log: facet.log,
     });
     this.badges = new BadgeIndicator(b.action as unknown as ActionApi, {
@@ -65,22 +76,34 @@ export class Extras {
       containerOf: (tabId) => facet.getTabContainer(tabId),
       markerContainer: (details) => facet.ctrDecision(details),
       replaceTab: async (tabId, containerId, url, onCreated) => {
-        const newTabId = await facet.replaceTab(tabId, containerId, url, onCreated);
+        const newTabId = await facet.replaceTab(
+          tabId,
+          containerId,
+          url,
+          onCreated,
+        );
         await b.tabs.remove(tabId).catch(() => {});
         return newTabId;
       },
       navigate: async (tabId, url) => {
         // A rule moving a tab: no service worker of the target may answer the repeated navigation.
-        if (facet.getTabContainer(tabId) !== null) await facet.prepareNavigation(url);
+        if (facet.getTabContainer(tabId) !== null)
+          await facet.prepareNavigation(url);
         await b.tabs.update(tabId, { url });
       },
-      chooseUrl: (url, tabId) => `${b.runtime.getURL('/choose.html' as never)}?url=${encodeURIComponent(url)}&tab=${tabId}`,
+      chooseUrl: (url, tabId) =>
+        `${b.runtime.getURL("/choose.html" as never)}?url=${encodeURIComponent(url)}&tab=${tabId}`,
       log: facet.log,
     });
 
     this.guard = new GroupGuard({
-      getTab: (tabId) => b.tabs.get(tabId).then((t) => t as GuardTab, () => null),
-      groupedTabs: async () => ((await b.tabs.query({})) as GuardTab[]).filter((t) => t.groupId >= 0),
+      getTab: (tabId) =>
+        b.tabs.get(tabId).then(
+          (t) => t as GuardTab,
+          () => null,
+        ),
+      groupedTabs: async () =>
+        ((await b.tabs.query({})) as GuardTab[]).filter((t) => t.groupId >= 0),
       groupContainer: (groupId) => this.groups.containerOfGroup(groupId),
       groupsIdle: () => this.groups.idle(),
       containerOf: (tabId) => facet.getTabContainer(tabId),
@@ -88,45 +111,72 @@ export class Extras {
       isWaiting: (tabId) => facet.restore.isWaiting(tabId),
       ownTab: (tabId) => facet.ownTabState(tabId),
       containerName: (id) => facet.containers.get(id)?.name,
-      assignInPlace: (tabId, containerId) => facet.assignInPlace(tabId, containerId),
+      assignInPlace: (tabId, containerId) =>
+        facet.assignInPlace(tabId, containerId),
       move: async (tabId, containerId, url) => {
         const key = ruleKeyOf(url);
         // The group chose this container (the user dropped the tab there): the repeated navigation is not judged by domain rules.
-        const fresh = await facet.replaceTab(tabId, containerId, url, (newTabId) => {
-          if (key !== null) this.exemptions.markSite(newTabId, containerId, key);
-        });
+        const fresh = await facet.replaceTab(
+          tabId,
+          containerId,
+          url,
+          (newTabId) => {
+            if (key !== null)
+              this.exemptions.markSite(newTabId, containerId, key);
+          },
+        );
         await this.groups.idle(); // the new tab joins the group before the old one leaves it
         await this.removeWithRetry(tabId);
         return fresh;
       },
-      placeOwn: (tabId, containerId) => this.groups.placeOwn(tabId, containerId),
-      moved: (newTabId, _containerId, name) => void this.badges.notice(newTabId, `moved to “${name}”`),
+      placeOwn: (tabId, containerId) =>
+        this.groups.placeOwn(tabId, containerId),
+      moved: (newTabId, _containerId, name) =>
+        void this.badges.notice(newTabId, `moved to “${name}”`),
       periodic: (on) => void this.setSweepAlarm(on),
       log: facet.log,
     });
 
     facet.events.on((event) => this.onFacetEvent(event));
     this.settings.onChange((next, previous) => {
-      void facet.applySettings(next).catch((error) => facet.log('error', 'applying settings failed', String(error)));
+      void facet
+        .applySettings(next)
+        .catch((error) =>
+          facet.log("error", "applying settings failed", String(error)),
+        );
       if (next.tabGroups === previous.tabGroups) return;
-      void (next.tabGroups ? this.groups.reconcileAll() : this.groups.releaseAll());
+      void (next.tabGroups
+        ? this.groups.reconcileAll()
+        : this.groups.releaseAll());
     });
   }
 
   /** Call right after `facet.start()`; resolves once settings, rules and exemptions are loaded. */
   start(facetReady: Promise<void>): Promise<void> {
     this.ready = facetReady.then(async () => {
-      await Promise.all([this.settings.load(), this.exemptions.load(), this.groups.load(), this.rules.load()]);
+      await Promise.all([
+        this.settings.load(),
+        this.exemptions.load(),
+        this.groups.load(),
+        this.rules.load(),
+      ]);
       void this.groups.adoptExisting(); // groups Chrome kept through a restart; titles of earlier versions get the glyph
-      const tabIds = [...this.facet.tabs.entries().map(([id]) => id), ...this.facet.restore.heldIds()];
+      const tabIds = [
+        ...this.facet.tabs.entries().map(([id]) => id),
+        ...this.facet.restore.heldIds(),
+      ];
       await this.badges.applyGlobal();
       await this.badges.applyMany(tabIds);
-      if (__FULL__ && this.settings.get().agentBridge) await this.refreshAllBadges();
+      if (__FULL__ && this.settings.get().agentBridge)
+        await this.refreshAllBadges();
       // Tabs that sit in a container's group without being in it (left from before, or missed while the worker slept).
       void this.facet
         .settled()
-        .then(() => new Promise((resolve) => setTimeout(resolve, START_SWEEP_DELAY_MS)))
-        .then(() => this.guard.sweep('worker started'));
+        .then(
+          () =>
+            new Promise((resolve) => setTimeout(resolve, START_SWEEP_DELAY_MS)),
+        )
+        .then(() => this.guard.sweep("worker started"));
     });
     return this.ready;
   }
@@ -135,10 +185,15 @@ export class Extras {
   private async setSweepAlarm(on: boolean): Promise<void> {
     try {
       const existing = await this.b.alarms.get(GROUP_SWEEP_ALARM);
-      if (on && !existing) await this.b.alarms.create(GROUP_SWEEP_ALARM, { periodInMinutes: 0.5 });
+      if (on && !existing)
+        await this.b.alarms.create(GROUP_SWEEP_ALARM, { periodInMinutes: 0.5 });
       else if (!on && existing) await this.b.alarms.clear(GROUP_SWEEP_ALARM);
     } catch (error) {
-      this.facet.log('warn', 'group guard: could not set its alarm', String(error));
+      this.facet.log(
+        "warn",
+        "group guard: could not set its alarm",
+        String(error),
+      );
     }
   }
 
@@ -146,12 +201,14 @@ export class Extras {
   async refreshAllBadges(): Promise<void> {
     await this.badges.applyGlobal();
     const tabs = await this.b.tabs.query({}).catch(() => []);
-    await this.badges.applyMany(tabs.map((t) => t.id).filter((id): id is number => id !== undefined));
+    await this.badges.applyMany(
+      tabs.map((t) => t.id).filter((id): id is number => id !== undefined),
+    );
   }
 
   private onFacetEvent(event: FacetEvent): void {
     switch (event.type) {
-      case 'tab-assigned':
+      case "tab-assigned":
         // Synchronous: this placement exempts the tab's next navigation from domain rules, and that navigation may
         // follow immediately.
         this.exemptions.markPlacement(event.tabId, event.containerId);
@@ -160,17 +217,17 @@ export class Extras {
           void this.badges.apply(event.tabId);
         });
         break;
-      case 'tab-unassigned':
+      case "tab-unassigned":
         void this.ready.then(() => {
           void this.groups.tabUnassigned(event.tabId, event.containerId);
           void this.badges.apply(event.tabId);
         });
         break;
-      case 'tab-replaced':
+      case "tab-replaced":
         this.exemptions.move(event.removed, event.added);
         void this.ready.then(() => this.badges.apply(event.added));
         break;
-      case 'container-updated':
+      case "container-updated":
         this.handleGroupsChanged();
         void this.ready.then(async () => {
           void this.groups.containerUpdated(event.container);
@@ -178,19 +235,24 @@ export class Extras {
           await this.badges.applyMany(tabIds);
           if (__FULL__ && event.renamed) {
             for (const tabId of tabIds) {
-              void this.b.tabs.sendMessage(tabId, { type: RENAMED_MESSAGE, name: event.container.name }).catch(() => {});
+              void this.b.tabs
+                .sendMessage(tabId, {
+                  type: RENAMED_MESSAGE,
+                  name: event.container.name,
+                })
+                .catch(() => {});
             }
           }
         });
         break;
-      case 'restore-held':
+      case "restore-held":
         // Waiting tabs: their badge, and the hint on the button for every other tab.
         void this.ready.then(async () => {
           await this.badges.applyGlobal();
           await this.badges.applyMany(event.tabIds);
         });
         break;
-      case 'container-deleted':
+      case "container-deleted":
         this.handleGroupsChanged();
         void this.ready.then(async () => {
           await this.groups.containerDeleted(event.id);
@@ -207,7 +269,12 @@ export class Extras {
         await this.b.tabs.remove(tabId);
         return;
       } catch (error) {
-        if (!/cannot be edited|dragging/i.test(String((error as Error)?.message ?? error))) return; // already gone
+        if (
+          !/cannot be edited|dragging/i.test(
+            String((error as Error)?.message ?? error),
+          )
+        )
+          return; // already gone
         await new Promise((resolve) => setTimeout(resolve, 250));
       }
     }
@@ -218,23 +285,35 @@ export class Extras {
   /** `tabs.onCreated`: Chrome may create a tab inside a group (it then reports no group change). */
   handleTabCreated(tab: GuardTab): void {
     if (tab.id === undefined || !(tab.groupId >= 0)) return;
-    void this.facet.ready.then(() => this.ready).then(() => this.guard.tabCreated(tab));
+    void this.facet.ready
+      .then(() => this.ready)
+      .then(() => this.guard.tabCreated(tab));
   }
 
   /** `tabs.onUpdated` with a `groupId`: the user may have dragged the tab into a group that stands for a container. */
   handleGroupChanged(tabId: number, groupId: number): void {
     if (groupId < 0) return;
-    void this.facet.ready.then(() => this.ready).then(() => this.guard.groupChanged(tabId, groupId));
+    void this.facet.ready
+      .then(() => this.ready)
+      .then(() => this.guard.groupChanged(tabId, groupId));
   }
 
   /** `tabGroups.onUpdated`: the user may have renamed or recoloured a group of ours in Chrome's menu. */
-  handleGroupEdited(group: { id: number; title?: string; color: string }): void {
-    void this.facet.ready.then(() => this.ready).then(() => this.groups.groupUpdated(group));
+  handleGroupEdited(group: {
+    id: number;
+    title?: string;
+    color: string;
+  }): void {
+    void this.facet.ready
+      .then(() => this.ready)
+      .then(() => this.groups.groupUpdated(group));
   }
 
   /** A tab attached from another window, a group created or retitled, a container renamed or deleted: sweep soon. */
   handleGroupsChanged(): void {
-    void this.facet.ready.then(() => this.ready).then(() => this.guard.scheduleSweep());
+    void this.facet.ready
+      .then(() => this.ready)
+      .then(() => this.guard.scheduleSweep());
   }
 
   /** `alarms.onAlarm` for the periodic sweep. */
@@ -243,32 +322,48 @@ export class Extras {
     void this.facet.ready.then(() => this.ready).then(() => this.guard.sweep());
   }
 
-  async handleBeforeNavigate(details: { tabId: number; frameId: number; url: string; documentLifecycle?: string; timeStamp?: number }): Promise<void> {
+  async handleBeforeNavigate(details: {
+    tabId: number;
+    frameId: number;
+    url: string;
+    documentLifecycle?: string;
+    timeStamp?: number;
+  }): Promise<void> {
     if (details.frameId !== 0) return;
     await this.facet.ready;
     await this.ready;
     try {
       await this.engine.handleBeforeNavigate(details);
     } catch (error) {
-      this.facet.log('error', 'domain rule failed', String(error));
+      this.facet.log("error", "domain rule failed", String(error));
     }
   }
 
-  handleCreatedNavigationTarget(details: { sourceTabId: number; tabId: number }): void {
-    void this.ready.then(() => this.engine.noteChildOfContainerTab(details.tabId, details.sourceTabId));
+  handleCreatedNavigationTarget(details: {
+    sourceTabId: number;
+    tabId: number;
+  }): void {
+    void this.ready.then(() =>
+      this.engine.noteChildOfContainerTab(details.tabId, details.sourceTabId),
+    );
   }
 
   /** Re-applies the badge after navigation, which resets tab-specific action state. */
   handleTabRefresh(tabId: number): void {
     void this.ready.then(() =>
-      this.facet.getTabContainer(tabId) !== null || (__FULL__ && this.settings.get().agentBridge) || this.facet.restore.isHeld(tabId) ? this.badges.apply(tabId) : undefined,
+      this.facet.getTabContainer(tabId) !== null ||
+      (__FULL__ && this.settings.get().agentBridge) ||
+      this.facet.restore.isHeld(tabId)
+        ? this.badges.apply(tabId)
+        : undefined,
     );
   }
 
   handleTabAttached(tabId: number): void {
     void this.ready.then(() => {
       const containerId: ContainerId | null = this.facet.getTabContainer(tabId);
-      if (containerId !== null) void this.groups.tabAssigned(tabId, containerId);
+      if (containerId !== null)
+        void this.groups.tabAssigned(tabId, containerId);
     });
   }
 

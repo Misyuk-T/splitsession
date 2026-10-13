@@ -1,11 +1,11 @@
-# SplitSession CI: typecheck, unit tests and both editions on every push and pull request (no e2e here: it needs a headed
+# SplitSession CI: lint, formatting, typecheck, unit tests and both editions on every push and pull request (no e2e here: it needs a headed
 # Chromium and the native bridge host, see docs/development.md). A tag `v*` also publishes a GitHub Release with both zips.
 name: CI
 
 on:
   push:
-    branches: ['**']
-    tags: ['v*']
+    branches: ["**"]
+    tags: ["v*"]
   pull_request:
 
 permissions:
@@ -29,6 +29,12 @@ jobs:
           cache: pnpm
 
       - run: pnpm install --frozen-lockfile
+
+      - name: Lint
+        run: pnpm lint
+
+      - name: Format check
+        run: pnpm format:check
 
       - name: Typecheck
         run: pnpm typecheck

@@ -1,14 +1,15 @@
-import { browser } from 'wxt/browser';
-import type { StorageAreaLike } from '../engine/storage/storage-area';
-import { AgentActivity } from './bridge/activity';
-import { AgentBridge } from './bridge/agent-bridge';
-import { createBridgeApi, type BridgeApi } from './bridge/bridge-api';
-import { CdpSessions, type DebuggerApi } from './bridge/cdp';
-import { readProfileLabel } from './bridge/profile-label';
-import { BridgeRouter } from './bridge/router';
-import type { Extras } from './extras';
-import type { Facet } from './facet';
-import type { FullApi } from './full-api';
+import { browser } from "wxt/browser";
+
+import type { StorageAreaLike } from "../engine/storage/storage-area";
+import { AgentActivity } from "./bridge/activity";
+import { AgentBridge } from "./bridge/agent-bridge";
+import { type BridgeApi, createBridgeApi } from "./bridge/bridge-api";
+import { CdpSessions, type DebuggerApi } from "./bridge/cdp";
+import { readProfileLabel } from "./bridge/profile-label";
+import { BridgeRouter } from "./bridge/router";
+import type { Extras } from "./extras";
+import type { Facet } from "./facet";
+import type { FullApi } from "./full-api";
 
 /**
  * The Full edition's background half: the agent bridge (native messaging, command router), its CDP sessions and the
@@ -23,8 +24,16 @@ export interface AgentSide {
   start(): Promise<void>;
 }
 
-export function createAgentSide(facet: Facet, extras: Extras, b: typeof browser = browser): AgentSide {
-  const bridge = new AgentBridge(b, b.storage.session as unknown as StorageAreaLike, facet.log);
+export function createAgentSide(
+  facet: Facet,
+  extras: Extras,
+  b: typeof browser = browser,
+): AgentSide {
+  const bridge = new AgentBridge(
+    b,
+    b.storage.session as unknown as StorageAreaLike,
+    facet.log,
+  );
   return {
     bridgeApi: createBridgeApi(bridge, b),
     install(api) {
@@ -39,13 +48,26 @@ export function createAgentSide(facet: Facet, extras: Extras, b: typeof browser 
         dbg: (b as unknown as { debugger: DebuggerApi }).debugger,
         tabUrl: async (tabId) => {
           const tab = await b.tabs.get(tabId).catch(() => null);
-          return tab ? (tab.url || tab.pendingUrl) : undefined;
+          return tab ? tab.url || tab.pendingUrl : undefined;
         },
         log: facet.log,
       });
-      const nav = navigator as Navigator & { userAgentData?: { platform?: string } };
-      const isMac = /mac/i.test(nav.userAgentData?.platform ?? nav.platform ?? '');
-      const router = new BridgeRouter({ b, facet, api, activity, cdp, isMac, profileLabel: () => readProfileLabel(b.storage.local as unknown as StorageAreaLike) });
+      const nav = navigator as Navigator & {
+        userAgentData?: { platform?: string };
+      };
+      const isMac = /mac/i.test(
+        nav.userAgentData?.platform ?? nav.platform ?? "",
+      );
+      const router = new BridgeRouter({
+        b,
+        facet,
+        api,
+        activity,
+        cdp,
+        isMac,
+        profileLabel: () =>
+          readProfileLabel(b.storage.local as unknown as StorageAreaLike),
+      });
       bridge.setRunner(router);
       b.tabs.onRemoved.addListener((tabId) => {
         cdp.forget(tabId);
@@ -56,7 +78,11 @@ export function createAgentSide(facet: Facet, extras: Extras, b: typeof browser 
       // The agent bridge follows its setting; a restart of the worker with the setting on reconnects.
       extras.settings.onChange((next, previous) => {
         // Off (the bridge or "Show agent activity"): whatever the page side shows in tabs goes now, not when its timer runs out.
-        if ((previous.agentBridge && !next.agentBridge) || (previous.agentActivity && !next.agentActivity)) void activity.stopAll();
+        if (
+          (previous.agentBridge && !next.agentBridge) ||
+          (previous.agentActivity && !next.agentActivity)
+        )
+          void activity.stopAll();
         if (next.agentBridge === previous.agentBridge) return;
         // Off: every debugger session goes first, so nothing more can be done to a page.
         if (!next.agentBridge) void cdp.detachAll();

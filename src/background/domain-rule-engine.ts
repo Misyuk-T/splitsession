@@ -1,7 +1,14 @@
-import { decideRule, findRule, hasCtrMarker, ruleKeyOf, type ContainerId, type DomainRule } from '../core';
-import type { ExemptionManager } from './exemption-manager';
+import {
+  type ContainerId,
+  decideRule,
+  type DomainRule,
+  findRule,
+  hasCtrMarker,
+  isHttpUrl,
+  ruleKeyOf,
+} from "../core";
+import type { ExemptionManager } from "./exemption-manager";
 
-const isHttpUrl = (url: string): boolean => /^https?:\/\//i.test(url);
 /** A tab opened from a container page is assigned asynchronously, and OAuth hops follow quickly: it is not judged for this long. */
 const CHILD_GRACE_MS = 5_000;
 /** At most this many rule actions per tab within the window: a loop guard of last resort. */
@@ -22,10 +29,15 @@ export interface RuleEngineDeps {
    * document another context could script) and closing the old one. `onCreated` runs with the new tab's ID once it is
    * in the container and before it navigates. Resolves with the new tab's ID.
    */
-  replaceTab(tabId: number, containerId: ContainerId, url: string, onCreated: (newTabId: number) => void): Promise<number>;
+  replaceTab(
+    tabId: number,
+    containerId: ContainerId,
+    url: string,
+    onCreated: (newTabId: number) => void,
+  ): Promise<number>;
   navigate(tabId: number, url: string): Promise<void>;
   chooseUrl(url: string, tabId: number): string;
-  log(level: 'info' | 'warn' | 'error', message: string, data?: unknown): void;
+  log(level: "info" | "warn" | "error", message: string, data?: unknown): void;
   now?(): number;
 }
 
@@ -50,7 +62,11 @@ export interface NavigationDetails {
  */
 export class DomainRuleEngine {
   private readonly actions = new Map<number, number[]>();
-  private readonly children = new Map<number, { container: ContainerId; at: number }>();
+  private readonly children = new Map<
+    number,
+    { container: ContainerId; at: number }
+  >();
+
   private readonly now: () => number;
 
   constructor(
@@ -63,7 +79,8 @@ export class DomainRuleEngine {
   /** A page of a container tab opened `child`: the engine's own copy of the inheritance, to close the race with it. */
   noteChildOfContainerTab(child: number, parent: number): void {
     const container = this.deps.containerOf(parent);
-    if (container !== null) this.children.set(child, { container, at: this.now() });
+    if (container !== null)
+      this.children.set(child, { container, at: this.now() });
   }
 
   forgetTab(tabId: number): void {
@@ -71,11 +88,19 @@ export class DomainRuleEngine {
     this.children.delete(tabId);
   }
 
-  async handleBeforeNavigate(details: NavigationDetails): Promise<'moved' | 'asked' | 'skipped'> {
+  async handleBeforeNavigate(
+    details: NavigationDetails,
+  ): Promise<"moved" | "asked" | "skipped"> {
     const { tabId, frameId, url } = details;
-    if (tabId < 0 || frameId !== 0 || details.documentLifecycle === 'prerender' || !isHttpUrl(url)) return 'skipped';
+    if (
+      tabId < 0 ||
+      frameId !== 0 ||
+      details.documentLifecycle === "prerender" ||
+      !isHttpUrl(url)
+    )
+      return "skipped";
     const site = ruleKeyOf(url);
-    if (site === null) return 'skipped';
+    if (site === null) return "skipped";
 
     // An explicit `#ctr=` marker SplitSession honours wins over any rule, now and for the navigation SplitSession repeats without
     // it. A marker SplitSession ignores is just part of the URL.
@@ -83,7 +108,7 @@ export class DomainRuleEngine {
       const container = await this.deps.markerContainer(details);
       if (container !== null) {
         this.exemptions.markPlacement(tabId, container);
-        return 'skipped';
+        return "skipped";
       }
     }
 
@@ -94,26 +119,34 @@ export class DomainRuleEngine {
       // A tab opened by a container page is its parent's business for its first moments (OAuth popups!): while it is
       // being assigned the parent's container (the registry already says so before the placement event fires) and
       // while it keeps it, it is not judged. Moved elsewhere in the meantime, it is a tab like any other.
-      else if (current === null || current === child.container) return 'skipped';
+      else if (current === null || current === child.container)
+        return "skipped";
     }
 
     const exempt = this.exemptions.check(tabId, current, site);
     const rule = findRule(this.deps.rules(), url);
-    if (!rule || exempt) return 'skipped';
+    if (!rule || exempt) return "skipped";
     const decision = decideRule(rule, current);
-    if (decision.kind === 'none') return 'skipped';
+    if (decision.kind === "none") return "skipped";
     if (!this.allowAction(tabId)) {
-      this.deps.log('warn', `domain rules: too many actions on tab ${tabId}, leaving it alone`, url);
-      return 'skipped';
+      this.deps.log(
+        "warn",
+        `domain rules: too many actions on tab ${tabId}, leaving it alone`,
+        url,
+      );
+      return "skipped";
     }
 
-    if (decision.kind === 'ask') {
-      this.deps.log('info', `domain rule: ask for ${site} in tab ${tabId}`);
+    if (decision.kind === "ask") {
+      this.deps.log("info", `domain rule: ask for ${site} in tab ${tabId}`);
       await this.deps.navigate(tabId, this.deps.chooseUrl(url, tabId));
-      return 'asked';
+      return "asked";
     }
 
-    this.deps.log('info', `domain rule: ${site} -> ${decision.containerId} in tab ${tabId}`);
+    this.deps.log(
+      "info",
+      `domain rule: ${site} -> ${decision.containerId} in tab ${tabId}`,
+    );
     const history = this.actions.get(tabId) ?? [];
     await this.deps.replaceTab(tabId, decision.containerId, url, (newTabId) => {
       // The repeated navigation is the placement's own: it must not be judged again. The new tab carries the old
@@ -121,12 +154,14 @@ export class DomainRuleEngine {
       this.exemptions.markSite(newTabId, decision.containerId, site);
       this.actions.set(newTabId, [...history]);
     });
-    return 'moved';
+    return "moved";
   }
 
   private allowAction(tabId: number): boolean {
     const now = this.now();
-    const recent = (this.actions.get(tabId) ?? []).filter((t) => now - t < ACTION_WINDOW_MS);
+    const recent = (this.actions.get(tabId) ?? []).filter(
+      (t) => now - t < ACTION_WINDOW_MS,
+    );
     if (recent.length >= ACTION_LIMIT) {
       this.actions.set(tabId, recent);
       return false;

@@ -1,7 +1,8 @@
-import { useCallback, useEffect, useState } from 'preact/hooks';
-import type { BridgeState } from '../background/bridge/agent-bridge';
-import { facetApi } from '../engine/api-client';
-import { describeError } from './format';
+import { useCallback, useEffect, useState } from "preact/hooks";
+
+import type { BridgeState } from "../background/bridge/agent-bridge";
+import { facetApi } from "../engine/api-client";
+import { describeError } from "./format";
 
 export interface BridgeView {
   /** The `agentBridge` setting. */
@@ -11,7 +12,14 @@ export interface BridgeView {
   state: BridgeState;
 }
 
-const OFF: BridgeState = { status: 'off', error: null, actions: 0, lastTool: null, lastAt: null, recent: [] };
+const OFF: BridgeState = {
+  status: "off",
+  error: null,
+  actions: 0,
+  lastTool: null,
+  lastAt: null,
+  recent: [],
+};
 
 /** The agent bridge's setting and live state (polled while the page is open), with the switch and "check again". */
 export function useBridge(pollMs = 1000): {
@@ -28,8 +36,15 @@ export function useBridge(pollMs = 1000): {
 
   const load = useCallback(async () => {
     try {
-      const [settings, state] = await Promise.all([facetApi.getSettings(), facetApi.getBridgeState()]);
-      setView({ enabled: settings.agentBridge, activity: settings.agentActivity, state });
+      const [settings, state] = await Promise.all([
+        facetApi.getSettings(),
+        facetApi.getBridgeState(),
+      ]);
+      setView({
+        enabled: settings.agentBridge,
+        activity: settings.agentActivity,
+        state,
+      });
     } catch (e) {
       setError(describeError(e));
     }
@@ -43,7 +58,11 @@ export function useBridge(pollMs = 1000): {
 
   const setEnabled = async (next: boolean) => {
     setBusy(true);
-    setView((v) => ({ enabled: next, activity: v?.activity ?? true, state: v?.state ?? OFF })); // optimistic; the background confirms
+    setView((v) => ({
+      enabled: next,
+      activity: v?.activity ?? true,
+      state: v?.state ?? OFF,
+    })); // optimistic; the background confirms
     try {
       await facetApi.updateSettings({ agentBridge: next });
       setError(null);

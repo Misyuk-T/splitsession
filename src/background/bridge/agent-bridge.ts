@@ -1,8 +1,18 @@
-import type { browser } from 'wxt/browser';
-import { HOST_NAME, PING_TOOL, PROTOCOL_VERSION, SESSION_TOOL, SWITCHED_OFF, type ExtensionToHost, type HostToExtension, type ToolResult } from '../../bridge/protocol';
-import type { StorageAreaLike } from '../../engine/storage/storage-area';
-import type { Logger } from '../log';
-import type { ActionMeta } from './router';
+import type { browser } from "wxt/browser";
+
+import {
+  type ExtensionToHost,
+  HOST_NAME,
+  type HostToExtension,
+  PING_TOOL,
+  PROTOCOL_VERSION,
+  SESSION_TOOL,
+  SWITCHED_OFF,
+  type ToolResult,
+} from "../../bridge/protocol";
+import type { StorageAreaLike } from "../../engine/storage/storage-area";
+import type { Logger } from "../log";
+import type { ActionMeta } from "./router";
 
 type Browser = typeof browser;
 
@@ -19,7 +29,8 @@ export interface RecentAction {
 /** How many of the latest actions the popup shows. */
 export const RECENT_ACTIONS = 5;
 
-export type BridgeStatus = 'off' | 'connecting' | 'connected' | 'host-missing' | 'busy' | 'error';
+export type BridgeStatus =
+  "off" | "connecting" | "connected" | "host-missing" | "busy" | "error";
 
 export interface BridgeState {
   status: BridgeStatus;
@@ -33,8 +44,8 @@ export interface BridgeState {
   recent: RecentAction[];
 }
 
-export const BRIDGE_STATE_KEY = 'bridgeState';
-export const BRIDGE_ALARM = 'facet-bridge-retry';
+export const BRIDGE_STATE_KEY = "bridgeState";
+export const BRIDGE_ALARM = "facet-bridge-retry";
 
 /** What the connection needs from the router. */
 export interface ToolRunner {
@@ -58,9 +69,19 @@ const BUSY_RETRY_MS = 10_000;
 export const RELEASE_GRACE_MS = 10_000;
 
 /** Keepalive and session bookkeeping of the host: never an agent action, so never run, counted or listed. */
-const isInternalTool = (tool: unknown): boolean => tool === PING_TOOL || tool === SESSION_TOOL || (typeof tool === 'string' && tool.startsWith('__'));
+const isInternalTool = (tool: unknown): boolean =>
+  tool === PING_TOOL ||
+  tool === SESSION_TOOL ||
+  (typeof tool === "string" && tool.startsWith("__"));
 
-const IDLE: BridgeState = { status: 'off', error: null, actions: 0, lastTool: null, lastAt: null, recent: [] };
+const IDLE: BridgeState = {
+  status: "off",
+  error: null,
+  actions: 0,
+  lastTool: null,
+  lastAt: null,
+  recent: [],
+};
 
 /**
  * The extension's end of the agent bridge. While the setting is on it keeps a Native Messaging port to the host
@@ -102,8 +123,21 @@ export class AgentBridge {
 
   private async load(): Promise<void> {
     try {
-      const stored = (await this.area.get(BRIDGE_STATE_KEY))[BRIDGE_STATE_KEY] as Partial<BridgeState> | undefined;
-      if (stored && typeof stored.actions === 'number') this.current = { ...IDLE, actions: stored.actions, lastTool: stored.lastTool ?? null, lastAt: stored.lastAt ?? null, recent: Array.isArray(stored.recent) ? stored.recent.filter((r) => !isInternalTool(r?.tool)).slice(0, RECENT_ACTIONS) : [] };
+      const stored = (await this.area.get(BRIDGE_STATE_KEY))[
+        BRIDGE_STATE_KEY
+      ] as Partial<BridgeState> | undefined;
+      if (stored && typeof stored.actions === "number")
+        this.current = {
+          ...IDLE,
+          actions: stored.actions,
+          lastTool: stored.lastTool ?? null,
+          lastAt: stored.lastAt ?? null,
+          recent: Array.isArray(stored.recent)
+            ? stored.recent
+                .filter((r) => !isInternalTool(r?.tool))
+                .slice(0, RECENT_ACTIONS)
+            : [],
+        };
     } catch {
       /* session storage unavailable: counters start from zero */
     }
@@ -127,17 +161,18 @@ export class AgentBridge {
       this.teardown();
       this.attempt = 0;
       void this.b.alarms.clear(BRIDGE_ALARM);
-      this.publish({ status: 'off', error: null });
-      this.log('info', 'agent bridge off');
+      this.publish({ status: "off", error: null });
+      this.log("info", "agent bridge off");
       return;
     }
     if (this.enabled && this.port) return;
     this.enabled = true;
     if (this.abort.signal.aborted) this.abort = new AbortController();
-    if (fresh) this.publish({ actions: 0, lastTool: null, lastAt: null, recent: [] });
+    if (fresh)
+      this.publish({ actions: 0, lastTool: null, lastAt: null, recent: [] });
     // A worker that was stopped and comes back (or a retry that must survive the worker stopping) is woken by this.
     void this.b.alarms.create(BRIDGE_ALARM, { periodInMinutes: 1 });
-    this.log('info', 'agent bridge on');
+    this.log("info", "agent bridge on");
     this.connect();
   }
 
@@ -154,7 +189,8 @@ export class AgentBridge {
   private connect(): void {
     this.clearTimers();
     // A profile waiting for the other one to let go stays "busy" between looks instead of flickering.
-    if (this.current.status !== 'busy') this.publish({ status: 'connecting', error: null });
+    if (this.current.status !== "busy")
+      this.publish({ status: "connecting", error: null });
     let port: PortLike;
     try {
       port = this.b.runtime.connectNative(HOST_NAME) as unknown as PortLike;
@@ -168,41 +204,59 @@ export class AgentBridge {
     // Chrome opens the port even when the host does not exist; "not found" arrives as a disconnect. A host that starts
     // but never says ready is given up on.
     this.connectTimer = setTimeout(() => {
-      if (this.port === port && this.current.status !== 'connected') {
+      if (this.port === port && this.current.status !== "connected") {
         this.teardown();
-        this.fail('the host started but did not answer');
+        this.fail("the host started but did not answer");
       }
     }, CONNECT_TIMEOUT_MS);
   }
 
   private onMessage(port: PortLike, raw: unknown): void {
-    if (this.port !== port || typeof raw !== 'object' || raw === null) return;
+    if (this.port !== port || typeof raw !== "object" || raw === null) return;
     const message = raw as HostToExtension;
-    if (message.type === 'ready') {
+    if (message.type === "ready") {
       this.clearTimers();
       this.attempt = 0;
-      this.publish({ status: 'connected', error: null });
-      this.log('info', 'agent bridge connected', { protocol: message.version === PROTOCOL_VERSION ? 'ok' : `host speaks ${message.version}` });
-    } else if (message.type === 'fatal') {
+      this.publish({ status: "connected", error: null });
+      this.log("info", "agent bridge connected", {
+        protocol:
+          message.version === PROTOCOL_VERSION
+            ? "ok"
+            : `host speaks ${message.version}`,
+      });
+    } else if (message.type === "fatal") {
       this.lastFatal = String(message.message).slice(0, 300);
-    } else if (message.type === 'busy') {
+    } else if (message.type === "busy") {
       this.clearTimers();
       this.lastBusy = String(message.reason).slice(0, 200);
-      this.publish({ status: 'busy', error: this.lastBusy });
-      this.log('warn', 'agent bridge busy', this.lastBusy);
-    } else if (message.type === 'clients' && typeof message.count === 'number') {
+      this.publish({ status: "busy", error: this.lastBusy });
+      this.log("warn", "agent bridge busy", this.lastBusy);
+    } else if (
+      message.type === "clients" &&
+      typeof message.count === "number"
+    ) {
       if (message.count > 0) this.cancelRelease();
       else this.scheduleRelease();
-    } else if (message.type === 'request' && typeof message.id === 'number') {
+    } else if (message.type === "request" && typeof message.id === "number") {
       this.cancelRelease(); // somebody is working
       void this.serve(port, message.id, message.tool, message.args);
     }
   }
 
-  private async serve(port: PortLike, id: number, tool: string, args: unknown): Promise<void> {
+  private async serve(
+    port: PortLike,
+    id: number,
+    tool: string,
+    args: unknown,
+  ): Promise<void> {
     if (isInternalTool(tool)) {
       try {
-        port.postMessage({ type: 'response', id, ok: true, result: { content: [{ type: 'text', text: 'pong' }] } } satisfies ExtensionToHost);
+        port.postMessage({
+          type: "response",
+          id,
+          ok: true,
+          result: { content: [{ type: "text", text: "pong" }] },
+        } satisfies ExtensionToHost);
       } catch {
         /* the host is gone: nothing to answer */
       }
@@ -212,16 +266,25 @@ export class AgentBridge {
     const meta: ActionMeta = { signal: this.abort.signal };
     let reply: ExtensionToHost;
     try {
-      if (!this.runner) throw new Error('the SplitSession background is still starting; try again');
+      if (!this.runner)
+        throw new Error(
+          "the SplitSession background is still starting; try again",
+        );
       // Switched off (or reconnecting) between the request arriving and now: do nothing at all.
-      if (!this.enabled || this.port !== port || meta.signal!.aborted) throw new Error(SWITCHED_OFF);
+      if (!this.enabled || this.port !== port || meta.signal!.aborted)
+        throw new Error(SWITCHED_OFF);
       const result = await this.runner.run(String(tool), args, meta);
-      reply = { type: 'response', id, ok: true, result };
+      reply = { type: "response", id, ok: true, result };
     } catch (error) {
-      reply = { type: 'response', id, ok: false, error: error instanceof Error ? error.message : String(error) };
+      reply = {
+        type: "response",
+        id,
+        ok: false,
+        error: error instanceof Error ? error.message : String(error),
+      };
     }
     // The action log: what was done to which tab and whether it worked. Never what the page said.
-    this.log(reply.ok ? 'info' : 'warn', 'agent action', {
+    this.log(reply.ok ? "info" : "warn", "agent action", {
       tool: String(tool),
       tabId: meta.tabId ?? null,
       host: meta.host ?? null,
@@ -229,13 +292,24 @@ export class AgentBridge {
       ms: Date.now() - started,
       ...(reply.ok ? {} : { error: reply.error.slice(0, 120) }),
     });
-    const entry: RecentAction = { at: started, tool: String(tool), ok: reply.ok, title: meta.title ?? null, host: meta.host ?? null };
-    this.publish({ actions: this.current.actions + 1, lastTool: String(tool), lastAt: Date.now(), recent: [entry, ...this.current.recent].slice(0, RECENT_ACTIONS) });
+    const entry: RecentAction = {
+      at: started,
+      tool: String(tool),
+      ok: reply.ok,
+      title: meta.title ?? null,
+      host: meta.host ?? null,
+    };
+    this.publish({
+      actions: this.current.actions + 1,
+      lastTool: String(tool),
+      lastAt: Date.now(),
+      recent: [entry, ...this.current.recent].slice(0, RECENT_ACTIONS),
+    });
     if (this.port !== port) return; // switched off or reconnected while the tool ran: the answer has no reader
     try {
       port.postMessage(reply);
     } catch (error) {
-      this.log('warn', 'agent bridge: could not send a reply', String(error));
+      this.log("warn", "agent bridge: could not send a reply", String(error));
     }
   }
 
@@ -244,8 +318,15 @@ export class AgentBridge {
     this.cancelRelease();
     this.releaseTimer = setTimeout(() => {
       this.releaseTimer = null;
-      void this.runner?.release?.().catch((error) => this.log('warn', 'agent bridge: release failed', String(error)));
-      this.log('info', 'agent bridge: no agent connected; viewport overrides and debugger sessions released');
+      void this.runner
+        ?.release?.()
+        .catch((error) =>
+          this.log("warn", "agent bridge: release failed", String(error)),
+        );
+      this.log(
+        "info",
+        "agent bridge: no agent connected; viewport overrides and debugger sessions released",
+      );
     }, RELEASE_GRACE_MS);
   }
 
@@ -257,7 +338,8 @@ export class AgentBridge {
   private onDisconnect(port: PortLike): void {
     if (this.port !== port) return; // our own teardown
     this.scheduleRelease(); // the host is gone, and with it every client
-    const reason = this.lastFatal ?? this.b.runtime.lastError?.message ?? 'the host exited';
+    const reason =
+      this.lastFatal ?? this.b.runtime.lastError?.message ?? "the host exited";
     this.lastFatal = null;
     this.port = null;
     this.clearTimers();
@@ -271,16 +353,16 @@ export class AgentBridge {
       return; // status stays "busy": the other profile has the bridge, and the alarm and the button look again as well
     }
     if (/not found/i.test(reason)) {
-      this.publish({ status: 'host-missing', error: reason });
-      this.log('warn', 'agent bridge: host not installed', reason);
+      this.publish({ status: "host-missing", error: reason });
+      this.log("warn", "agent bridge: host not installed", reason);
       return; // the alarm and the "check again" button look again
     }
     this.fail(reason);
   }
 
   private fail(reason: string): void {
-    this.publish({ status: 'error', error: reason });
-    this.log('warn', 'agent bridge error', reason);
+    this.publish({ status: "error", error: reason });
+    this.log("warn", "agent bridge error", reason);
     const wait = Math.min(MAX_BACKOFF_MS, 1000 * 2 ** this.attempt++);
     this.retryTimer = setTimeout(() => this.retry(), wait);
   }

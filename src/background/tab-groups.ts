@@ -1,8 +1,20 @@
-import { checkContainerName, containerColorOfGroup, decodeGroupMarker, GROUP_COLOR, groupNameOf, groupTitle, type Container, type ContainerColor, type ContainerId, type Settings } from '../core';
-import type { StorageAreaLike } from '../engine/storage/storage-area';
+import {
+  checkContainerName,
+  type Container,
+  type ContainerColor,
+  containerColorOfGroup,
+  type ContainerId,
+  decodeGroupMarker,
+  GROUP_COLOR,
+  groupNameOf,
+  groupTitle,
+  type Settings,
+  sleep,
+} from "../core";
+import type { StorageAreaLike } from "../engine/storage/storage-area";
 
 /** `chrome.storage.session` key: Chrome tab-group IDs this module created, with the container each one stands for. */
-export const OWNED_GROUPS_KEY = 'ownedGroups';
+export const OWNED_GROUPS_KEY = "ownedGroups";
 
 export interface GroupTab {
   id?: number;
@@ -13,15 +25,28 @@ export interface GroupTab {
 
 export interface TabsLike {
   get(tabId: number): Promise<GroupTab>;
-  group(options: { tabIds: number[]; groupId?: number; createProperties?: { windowId: number } }): Promise<number>;
+  group(options: {
+    tabIds: number[];
+    groupId?: number;
+    createProperties?: { windowId: number };
+  }): Promise<number>;
   ungroup(tabIds: number[]): Promise<void>;
   query(queryInfo: { groupId?: number }): Promise<GroupTab[]>;
 }
 
 export interface TabGroupsLike {
-  get(groupId: number): Promise<{ id: number; windowId: number; title?: string; color: string }>;
-  update(groupId: number, properties: { title?: string; color?: string }): Promise<unknown>;
-  query?(queryInfo: object): Promise<Array<{ id: number; windowId: number; title?: string; color: string }>>;
+  get(
+    groupId: number,
+  ): Promise<{ id: number; windowId: number; title?: string; color: string }>;
+  update(
+    groupId: number,
+    properties: { title?: string; color?: string },
+  ): Promise<unknown>;
+  query?(
+    queryInfo: object,
+  ): Promise<
+    Array<{ id: number; windowId: number; title?: string; color: string }>
+  >;
 }
 
 /** A group as `tabGroups.onUpdated` reports it. */
@@ -40,10 +65,13 @@ export interface TabGroupDeps {
   /** Every container (a name typed into a group must not duplicate another one). */
   containers(): Container[];
   /** The user renamed or recoloured a group in Chrome's menu: the container follows (the engine then emits "container-updated"). */
-  updateContainer(id: ContainerId, patch: { name?: string; color?: ContainerColor }): Promise<unknown>;
+  updateContainer(
+    id: ContainerId,
+    patch: { name?: string; color?: ContainerColor },
+  ): Promise<unknown>;
   /** Every tab currently assigned to a container. */
   containerTabs(): Array<{ tabId: number; containerId: ContainerId }>;
-  log(level: 'info' | 'warn' | 'error', message: string, data?: unknown): void;
+  log(level: "info" | "warn" | "error", message: string, data?: unknown): void;
   /** Retry back-off while the user is dragging a tab (default: real timers). */
   delay?(ms: number): Promise<void>;
   /** Quiet time after the last edit of a group's title or colour before the container follows (default 700 ms). */
@@ -80,21 +108,28 @@ export class TabGroupProjection {
   private owned = new Map<number, ContainerId>();
   private queue: Promise<unknown> = Promise.resolve();
   /** groupId -> updates SplitSession made and whose echo (`tabGroups.onUpdated`) has not been seen. */
-  private expected = new Map<number, Array<{ title: string; color: string; at: number }>>();
+  private expected = new Map<
+    number,
+    Array<{ title: string; color: string; at: number }>
+  >();
+
   /** groupId -> counter of the user's last edit, so only the last one of a burst is acted on. */
   private editGen = new Map<number, number>();
   private readonly delay: (ms: number) => Promise<void>;
 
   constructor(private readonly deps: TabGroupDeps) {
-    this.delay = deps.delay ?? ((ms) => new Promise((resolve) => setTimeout(resolve, ms)));
+    this.delay = deps.delay ?? sleep;
   }
 
   async load(): Promise<void> {
-    const stored = (await this.deps.area.get(OWNED_GROUPS_KEY))[OWNED_GROUPS_KEY];
+    const stored = (await this.deps.area.get(OWNED_GROUPS_KEY))[
+      OWNED_GROUPS_KEY
+    ];
     this.owned = new Map();
-    if (typeof stored === 'object' && stored !== null) {
+    if (typeof stored === "object" && stored !== null) {
       for (const [id, container] of Object.entries(stored)) {
-        if (Number.isInteger(Number(id)) && typeof container === 'string') this.owned.set(Number(id), container);
+        if (Number.isInteger(Number(id)) && typeof container === "string")
+          this.owned.set(Number(id), container);
       }
     }
   }
@@ -121,7 +156,11 @@ export class TabGroupProjection {
       }
       if (tab.groupId < 0) return;
       // Also a marked group SplitSession does not keep (groups off): a group may not stand for a container its tab left.
-      if (this.owned.get(tab.groupId) === containerId || (await this.markerOf(tab.groupId)) === containerId) await this.ungroup([tabId]);
+      if (
+        this.owned.get(tab.groupId) === containerId ||
+        (await this.markerOf(tab.groupId)) === containerId
+      )
+        await this.ungroup([tabId]);
     });
   }
 
@@ -151,8 +190,15 @@ export class TabGroupProjection {
    */
   placeOwn(tabId: number, containerId: ContainerId | null): Promise<void> {
     // Unlike the other entry points this one reports failure (a drag that outlasts the retries): the group guard tries again.
-    const done = this.queue.then(() => (containerId !== null ? this.ensureGrouped(tabId, containerId, false, true) : this.leaveForeignGroup(tabId, null, true)));
-    this.queue = done.catch((error) => void this.deps.log('warn', 'tab group update failed', String(error)));
+    const done = this.queue.then(() =>
+      containerId !== null
+        ? this.ensureGrouped(tabId, containerId, false, true)
+        : this.leaveForeignGroup(tabId, null, true),
+    );
+    this.queue = done.catch(
+      (error) =>
+        void this.deps.log("warn", "tab group update failed", String(error)),
+    );
     return done;
   }
 
@@ -167,11 +213,16 @@ export class TabGroupProjection {
    * own updates, and collapsing, change nothing. See `syncEdited`.
    */
   groupUpdated(group: GroupState): Promise<void> {
-    if (!this.owned.has(group.id) || this.consumeExpected(group)) return Promise.resolve();
+    if (!this.owned.has(group.id) || this.consumeExpected(group))
+      return Promise.resolve();
     const gen = (this.editGen.get(group.id) ?? 0) + 1;
     this.editGen.set(group.id, gen);
     const pause = this.deps.editSettleMs ?? EDIT_SETTLE_MS;
-    return (pause > 0 ? new Promise<void>((resolve) => setTimeout(resolve, pause)) : Promise.resolve()).then(() => {
+    return (
+      pause > 0
+        ? new Promise<void>((resolve) => setTimeout(resolve, pause))
+        : Promise.resolve()
+    ).then(() => {
       if (this.editGen.get(group.id) !== gen) return; // edited again meanwhile: that one will do
       this.editGen.delete(group.id);
       return this.enqueue(() => this.syncEdited(group.id));
@@ -202,7 +253,8 @@ export class TabGroupProjection {
 
   containerDeleted(id: ContainerId): Promise<void> {
     return this.enqueue(async () => {
-      for (const [groupId, containerId] of [...this.owned]) if (containerId === id) this.owned.delete(groupId);
+      for (const [groupId, containerId] of [...this.owned])
+        if (containerId === id) this.owned.delete(groupId);
       await this.persist();
     });
   }
@@ -218,7 +270,8 @@ export class TabGroupProjection {
   reconcileAll(): Promise<void> {
     return this.enqueue(async () => {
       if (!this.deps.settings().tabGroups) return;
-      for (const { tabId, containerId } of this.deps.containerTabs()) await this.ensureGrouped(tabId, containerId, true);
+      for (const { tabId, containerId } of this.deps.containerTabs())
+        await this.ensureGrouped(tabId, containerId, true);
     });
   }
 
@@ -226,8 +279,12 @@ export class TabGroupProjection {
   releaseAll(): Promise<void> {
     return this.enqueue(async () => {
       for (const groupId of [...this.owned.keys()]) {
-        const tabs = await this.deps.tabs.query({ groupId }).catch(() => [] as GroupTab[]);
-        const ids = tabs.map((t) => t.id).filter((id): id is number => id !== undefined);
+        const tabs = await this.deps.tabs
+          .query({ groupId })
+          .catch(() => [] as GroupTab[]);
+        const ids = tabs
+          .map((t) => t.id)
+          .filter((id): id is number => id !== undefined);
         if (ids.length > 0) await this.ungroup(ids);
       }
       this.owned.clear();
@@ -248,7 +305,7 @@ export class TabGroupProjection {
 
   private enqueueValue<T>(work: () => Promise<T>, fallback: T): Promise<T> {
     const next = this.queue.then(work).catch((error) => {
-      this.deps.log('warn', 'tab group update failed', String(error));
+      this.deps.log("warn", "tab group update failed", String(error));
       return fallback;
     });
     this.queue = next;
@@ -256,11 +313,16 @@ export class TabGroupProjection {
   }
 
   /** Takes the tab out of its group when that group carries the marker of a container other than `containerId`. */
-  private async leaveForeignGroup(tabId: number, containerId: ContainerId | null, strict = false): Promise<void> {
+  private async leaveForeignGroup(
+    tabId: number,
+    containerId: ContainerId | null,
+    strict = false,
+  ): Promise<void> {
     const tab = await this.deps.tabs.get(tabId).catch(() => null);
     if (!tab || tab.groupId < 0) return;
     const marker = await this.markerOf(tab.groupId);
-    if (marker !== null && marker !== containerId) await this.ungroup([tabId], strict);
+    if (marker !== null && marker !== containerId)
+      await this.ungroup([tabId], strict);
   }
 
   private async markerOf(groupId: number): Promise<ContainerId | null> {
@@ -268,9 +330,15 @@ export class TabGroupProjection {
     return group ? decodeGroupMarker(group.title) : null;
   }
 
-  private async ensureGrouped(tabId: number, containerId: ContainerId, force = false, strict = false): Promise<void> {
+  private async ensureGrouped(
+    tabId: number,
+    containerId: ContainerId,
+    force = false,
+    strict = false,
+  ): Promise<void> {
     // Groups off: SplitSession makes none, but a tab may not stay in a group that names another container.
-    if (!this.deps.settings().tabGroups) return this.leaveForeignGroup(tabId, containerId, strict);
+    if (!this.deps.settings().tabGroups)
+      return this.leaveForeignGroup(tabId, containerId, strict);
     const container = this.deps.container(containerId);
     if (!container) return;
     let tab: GroupTab;
@@ -280,11 +348,16 @@ export class TabGroupProjection {
       return; // closed meanwhile
     }
     if (tab.pinned) return; // Chrome cannot group pinned tabs
-    const wanted = { title: groupTitle(container.name, container.id), color: GROUP_COLOR[container.color] };
+    const wanted = {
+      title: groupTitle(container.name, container.id),
+      color: GROUP_COLOR[container.color],
+    };
 
     if (tab.groupId >= 0 && !this.owned.has(tab.groupId)) {
       // A group Chrome brought back with this container's marker (session restore, a saved group opened again).
-      const group = await this.deps.tabGroups.get(tab.groupId).catch(() => null);
+      const group = await this.deps.tabGroups
+        .get(tab.groupId)
+        .catch(() => null);
       if (group && decodeGroupMarker(group.title) === containerId) {
         this.owned.set(tab.groupId, containerId);
         await this.persist();
@@ -299,17 +372,27 @@ export class TabGroupProjection {
 
     let groupId = await this.groupFor(containerId, tab.windowId);
     if (groupId === null) {
-      groupId = await this.retrying(() => this.deps.tabs.group({ tabIds: [tabId], createProperties: { windowId: tab.windowId } }));
+      groupId = await this.retrying(() =>
+        this.deps.tabs.group({
+          tabIds: [tabId],
+          createProperties: { windowId: tab.windowId },
+        }),
+      );
       this.owned.set(groupId, containerId);
       await this.persist();
     } else {
-      await this.retrying(() => this.deps.tabs.group({ tabIds: [tabId], groupId: groupId! }));
+      await this.retrying(() =>
+        this.deps.tabs.group({ tabIds: [tabId], groupId: groupId! }),
+      );
     }
     await this.applyGroup(groupId, wanted);
   }
 
   /** The group this module keeps for the container in that window, if it still exists. */
-  private async groupFor(containerId: ContainerId, windowId: number): Promise<number | null> {
+  private async groupFor(
+    containerId: ContainerId,
+    windowId: number,
+  ): Promise<number | null> {
     for (const [groupId, owner] of [...this.owned]) {
       if (owner !== containerId) continue;
       try {
@@ -329,13 +412,19 @@ export class TabGroupProjection {
   }
 
   /** Sets title and colour, remembering that this update is ours. */
-  private async applyGroup(groupId: number, wanted: { title: string; color: string }): Promise<void> {
+  private async applyGroup(
+    groupId: number,
+    wanted: { title: string; color: string },
+  ): Promise<void> {
     const entry = { ...wanted, at: Date.now() };
     this.expected.set(groupId, [...(this.expected.get(groupId) ?? []), entry]);
     try {
       await this.deps.tabGroups.update(groupId, wanted);
     } catch (error) {
-      this.expected.set(groupId, (this.expected.get(groupId) ?? []).filter((e) => e !== entry));
+      this.expected.set(
+        groupId,
+        (this.expected.get(groupId) ?? []).filter((e) => e !== entry),
+      );
       throw error;
     }
   }
@@ -343,8 +432,12 @@ export class TabGroupProjection {
   /** True (and forgotten) when this state is the echo of an update SplitSession made. */
   private consumeExpected(group: GroupState): boolean {
     const now = Date.now();
-    const live = (this.expected.get(group.id) ?? []).filter((e) => now - e.at < EXPECTED_TTL_MS);
-    const index = live.findIndex((e) => e.title === (group.title ?? '') && e.color === group.color);
+    const live = (this.expected.get(group.id) ?? []).filter(
+      (e) => now - e.at < EXPECTED_TTL_MS,
+    );
+    const index = live.findIndex(
+      (e) => e.title === (group.title ?? "") && e.color === group.color,
+    );
     if (index !== -1) live.splice(index, 1);
     if (live.length > 0) this.expected.set(group.id, live);
     else this.expected.delete(group.id);
@@ -352,23 +445,32 @@ export class TabGroupProjection {
   }
 
   private wantedFor(container: Container): { title: string; color: string } {
-    return { title: groupTitle(container.name, container.id), color: GROUP_COLOR[container.color] };
+    return {
+      title: groupTitle(container.name, container.id),
+      color: GROUP_COLOR[container.color],
+    };
   }
 
   /** Every group of the container (every window) shows its current name and colour. */
   private async applyToGroups(container: Container): Promise<void> {
     for (const [groupId, containerId] of [...this.owned]) {
       if (containerId !== container.id) continue;
-      await this.applyGroup(groupId, this.wantedFor(container)).catch(() => this.forget(groupId));
+      await this.applyGroup(groupId, this.wantedFor(container)).catch(() =>
+        this.forget(groupId),
+      );
     }
   }
 
   /** The group shows the container's current title and colour (it was just taken over; the container is the truth). */
-  private async normalise(groupId: number, group: { title?: string; color: string }): Promise<void> {
-    const container = this.deps.container(this.owned.get(groupId) ?? '');
+  private async normalise(
+    groupId: number,
+    group: { title?: string; color: string },
+  ): Promise<void> {
+    const container = this.deps.container(this.owned.get(groupId) ?? "");
     if (!container) return;
     const wanted = this.wantedFor(container);
-    if (group.title !== wanted.title || group.color !== wanted.color) await this.applyGroup(groupId, wanted).catch(() => {});
+    if (group.title !== wanted.title || group.color !== wanted.color)
+      await this.applyGroup(groupId, wanted).catch(() => {});
   }
 
   /**
@@ -380,19 +482,27 @@ export class TabGroupProjection {
    */
   private async syncEdited(groupId: number): Promise<void> {
     const containerId = this.owned.get(groupId);
-    const container = containerId === undefined ? undefined : this.deps.container(containerId);
+    const container =
+      containerId === undefined ? undefined : this.deps.container(containerId);
     if (!container || !this.deps.settings().tabGroups) return;
     const group = await this.deps.tabGroups.get(groupId).catch(() => null);
     if (!group) return;
 
     const patch: { name?: string; color?: ContainerColor } = {};
     const typed = groupNameOf(group.title);
-    const others = this.deps.containers().filter((c) => c.id !== container.id).map((c) => c.name);
+    const others = this.deps
+      .containers()
+      .filter((c) => c.id !== container.id)
+      .map((c) => c.name);
     const check = checkContainerName(typed, others, container.name);
     if (check.ok) {
       if (check.name !== container.name) patch.name = check.name;
     } else {
-      this.deps.log('warn', 'tab group rename refused, the group shows the container’s name again', { groupId, container: container.name, typed, reason: check.message });
+      this.deps.log(
+        "warn",
+        "tab group rename refused, the group shows the container’s name again",
+        { groupId, container: container.name, typed, reason: check.message },
+      );
     }
     const color = containerColorOfGroup(group.color, container.color);
     if (color !== null && color !== container.color) patch.color = color;
@@ -400,13 +510,22 @@ export class TabGroupProjection {
     if (patch.name !== undefined || patch.color !== undefined) {
       try {
         await this.deps.updateContainer(container.id, patch);
-        this.deps.log('info', 'container changed from its tab group', { groupId, container: container.id, ...patch });
+        this.deps.log("info", "container changed from its tab group", {
+          groupId,
+          container: container.id,
+          ...patch,
+        });
       } catch (error) {
-        this.deps.log('warn', 'container could not follow its tab group', String(error));
+        this.deps.log(
+          "warn",
+          "container could not follow its tab group",
+          String(error),
+        );
       }
     }
     const now = this.deps.container(container.id) ?? container;
-    if (now.name !== container.name || now.color !== container.color) await this.applyToGroups(now);
+    if (now.name !== container.name || now.color !== container.color)
+      await this.applyToGroups(now);
     else await this.normalise(groupId, group);
   }
 
@@ -423,7 +542,12 @@ export class TabGroupProjection {
         return await action();
       } catch (error) {
         last = error;
-        if (!/cannot be edited|dragging/i.test(String((error as Error)?.message ?? error))) throw error;
+        if (
+          !/cannot be edited|dragging/i.test(
+            String((error as Error)?.message ?? error),
+          )
+        )
+          throw error;
         await this.delay(RETRY_DELAY_MS);
       }
     }
@@ -431,6 +555,8 @@ export class TabGroupProjection {
   }
 
   private persist(): Promise<void> {
-    return this.deps.area.set({ [OWNED_GROUPS_KEY]: Object.fromEntries(this.owned) }).catch(() => {});
+    return this.deps.area
+      .set({ [OWNED_GROUPS_KEY]: Object.fromEntries(this.owned) })
+      .catch(() => {});
   }
 }

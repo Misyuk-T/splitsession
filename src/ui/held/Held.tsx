@@ -1,24 +1,25 @@
-import { useEffect, useRef, useState } from 'preact/hooks';
-import { browser } from 'wxt/browser';
-import { CONTAINER_HEX } from '../../core';
-import type { RestoreStatus } from '../../background/restore';
-import { facetApi } from '../../engine/api-client';
-import { Button, Dot } from '../components/Button';
-import { Logo } from '../components/Logo';
-import { describeError } from '../format';
-import { useContainers } from '../useContainers';
+import { useEffect, useRef, useState } from "preact/hooks";
+import { browser } from "wxt/browser";
+
+import type { RestoreStatus } from "../../background/restore";
+import { CONTAINER_HEX, isHttpUrl } from "../../core";
+import { facetApi } from "../../engine/api-client";
+import { Dot } from "../components/Button";
+import { Logo } from "../components/Logo";
+import { describeError } from "../format";
+import { useContainers } from "../useContainers";
 
 /** The address this page stands for: `held.html?u=<address>` (set by SplitSession; only http(s) is accepted). */
 function addressOf(search: string): string | null {
-  const u = new URLSearchParams(search).get('u');
-  return u && /^https?:\/\//i.test(u) ? u : null;
+  const u = new URLSearchParams(search).get("u");
+  return isHttpUrl(u) ? u : null;
 }
 
 /**
  * What a tab shows while SplitSession is not sure which container it belongs to (docs/decisions.md, "Container tabs that come
  * back"): Chrome's "blocked by an extension" says nothing. The page makes no request. Same choices as the popup banner.
  */
-export function Held() {
+export const Held = () => {
   const address = addressOf(location.search);
   const { containers, error: loadError } = useContainers();
   const [status, setStatus] = useState<RestoreStatus | null>(null);
@@ -30,30 +31,44 @@ export function Held() {
   const list = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    document.title = 'SplitSession: choose a container';
+    document.title = "SplitSession: choose a container";
     void (async () => {
       const tab = await browser.tabs.getCurrent();
       setTabId(tab?.id ?? null);
       setStatus(await facetApi.getRestoreStatus().catch(() => null));
-      if (tab?.id !== undefined) setCurrent(await facetApi.getTabContainer(tab.id).catch(() => undefined));
+      if (tab?.id !== undefined)
+        setCurrent(
+          await facetApi.getTabContainer(tab.id).catch(() => undefined),
+        );
     })();
   }, []);
-  const entry = status && tabId !== null ? status.held.find((h) => h.tabId === tabId) : undefined;
+  const entry =
+    status && tabId !== null
+      ? status.held.find((h) => h.tabId === tabId)
+      : undefined;
   const ready = status !== null && containers !== null && tabId !== null;
   useEffect(() => {
-    if (ready) list.current?.querySelector<HTMLElement>('button')?.focus();
+    if (ready) list.current?.querySelector<HTMLElement>("button")?.focus();
   }, [ready]);
 
   if (!address) {
     return (
       <main class="held">
-        <header class="held__head"><Logo size={28} /><h1>SplitSession</h1></header>
-        <p class="fx-notice fx-notice--info" role="status">This page shows a tab that SplitSession is holding back after a restart. It was opened without an address, so there is nothing to choose.</p>
+        <header class="held__head">
+          <Logo size={28} />
+          <h1>SplitSession</h1>
+        </header>
+        <p class="fx-notice fx-notice--info" role="status">
+          This page shows a tab that SplitSession is holding back after a
+          restart. It was opened without an address, so there is nothing to
+          choose.
+        </p>
       </main>
     );
   }
 
-  const nameOf = (id: string) => containers?.find((c) => c.id === id)?.name ?? id;
+  const nameOf = (id: string) =>
+    containers?.find((c) => c.id === id)?.name ?? id;
   const colorOf = (id: string) => containers?.find((c) => c.id === id)?.color;
   const choose = async (containerId: string | null) => {
     if (busy || tabId === null) return;
@@ -70,7 +85,9 @@ export function Held() {
         location.replace(address);
       } else {
         // "Choose a container…": the choose page places the tab where the user picks, then sends it to the address.
-        location.replace(`${browser.runtime.getURL('/choose.html' as never)}?url=${encodeURIComponent(address)}&tab=${tabId}`);
+        location.replace(
+          `${browser.runtime.getURL("/choose.html" as never)}?url=${encodeURIComponent(address)}&tab=${tabId}`,
+        );
       }
     } catch (e) {
       setError(describeError(e));
@@ -78,50 +95,102 @@ export function Held() {
     }
   };
 
-  const candidates = entry ? entry.candidates.filter((id) => containers?.some((c) => c.id === id)) : [];
+  const candidates = entry
+    ? entry.candidates.filter((id) => containers?.some((c) => c.id === id))
+    : [];
   return (
     <main class="held">
-      <header class="held__head"><Logo size={28} /><h1>SplitSession</h1></header>
+      <header class="held__head">
+        <Logo size={28} />
+        <h1>SplitSession</h1>
+      </header>
       <section class="held__card" aria-labelledby="held-title">
-        <h2 id="held-title">{entry ? 'This tab is waiting for you' : 'This tab is no longer on hold'}</h2>
+        <h2 id="held-title">
+          {entry
+            ? "This tab is waiting for you"
+            : "This tab is no longer on hold"}
+        </h2>
         <p>
           {entry
-            ? 'Chrome brought this page back, and SplitSession is not sure which container it belongs to. Nothing has been sent to the site yet.'
-            : 'SplitSession held this page back before the browser closed. Choose how to open it.'}
+            ? "Chrome brought this page back, and SplitSession is not sure which container it belongs to. Nothing has been sent to the site yet."
+            : "SplitSession held this page back before the browser closed. Choose how to open it."}
         </p>
-        <p class="fx-secondary held__url" data-testid="held-url">{address}</p>
+        <p class="fx-secondary held__url" data-testid="held-url">
+          {address}
+        </p>
         {!entry && current !== undefined && (
           <p class="fx-secondary" data-testid="held-current">
-            This tab is now {current === null ? 'an ordinary tab (regular Chrome profile)' : `in ${nameOf(current)}`}.
+            This tab is now{" "}
+            {current === null
+              ? "an ordinary tab (regular Chrome profile)"
+              : `in ${nameOf(current)}`}
+            .
           </p>
         )}
 
-        {loadError && <p class="fx-notice fx-notice--error" role="alert">{loadError}</p>}
+        {loadError && (
+          <p class="fx-notice fx-notice--error" role="alert">
+            {loadError}
+          </p>
+        )}
 
-        <div ref={list} class="held__options" role="group" aria-label="Where to open this tab">
+        <div
+          ref={list}
+          class="held__options"
+          role="group"
+          aria-label="Where to open this tab"
+        >
           {entry
             ? candidates.map((id) => (
-                <button key={id} type="button" class="held__option" disabled={busy || !ready} onClick={() => void choose(id)} data-testid="held-container">
-                  <Dot color={CONTAINER_HEX[colorOf(id) ?? 'blue']} />
+                <button
+                  key={id}
+                  type="button"
+                  class="held__option"
+                  disabled={busy || !ready}
+                  onClick={() => void choose(id)}
+                  data-testid="held-container"
+                >
+                  <Dot color={CONTAINER_HEX[colorOf(id) ?? "blue"]} />
                   <span class="held__name">Open in {nameOf(id)}</span>
                   <span class="fx-secondary">Maybe</span>
                 </button>
               ))
             : null}
           {!entry && (
-            <button type="button" class="held__option" disabled={busy || !ready} onClick={() => void choose('')} data-testid="held-choose">
+            <button
+              type="button"
+              class="held__option"
+              disabled={busy || !ready}
+              onClick={() => void choose("")}
+              data-testid="held-choose"
+            >
               <span class="held__name">Choose a container…</span>
             </button>
           )}
-          <button type="button" class="held__option held__option--plain" disabled={busy || !ready} onClick={() => void choose(null)} data-testid="held-plain">
+          <button
+            type="button"
+            class="held__option held__option--plain"
+            disabled={busy || !ready}
+            onClick={() => void choose(null)}
+            data-testid="held-plain"
+          >
             <span class="held__nodot" aria-hidden="true" />
             <span class="held__name">Open as an ordinary tab</span>
             <span class="fx-secondary">Regular Chrome profile</span>
           </button>
         </div>
-        {error && <p class="fx-notice fx-notice--error" role="alert">{error}</p>}
-        {entry && <p class="fx-secondary">The SplitSession button in the toolbar offers the same choices for every waiting tab at once.</p>}
+        {error && (
+          <p class="fx-notice fx-notice--error" role="alert">
+            {error}
+          </p>
+        )}
+        {entry && (
+          <p class="fx-secondary">
+            The SplitSession button in the toolbar offers the same choices for
+            every waiting tab at once.
+          </p>
+        )}
       </section>
     </main>
   );
-}
+};

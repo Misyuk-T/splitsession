@@ -1,9 +1,14 @@
-import { readSettings, SETTINGS_KEY, storedSettings, type SettingKey } from '../core';
-import type { StorageAreaLike } from './storage/storage-area';
-import type { ServiceWorkerPolicy } from './sw-policy';
+import {
+  readSettings,
+  type SettingKey,
+  SETTINGS_KEY,
+  storedSettings,
+} from "../core";
+import type { StorageAreaLike } from "./storage/storage-area";
+import type { ServiceWorkerPolicy } from "./sw-policy";
 
 /** `storage.local` key of the marker that the one-time move from "consent" to a plain setting is done. */
-export const STRICT_STATE_KEY = 'strictMode';
+export const STRICT_STATE_KEY = "strictMode";
 const STATE_VERSION = 2;
 
 /** What the interface (and the tests) need to know about strict mode. */
@@ -23,22 +28,42 @@ export interface StrictModeStatus {
 export async function migrateStrictMode(area: StorageAreaLike): Promise<void> {
   const stored = await area.get([SETTINGS_KEY, STRICT_STATE_KEY]);
   const state = stored[STRICT_STATE_KEY];
-  if (typeof state === 'object' && state !== null && (state as { v?: unknown }).v === STATE_VERSION) return;
-  const consentAt = typeof state === 'object' && state !== null ? (state as { consentAt?: unknown }).consentAt : null;
-  const consented = typeof consentAt === 'number' && Number.isFinite(consentAt);
+  if (
+    typeof state === "object" &&
+    state !== null &&
+    (state as { v?: unknown }).v === STATE_VERSION
+  )
+    return;
+  const consentAt =
+    typeof state === "object" && state !== null
+      ? (state as { consentAt?: unknown }).consentAt
+      : null;
+  const consented = typeof consentAt === "number" && Number.isFinite(consentAt);
 
   const raw = stored[SETTINGS_KEY];
-  const source = typeof raw === 'object' && raw !== null ? (raw as Record<string, unknown>) : {};
+  const source =
+    typeof raw === "object" && raw !== null
+      ? (raw as Record<string, unknown>)
+      : {};
   // The setting as the old code read it: on unless the user explicitly switched it off (the old default was on).
-  const explicitlyOff = source.strictMode === false && (Array.isArray(source.explicit) ? source.explicit.includes('strictMode') : true);
+  const explicitlyOff =
+    source.strictMode === false &&
+    (Array.isArray(source.explicit)
+      ? source.explicit.includes("strictMode")
+      : true);
   const on = consented && !explicitlyOff;
 
   if (raw !== undefined || on) {
     const read = readSettings(raw);
     const explicit = new Set<SettingKey>(read.explicit);
-    if (on) explicit.add('strictMode');
-    else explicit.delete('strictMode'); // off follows the default (off)
-    await area.set({ [SETTINGS_KEY]: storedSettings({ ...read.settings, strictMode: on }, explicit) });
+    if (on) explicit.add("strictMode");
+    else explicit.delete("strictMode"); // off follows the default (off)
+    await area.set({
+      [SETTINGS_KEY]: storedSettings(
+        { ...read.settings, strictMode: on },
+        explicit,
+      ),
+    });
   }
   await area.set({ [STRICT_STATE_KEY]: { v: STATE_VERSION } });
 }
@@ -91,7 +116,7 @@ export class StrictMode {
 
   /** Install or update: on, sweep workers again. */
   async installed(reason: string): Promise<void> {
-    if (reason !== 'install' && reason !== 'update') return;
+    if (reason !== "install" && reason !== "update") return;
     if (this.active) await this.sw.removeAll().catch(() => {});
   }
 

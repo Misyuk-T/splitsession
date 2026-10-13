@@ -1,24 +1,25 @@
-import { defineConfig } from '@playwright/test';
-import { TEST_PORT } from './env';
+import { defineConfig } from "@playwright/test";
+
+import { TEST_PORT } from "./env";
 
 /**
  * SplitSession e2e: Chromium with the built extension (.output/chrome-mv3) in a persistent context, against the local
  * multi-host stand in test-server/. `pnpm e2e` builds first. HEADED=1 to watch.
  */
 export default defineConfig({
-  testDir: '.',
+  testDir: ".",
   testMatch: /.*\.spec\.ts/,
   fullyParallel: false,
   workers: 1,
   retries: 0,
   timeout: 45_000,
   expect: { timeout: 7_000 },
-  reporter: [['list']],
+  reporter: [["list"]],
   webServer: {
     command: `node test-server/server.mjs ${TEST_PORT}`,
-    cwd: '..',
+    cwd: "..",
     port: TEST_PORT,
     reuseExistingServer: false,
-    stdout: 'ignore',
+    stdout: "ignore",
   },
 });

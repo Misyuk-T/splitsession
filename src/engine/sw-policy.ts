@@ -1,19 +1,31 @@
-import { beaconSiteOf, compileManagedBeaconRule, compileStrictGuardRule, hostnameOf, type DnrRule } from '../core';
-import type { StorageAreaLike } from './storage/storage-area';
+import {
+  beaconSiteOf,
+  compileManagedBeaconRule,
+  compileStrictGuardRule,
+  type DnrRule,
+  hostnameOf,
+} from "../core";
+import type { StorageAreaLike } from "./storage/storage-area";
 
-export const MANAGED_SITES_KEY = 'managedSites';
+export const MANAGED_SITES_KEY = "managedSites";
 /** Dynamic rule ID of the "managed origin" beacon answer. */
 export const MANAGED_BEACON_RULE_ID = 1;
 /** Dynamic rule ID of the strict-mode guard answer `{g:1}` (every frame of every tab). */
 export const STRICT_GUARD_RULE_ID = 2;
 
 export interface DnrDynamicApi {
-  updateDynamicRules(options: { removeRuleIds?: number[]; addRules?: DnrRule[] }): Promise<void>;
+  updateDynamicRules(options: {
+    removeRuleIds?: number[];
+    addRules?: DnrRule[];
+  }): Promise<void>;
 }
 
 export interface BrowsingDataApi {
   /** `origins` omitted: every origin. */
-  remove(options: { origins?: string[]; since?: number }, dataToRemove: { serviceWorkers: boolean; cacheStorage?: boolean }): Promise<void>;
+  remove(
+    options: { origins?: string[]; since?: number },
+    dataToRemove: { serviceWorkers: boolean; cacheStorage?: boolean },
+  ): Promise<void>;
 }
 
 export interface ServiceWorkerPolicyOptions {
@@ -22,7 +34,11 @@ export interface ServiceWorkerPolicyOptions {
   removalThrottleMs?: number;
   /** Minimum gap between two removals before SplitSession itself navigates a container tab to the origin (default 2 s). */
   prepareThrottleMs?: number;
-  log?: (level: 'info' | 'warn' | 'error', message: string, data?: unknown) => void;
+  log?: (
+    level: "info" | "warn" | "error",
+    message: string,
+    data?: unknown,
+  ) => void;
   /** Called after the managed set grew (the engine recompiles its no-tab rule). */
   onSitesChanged?: () => void;
   /** Called after the strict guard was switched on or off (the engine recompiles its no-tab rules). */
@@ -57,7 +73,7 @@ export class ServiceWorkerPolicy {
   private readonly now: () => number;
   private readonly throttleMs: number;
   private readonly prepareThrottleMs: number;
-  private readonly log: NonNullable<ServiceWorkerPolicyOptions['log']>;
+  private readonly log: NonNullable<ServiceWorkerPolicyOptions["log"]>;
   private readonly onSitesChanged: () => void;
   private readonly onGuardChanged: () => void;
 
@@ -81,7 +97,11 @@ export class ServiceWorkerPolicy {
    */
   async load(guard = false, beacon = true): Promise<void> {
     const stored = (await this.area.get(MANAGED_SITES_KEY))[MANAGED_SITES_KEY];
-    this.managed = new Set(Array.isArray(stored) ? stored.filter((s): s is string => typeof s === 'string') : []);
+    this.managed = new Set(
+      Array.isArray(stored)
+        ? stored.filter((s): s is string => typeof s === "string")
+        : [],
+    );
     this.guard = guard;
     this.beacon = beacon;
     await this.writeRules();
@@ -131,7 +151,8 @@ export class ServiceWorkerPolicy {
       await pending;
     } else {
       const last = this.lastRemoval.get(parsed.origin);
-      if (last === undefined || this.now() - last >= this.prepareThrottleMs) await this.removeOrigin(parsed.origin);
+      if (last === undefined || this.now() - last >= this.prepareThrottleMs)
+        await this.removeOrigin(parsed.origin);
     }
     await this.settle();
   }
@@ -139,10 +160,16 @@ export class ServiceWorkerPolicy {
   /** Strict mode: every service worker of the profile. */
   async removeAll(): Promise<void> {
     try {
-      await this.browsingData.remove({}, { serviceWorkers: true, cacheStorage: false });
-      this.log('info', 'removed every service worker of the profile (strict mode)');
+      await this.browsingData.remove(
+        {},
+        { serviceWorkers: true, cacheStorage: false },
+      );
+      this.log(
+        "info",
+        "removed every service worker of the profile (strict mode)",
+      );
     } catch (error) {
-      this.log('error', 'removing every service worker failed', String(error));
+      this.log("error", "removing every service worker failed", String(error));
       throw error;
     }
   }
@@ -172,8 +199,11 @@ export class ServiceWorkerPolicy {
   private parse(origin: string): { origin: string; site: string } | null {
     try {
       const url = new URL(origin);
-      if (url.protocol !== 'http:' && url.protocol !== 'https:') return null;
-      return { origin: url.origin, site: beaconSiteOf(hostnameOf(url.hostname)) };
+      if (url.protocol !== "http:" && url.protocol !== "https:") return null;
+      return {
+        origin: url.origin,
+        site: beaconSiteOf(hostnameOf(url.hostname)),
+      };
     } catch {
       return null;
     }
@@ -193,7 +223,13 @@ export class ServiceWorkerPolicy {
     this.lastRemoval.set(origin, this.now());
     const work = this.browsingData
       .remove({ origins: [origin] }, { serviceWorkers: true })
-      .catch((error) => this.log('warn', `removing service workers of ${origin} failed`, String(error)))
+      .catch((error) =>
+        this.log(
+          "warn",
+          `removing service workers of ${origin} failed`,
+          String(error),
+        ),
+      )
       .finally(() => this.inFlight.delete(origin));
     this.inFlight.set(origin, work);
     return work;
@@ -208,13 +244,27 @@ export class ServiceWorkerPolicy {
   }
 
   private writeRules(): Promise<void> {
-    const managed = this.beacon ? compileManagedBeaconRule(MANAGED_BEACON_RULE_ID, this.sites()) : null;
+    const managed = this.beacon
+      ? compileManagedBeaconRule(MANAGED_BEACON_RULE_ID, this.sites())
+      : null;
     const addRules: DnrRule[] = [];
     if (managed) addRules.push(managed);
-    if (this.guard && this.beacon) addRules.push(compileStrictGuardRule(STRICT_GUARD_RULE_ID));
+    if (this.guard && this.beacon)
+      addRules.push(compileStrictGuardRule(STRICT_GUARD_RULE_ID));
     this.ruleWrite = this.ruleWrite
-      .then(() => this.dnr.updateDynamicRules({ removeRuleIds: [MANAGED_BEACON_RULE_ID, STRICT_GUARD_RULE_ID], addRules }))
-      .catch((error) => this.log('error', 'updating the dynamic beacon rules failed', String(error)));
+      .then(() =>
+        this.dnr.updateDynamicRules({
+          removeRuleIds: [MANAGED_BEACON_RULE_ID, STRICT_GUARD_RULE_ID],
+          addRules,
+        }),
+      )
+      .catch((error) =>
+        this.log(
+          "error",
+          "updating the dynamic beacon rules failed",
+          String(error),
+        ),
+      );
     return this.ruleWrite;
   }
 }

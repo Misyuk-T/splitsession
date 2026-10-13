@@ -12,19 +12,27 @@
 //
 // Migration from the product's old name (Facet, renamed 2026-10-11): install AND uninstall also remove the old
 // com.facet.bridge.json manifest and the old host copy in ~/Library/Application Support/Facet/host, if present.
-import { spawnSync } from 'node:child_process';
-import { chmodSync, copyFileSync, existsSync, mkdirSync, rmSync, rmdirSync, writeFileSync } from 'node:fs';
-import path from 'node:path';
-import { fileURLToPath, pathToFileURL } from 'node:url';
+import { spawnSync } from "node:child_process";
+import {
+  chmodSync,
+  copyFileSync,
+  existsSync,
+  mkdirSync,
+  rmdirSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
+import path from "node:path";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
-const root = fileURLToPath(new URL('..', import.meta.url));
-const dist = path.join(root, 'bridge', 'dist');
-const entry = path.join(dist, 'splitsession-bridge.mjs');
+const root = fileURLToPath(new URL("..", import.meta.url));
+const dist = path.join(root, "bridge", "dist");
+const entry = path.join(dist, "splitsession-bridge.mjs");
 
-const HOST_NAME = 'com.splitsession.bridge';
-const OLD_HOST_MANIFEST_FILE = 'com.facet.bridge.json'; // before the rename to SplitSession
-const OLD_MCP_NAME = 'facet';
-const EXTENSION_ID = 'hapfikidacgfgnnajkgnaednpgnhmffk'; // fixed by the manifest key (docs/development.md)
+const HOST_NAME = "com.splitsession.bridge";
+const OLD_HOST_MANIFEST_FILE = "com.facet.bridge.json"; // before the rename to SplitSession
+const OLD_MCP_NAME = "facet";
+const EXTENSION_ID = "hapfikidacgfgnnajkgnaednpgnhmffk"; // fixed by the manifest key (docs/development.md)
 
 const args = process.argv.slice(2);
 const flag = (name) => args.includes(name);
@@ -32,52 +40,69 @@ const value = (name) => {
   const at = args.indexOf(name);
   return at === -1 ? undefined : args[at + 1];
 };
-const uninstall = flag('--uninstall');
+const uninstall = flag("--uninstall");
 
 // Single-quote for sh.
-const sh = (s) => (/^[A-Za-z0-9_\/.:=@%+,-]+$/.test(s) ? s : `'${s.replaceAll("'", `'\\''`)}'`);
+const sh = (s) =>
+  /^[A-Za-z0-9_/.:=@%+,-]+$/.test(s) ? s : `'${s.replaceAll("'", `'\\''`)}'`;
 
-if (flag('--help') || flag('-h')) {
-  console.log('usage: node scripts/bridge-install.mjs [--uninstall] [--browser chrome|chromium|brave|edge|all] [--dir <NativeMessagingHosts dir>] [--no-build]');
+if (flag("--help") || flag("-h")) {
+  console.log(
+    "usage: node scripts/bridge-install.mjs [--uninstall] [--browser chrome|chromium|brave|edge|all] [--dir <NativeMessagingHosts dir>] [--no-build]",
+  );
   process.exit(0);
 }
 
-if (!flag('--no-build') && !uninstall) {
-  const built = spawnSync(process.execPath, [path.join(root, 'bridge', 'build.mjs')], { stdio: 'inherit' });
+if (!flag("--no-build") && !uninstall) {
+  const built = spawnSync(
+    process.execPath,
+    [path.join(root, "bridge", "build.mjs")],
+    { stdio: "inherit" },
+  );
   if (built.status !== 0) process.exit(built.status ?? 1);
 }
-if (!existsSync(path.join(dist, 'paths.mjs'))) {
-  const built = spawnSync(process.execPath, [path.join(root, 'bridge', 'build.mjs')], { stdio: 'inherit' });
+if (!existsSync(path.join(dist, "paths.mjs"))) {
+  const built = spawnSync(
+    process.execPath,
+    [path.join(root, "bridge", "build.mjs")],
+    { stdio: "inherit" },
+  );
   if (built.status !== 0) process.exit(built.status ?? 1);
 }
-const paths = await import(pathToFileURL(path.join(dist, 'paths.mjs')).href);
+const paths = await import(pathToFileURL(path.join(dist, "paths.mjs")).href);
 
 // Which directories.
 let targets;
-if (value('--dir')) {
-  targets = [{ name: 'custom', dir: path.resolve(value('--dir')) }];
+if (value("--dir")) {
+  targets = [{ name: "custom", dir: path.resolve(value("--dir")) }];
 } else {
-  const wanted = (value('--browser') ?? (uninstall ? 'all' : 'chrome')).toLowerCase();
-  const names = wanted === 'all' ? paths.BROWSERS : [wanted];
+  const wanted = (
+    value("--browser") ?? (uninstall ? "all" : "chrome")
+  ).toLowerCase();
+  const names = wanted === "all" ? paths.BROWSERS : [wanted];
   for (const n of names) {
     if (!paths.BROWSERS.includes(n)) {
-      console.error(`unknown browser "${n}"; use ${paths.BROWSERS.join(', ')} or all`);
+      console.error(
+        `unknown browser "${n}"; use ${paths.BROWSERS.join(", ")} or all`,
+      );
       process.exit(2);
     }
   }
   targets = names.map((n) => ({ name: n, dir: paths.manifestDir(n) }));
 }
 
-const hostDir = path.resolve(value('--host-dir') ?? paths.hostDir());
-const hostEntry = path.join(hostDir, 'splitsession-bridge.mjs');
-const launcher = path.join(hostDir, 'splitsession-bridge-host');
+const hostDir = path.resolve(value("--host-dir") ?? paths.hostDir());
+const hostEntry = path.join(hostDir, "splitsession-bridge.mjs");
+const launcher = path.join(hostDir, "splitsession-bridge-host");
 
 const claudeAdd = `claude mcp add --scope user splitsession -- ${sh(process.execPath)} ${sh(entry)} mcp`;
 const claudeRemoveOld = `claude mcp remove --scope user ${OLD_MCP_NAME}`;
 
 // Old (Facet) leftovers. The old host copy lives next to the new one's parent: <Application Support>/Facet/host. With an
 // explicit --host-dir (tests) only that directory's old-named files are looked at, never the real user directory.
-const oldHostDir = value('--host-dir') ? hostDir : path.join(path.dirname(paths.socketDir()), 'Facet', 'host');
+const oldHostDir = value("--host-dir")
+  ? hostDir
+  : path.join(path.dirname(paths.socketDir()), "Facet", "host");
 function removeOld() {
   for (const { dir } of targets) {
     const file = path.join(dir, OLD_HOST_MANIFEST_FILE);
@@ -86,11 +111,14 @@ function removeOld() {
       console.log(`removed old ${file}`);
     }
   }
-  const gone = [path.join(oldHostDir, 'facet-bridge-host'), path.join(oldHostDir, 'facet-bridge.mjs')].filter((f) => existsSync(f));
+  const gone = [
+    path.join(oldHostDir, "facet-bridge-host"),
+    path.join(oldHostDir, "facet-bridge.mjs"),
+  ].filter((f) => existsSync(f));
   for (const f of gone) rmSync(f, { force: true });
   if (gone.length > 0) console.log(`removed old host copy in ${oldHostDir}`);
   if (oldHostDir !== hostDir) {
-    rmSync(path.join(path.dirname(oldHostDir), 'bridge.sock'), { force: true }); // a stale socket of the old host
+    rmSync(path.join(path.dirname(oldHostDir), "bridge.sock"), { force: true }); // a stale socket of the old host
     for (const d of [oldHostDir, path.dirname(oldHostDir)]) {
       try {
         rmdirSync(d); // only when empty
@@ -119,22 +147,28 @@ if (uninstall) {
     /* not empty, or already gone */
   }
   removeOld();
-  console.log(`\nTo forget the agent in Claude Code too, run:\n\n  claude mcp remove --scope user splitsession\n\nand, if you registered it under the old name:\n\n  ${claudeRemoveOld}\n`);
+  console.log(
+    `\nTo forget the agent in Claude Code too, run:\n\n  claude mcp remove --scope user splitsession\n\nand, if you registered it under the old name:\n\n  ${claudeRemoveOld}\n`,
+  );
   process.exit(0);
 }
 
 // The launcher pins the node that ran this script, so Chrome (which has a minimal PATH) needs no shell setup.
 mkdirSync(hostDir, { recursive: true, mode: 0o700 });
 copyFileSync(entry, hostEntry);
-writeFileSync(launcher, `#!/bin/sh\n# Generated by scripts/bridge-install.mjs. Chrome starts this; it starts the host with the node it was installed with.\nexec ${sh(process.execPath)} ${sh(hostEntry)} host "$@"\n`);
+writeFileSync(
+  launcher,
+  `#!/bin/sh\n# Generated by scripts/bridge-install.mjs. Chrome starts this; it starts the host with the node it was installed with.\nexec ${sh(process.execPath)} ${sh(hostEntry)} host "$@"\n`,
+);
 chmodSync(launcher, 0o755);
 console.log(`host: ${launcher}`);
 
 const manifest = {
   name: HOST_NAME,
-  description: 'SplitSession agent bridge: lets your own AI agent see and operate your Chrome tabs (only while the switch in SplitSession is on).',
+  description:
+    "SplitSession agent bridge: lets your own AI agent see and operate your Chrome tabs (only while the switch in SplitSession is on).",
   path: launcher,
-  type: 'stdio',
+  type: "stdio",
   allowed_origins: [`chrome-extension://${EXTENSION_ID}/`],
 };
 for (const { name, dir } of targets) {

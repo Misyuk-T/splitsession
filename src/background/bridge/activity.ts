@@ -1,7 +1,14 @@
-import type { browser } from 'wxt/browser';
-import { readableTextColor } from '../../core';
-import { AGENT_GLYPHS } from '../../ui/agent-glyphs';
-import { AGENT_COLOR, pageActivity, type ActivityCommand, type ActivityInspection, type ActivityRect } from './overlay';
+import type { browser } from "wxt/browser";
+
+import { readableTextColor } from "../../core";
+import { AGENT_GLYPHS } from "../../ui/agent-glyphs";
+import {
+  type ActivityCommand,
+  type ActivityInspection,
+  type ActivityRect,
+  AGENT_COLOR,
+  pageActivity,
+} from "./overlay";
 
 type Browser = typeof browser;
 
@@ -25,7 +32,7 @@ export const ICON_TICK_MS = 33;
 /** The badge is put back a little after the page side has faded, so the two never flicker against each other. */
 const BADGE_HOLD_MS = ACTIVITY_TTL_MS + 150;
 
-export type MarkKind = 'read' | 'act';
+export type MarkKind = "read" | "act";
 
 interface ToolLook {
   label: string;
@@ -33,39 +40,39 @@ interface ToolLook {
   kind: MarkKind;
 }
 
-const read = (label: string): ToolLook => ({ label, kind: 'read' });
-const act = (label: string): ToolLook => ({ label, kind: 'act' });
+const read = (label: string): ToolLook => ({ label, kind: "read" });
+const act = (label: string): ToolLook => ({ label, kind: "act" });
 
 /** Tools that touch one specific tab, and how they show. `list_tabs` / `list_containers` / `bridge_info` are absent on purpose. */
 export const TOOL_LOOK: Readonly<Record<string, ToolLook>> = {
-  get_tab_text: read('reading'),
-  get_tab_html: read('reading'),
-  snapshot: read('reading'),
-  screenshot_tab: read('screenshot'),
-  wait_for: read('waiting'),
-  console_messages: read('reading logs'),
-  network_requests: read('reading logs'),
-  watch: read('watching'),
-  click: act('clicking'),
-  hover: act('hovering'),
-  drag: act('dragging'),
-  type: act('typing'),
-  press_key: act('pressing keys'),
-  select_option: act('choosing'),
-  upload_file: act('uploading'),
-  scroll: act('scrolling'),
-  run_js: act('running script'),
-  handle_dialog: act('answering a dialog'),
-  resize_viewport: act('resizing'),
-  navigate: act('navigating'),
-  navigate_back: act('navigating'),
-  navigate_forward: act('navigating'),
-  reload: act('reloading'),
-  open_in_container: act('opening'),
-  open_tab: act('opening'),
-  assign_tab: act('moving to a container'),
-  close_tab: act('closing'),
-  activate_tab: act('switching to this tab'),
+  get_tab_text: read("reading"),
+  get_tab_html: read("reading"),
+  snapshot: read("reading"),
+  screenshot_tab: read("screenshot"),
+  wait_for: read("waiting"),
+  console_messages: read("reading logs"),
+  network_requests: read("reading logs"),
+  watch: read("watching"),
+  click: act("clicking"),
+  hover: act("hovering"),
+  drag: act("dragging"),
+  type: act("typing"),
+  press_key: act("pressing keys"),
+  select_option: act("choosing"),
+  upload_file: act("uploading"),
+  scroll: act("scrolling"),
+  run_js: act("running script"),
+  handle_dialog: act("answering a dialog"),
+  resize_viewport: act("resizing"),
+  navigate: act("navigating"),
+  navigate_back: act("navigating"),
+  navigate_forward: act("navigating"),
+  reload: act("reloading"),
+  open_in_container: act("opening"),
+  open_tab: act("opening"),
+  assign_tab: act("moving to a container"),
+  close_tab: act("closing"),
+  activate_tab: act("switching to this tab"),
 };
 
 /** Longest wait for the page side: a page that is stuck (a JavaScript dialog is open) must not hold the tool up. */
@@ -104,7 +111,11 @@ interface Session {
  * never touched.
  */
 export class AgentActivity {
-  private readonly badgeTimers = new Map<number, ReturnType<typeof setTimeout>>();
+  private readonly badgeTimers = new Map<
+    number,
+    ReturnType<typeof setTimeout>
+  >();
+
   private readonly sessions = new Map<number, Session>();
   private readonly now: () => number;
   /** Session tabs that are in the background (not the active tab of their window), and the worker-driven favicon tick. */
@@ -114,30 +125,49 @@ export class AgentActivity {
   constructor(private readonly d: ActivityDeps) {
     this.now = d.now ?? Date.now;
     // A new document in a session tab (full page load) gets the glow again at once; the periodic renewal is the fallback.
-    const nav = d.b.webNavigation as unknown as { onCommitted?: { addListener(cb: (details: { tabId: number; frameId: number }) => void): void } } | undefined;
+    const nav = d.b.webNavigation as unknown as
+      | {
+          onCommitted?: {
+            addListener(
+              cb: (details: { tabId: number; frameId: number }) => void,
+            ): void;
+          };
+        }
+      | undefined;
     nav?.onCommitted?.addListener((details) => {
-      if (details.frameId === 0 && this.sessions.has(details.tabId)) void this.renew(details.tabId, true);
+      if (details.frameId === 0 && this.sessions.has(details.tabId))
+        void this.renew(details.tabId, true);
     });
     d.b.tabs?.onRemoved?.addListener((tabId) => this.forget(tabId));
     d.b.tabs?.onActivated?.addListener(() => void this.refreshBackground());
   }
 
   /** `tool` is working on `tabId` now (re-arms the bright layer and the session). `rect`: a pulse at that spot of the page. */
-  async touch(tabId: number, tool: string, rect: ActivityRect | null = null): Promise<void> {
+  async touch(
+    tabId: number,
+    tool: string,
+    rect: ActivityRect | null = null,
+  ): Promise<void> {
     const look = TOOL_LOOK[tool];
     if (!look || !this.d.enabled() || tabId < 0) return;
     this.hold(tabId);
-    const [done] = await Promise.all([this.inject(tabId, this.command('show', { label: look.label, kind: look.kind, rect })), this.badge(tabId)]);
+    const [done] = await Promise.all([
+      this.inject(
+        tabId,
+        this.command("show", { label: look.label, kind: look.kind, rect }),
+      ),
+      this.badge(tabId),
+    ]);
     this.markScripted(tabId, done);
   }
 
   /** Takes the overlay out of the picture (a screenshot is about to be taken). */
   async hide(tabId: number): Promise<void> {
-    await this.inject(tabId, this.command('hide'));
+    await this.inject(tabId, this.command("hide"));
   }
 
   async unhide(tabId: number): Promise<void> {
-    await this.inject(tabId, this.command('unhide'));
+    await this.inject(tabId, this.command("unhide"));
   }
 
   /**
@@ -152,7 +182,7 @@ export class AgentActivity {
         const timer = this.badgeTimers.get(tabId);
         if (timer) clearTimeout(timer);
         this.badgeTimers.delete(tabId);
-        await this.inject(tabId, this.command('stop'));
+        await this.inject(tabId, this.command("stop"));
         await this.d.restoreBadge(tabId).catch(() => {});
       }),
     );
@@ -163,15 +193,22 @@ export class AgentActivity {
     return [...this.sessions.keys()];
   }
 
-  private command(op: ActivityCommand['op'], o: { label?: string; kind?: ActivityCommand['kind']; rect?: ActivityRect | null } = {}): ActivityCommand {
+  private command(
+    op: ActivityCommand["op"],
+    o: {
+      label?: string;
+      kind?: ActivityCommand["kind"];
+      rect?: ActivityRect | null;
+    } = {},
+  ): ActivityCommand {
     return {
       op,
-      label: o.label ?? '',
-      kind: o.kind ?? '',
+      label: o.label ?? "",
+      kind: o.kind ?? "",
       ttl: ACTIVITY_TTL_MS,
       lease: LEASE_MS,
       rect: o.rect ?? null,
-      glyphs: AGENT_GLYPHS as unknown as ActivityCommand['glyphs'],
+      glyphs: AGENT_GLYPHS as unknown as ActivityCommand["glyphs"],
     };
   }
 
@@ -196,7 +233,8 @@ export class AgentActivity {
 
   /** Looks at which session tabs are not the active tab of their window (the ones whose page timers Chrome throttles). */
   private async refreshBackground(): Promise<void> {
-    const tabs = this.d.b.tabs as unknown as { get?(id: number): Promise<{ active?: boolean }> } | undefined;
+    const tabs = this.d.b.tabs as unknown as
+      { get?(id: number): Promise<{ active?: boolean }> } | undefined;
     if (!tabs?.get) return;
     await Promise.all(
       [...this.sessions.keys()].map(async (tabId) => {
@@ -211,7 +249,9 @@ export class AgentActivity {
 
   /** Runs the favicon tick while at least one scripted session tab is in the background. */
   private syncTicker(): void {
-    const need = [...this.background].some((id) => this.sessions.get(id)?.scripted);
+    const need = [...this.background].some(
+      (id) => this.sessions.get(id)?.scripted,
+    );
     if (need && !this.ticker) {
       this.ticker = setInterval(() => this.sendTicks(), ICON_TICK_MS);
     } else if (!need && this.ticker) {
@@ -221,12 +261,22 @@ export class AgentActivity {
   }
 
   private sendTicks(): void {
-    const tabs = this.d.b.tabs as unknown as { sendMessage?(id: number, message: unknown, options?: unknown): Promise<unknown> } | undefined;
+    const tabs = this.d.b.tabs as unknown as
+      | {
+          sendMessage?(
+            id: number,
+            message: unknown,
+            options?: unknown,
+          ): Promise<unknown>;
+        }
+      | undefined;
     if (!tabs?.sendMessage) return;
     for (const tabId of this.background) {
       if (!this.sessions.get(tabId)?.scripted) continue;
       try {
-        tabs.sendMessage(tabId, { facetAgentTick: 1 }, { frameId: 0 }).catch(() => {}); // no receiver (page gone, overlay down): nothing to do
+        tabs
+          .sendMessage(tabId, { facetAgentTick: 1 }, { frameId: 0 })
+          .catch(() => {}); // no receiver (page gone, overlay down): nothing to do
       } catch {
         // the tab is gone
       }
@@ -252,7 +302,10 @@ export class AgentActivity {
 
   /** Renews the page side's lease (or starts it in a new document). */
   private async renew(tabId: number, immediate = false): Promise<void> {
-    this.markScripted(tabId, await this.inject(tabId, this.command('session'), immediate));
+    this.markScripted(
+      tabId,
+      await this.inject(tabId, this.command("session"), immediate),
+    );
   }
 
   private async tick(tabId: number): Promise<void> {
@@ -260,30 +313,40 @@ export class AgentActivity {
     if (!session) return;
     if (!this.d.enabled()) {
       this.drop(tabId);
-      await this.inject(tabId, this.command('stop'));
+      await this.inject(tabId, this.command("stop"));
       return;
     }
-    const active = (this.d.held?.(tabId) ?? false) || this.now() - session.last < SESSION_MS;
+    const active =
+      (this.d.held?.(tabId) ?? false) || this.now() - session.last < SESSION_MS;
     if (active) {
       void this.refreshBackground();
       await this.renew(tabId);
       return;
     }
     this.drop(tabId);
-    await this.inject(tabId, this.command('end'));
+    await this.inject(tabId, this.command("end"));
   }
 
-  private async inject(tabId: number, cmd: ActivityCommand, immediate = false): Promise<ActivityInspection | boolean | undefined> {
+  private async inject(
+    tabId: number,
+    cmd: ActivityCommand,
+    immediate = false,
+  ): Promise<ActivityInspection | boolean | undefined> {
     try {
       const run = this.d.b.scripting.executeScript({
         target: { tabId, frameIds: [0] },
-        world: 'ISOLATED',
+        world: "ISOLATED",
         func: pageActivity as never,
         args: [cmd] as never,
         ...(immediate ? { injectImmediately: true } : {}),
       });
       run.catch(() => {});
-      const results = await Promise.race([run, new Promise<undefined>((r) => setTimeout(() => r(undefined), INJECT_MS))]);
+      const results = await Promise.race([
+        run,
+        new Promise<undefined>((r) =>
+          setTimeout(() => r(undefined), INJECT_MS),
+        ),
+      ]);
       return results?.[0]?.result as ActivityInspection | boolean | undefined;
     } catch {
       return undefined; // cannot be scripted, or the tab is gone: no overlay, which is fine
@@ -293,13 +356,22 @@ export class AgentActivity {
   private async badge(tabId: number): Promise<void> {
     const action = this.d.b.action as unknown as {
       setBadgeText(details: { tabId: number; text: string }): Promise<void>;
-      setBadgeBackgroundColor(details: { tabId: number; color: string }): Promise<void>;
-      setBadgeTextColor?(details: { tabId: number; color: string }): Promise<void>;
+      setBadgeBackgroundColor(details: {
+        tabId: number;
+        color: string;
+      }): Promise<void>;
+      setBadgeTextColor?(details: {
+        tabId: number;
+        color: string;
+      }): Promise<void>;
     };
     try {
-      await action.setBadgeText({ tabId, text: 'AI' });
+      await action.setBadgeText({ tabId, text: "AI" });
       await action.setBadgeBackgroundColor({ tabId, color: AGENT_COLOR });
-      await action.setBadgeTextColor?.({ tabId, color: readableTextColor(AGENT_COLOR) });
+      await action.setBadgeTextColor?.({
+        tabId,
+        color: readableTextColor(AGENT_COLOR),
+      });
     } catch {
       return; // the tab closed meanwhile
     }

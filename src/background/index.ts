@@ -1,10 +1,11 @@
-import { browser } from 'wxt/browser';
-import { Extras } from './extras';
-import { registerExtrasListeners } from './extras-listeners';
-import { Facet } from './facet';
-import { createAgentSide } from './full-edition';
-import { createFullApi } from './full-api';
-import { registerListeners } from './listeners';
+import { browser } from "wxt/browser";
+
+import { Extras } from "./extras";
+import { registerExtrasListeners } from "./extras-listeners";
+import { Facet } from "./facet";
+import { createFullApi } from "./full-api";
+import { createAgentSide } from "./full-edition";
+import { registerListeners } from "./listeners";
 
 /**
  * Service-worker entry (wrapped by src/entrypoints/background.ts). Must stay synchronous up to listener registration.
@@ -14,7 +15,13 @@ export function main(): void {
   const facet = new Facet();
   const extras = new Extras(facet);
   const agent = __FULL__ ? createAgentSide(facet, extras) : null;
-  const api = createFullApi(facet, extras, () => browser.declarativeNetRequest.getSessionRules() as Promise<unknown[]>, browser, agent?.bridgeApi);
+  const api = createFullApi(
+    facet,
+    extras,
+    () => browser.declarativeNetRequest.getSessionRules() as Promise<unknown[]>,
+    browser,
+    agent?.bridgeApi,
+  );
   agent?.install(api);
   registerListeners(facet, api);
   registerExtrasListeners(extras);

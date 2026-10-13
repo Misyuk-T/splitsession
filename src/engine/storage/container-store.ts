@@ -1,7 +1,13 @@
-import { CONTAINER_COLORS, CookieJar, type Container, type ContainerColor, type ContainerId } from '../../core';
-import type { StorageAreaLike } from './storage-area';
+import {
+  type Container,
+  CONTAINER_COLORS,
+  type ContainerColor,
+  type ContainerId,
+  CookieJar,
+} from "../../core";
+import type { StorageAreaLike } from "./storage-area";
 
-export const CONTAINERS_KEY = 'containers';
+export const CONTAINERS_KEY = "containers";
 export const jarKey = (id: ContainerId): string => `jar:${id}`;
 
 const MAX_NAME_LENGTH = 64;
@@ -9,30 +15,37 @@ const MAX_NAME_LENGTH = 64;
 export class ContainerError extends Error {}
 
 /** Container IDs end up in storage prefixes and DNR data URLs: keep them short, lowercase alphanumerics. */
-export function generateContainerId(random: () => number = Math.random): ContainerId {
-  let id = '';
+export function generateContainerId(
+  random: () => number = Math.random,
+): ContainerId {
+  let id = "";
   for (let i = 0; i < 10; i++) id += Math.floor(random() * 36).toString(36);
   return id;
 }
 
 export function normalizeName(name: unknown): string {
-  if (typeof name !== 'string') throw new ContainerError('container name must be a string');
-  const trimmed = name.trim().replace(/\s+/g, ' ');
-  if (trimmed === '') throw new ContainerError('container name must not be empty');
-  if (trimmed.length > MAX_NAME_LENGTH) throw new ContainerError(`container name longer than ${MAX_NAME_LENGTH} characters`);
+  if (typeof name !== "string")
+    throw new ContainerError("container name must be a string");
+  const trimmed = name.trim().replace(/\s+/g, " ");
+  if (trimmed === "")
+    throw new ContainerError("container name must not be empty");
+  if (trimmed.length > MAX_NAME_LENGTH)
+    throw new ContainerError(
+      `container name longer than ${MAX_NAME_LENGTH} characters`,
+    );
   return trimmed;
 }
 
 function isContainer(x: unknown): x is Container {
-  if (typeof x !== 'object' || x === null) return false;
+  if (typeof x !== "object" || x === null) return false;
   const c = x as Record<string, unknown>;
   return (
-    typeof c.id === 'string' &&
+    typeof c.id === "string" &&
     /^[a-z0-9]{1,32}$/.test(c.id) &&
-    typeof c.name === 'string' &&
-    typeof c.color === 'string' &&
+    typeof c.name === "string" &&
+    typeof c.color === "string" &&
     (CONTAINER_COLORS as readonly string[]).includes(c.color) &&
-    typeof c.createdAt === 'number'
+    typeof c.createdAt === "number"
   );
 }
 
@@ -72,8 +85,11 @@ export class ContainerStore {
     this.containers = Array.isArray(list) ? list.filter(isContainer) : [];
     this.jars.clear();
     if (this.containers.length === 0) return;
-    const jarData = await this.area.get(this.containers.map((c) => jarKey(c.id)));
-    for (const c of this.containers) this.jars.set(c.id, CookieJar.fromJSON(jarData[jarKey(c.id)]));
+    const jarData = await this.area.get(
+      this.containers.map((c) => jarKey(c.id)),
+    );
+    for (const c of this.containers)
+      this.jars.set(c.id, CookieJar.fromJSON(jarData[jarKey(c.id)]));
   }
 
   list(): Container[] {
@@ -96,33 +112,50 @@ export class ContainerStore {
     return this.get(ref) ?? this.findByName(ref);
   }
 
-  async create(input: { name: string; color?: ContainerColor }): Promise<Container> {
+  async create(input: {
+    name: string;
+    color?: ContainerColor;
+  }): Promise<Container> {
     const name = normalizeName(input.name);
-    if (this.findByName(name)) throw new ContainerError(`a container named "${name}" already exists`);
-    if (input.color !== undefined && !(CONTAINER_COLORS as readonly string[]).includes(input.color)) {
+    if (this.findByName(name))
+      throw new ContainerError(`a container named "${name}" already exists`);
+    if (
+      input.color !== undefined &&
+      !(CONTAINER_COLORS as readonly string[]).includes(input.color)
+    ) {
       throw new ContainerError(`unknown color "${String(input.color)}"`);
     }
     let id = generateContainerId(this.random);
     while (this.get(id)) id = generateContainerId(this.random);
-    const color = input.color ?? CONTAINER_COLORS[this.containers.length % CONTAINER_COLORS.length]!;
+    const color =
+      input.color ??
+      CONTAINER_COLORS[this.containers.length % CONTAINER_COLORS.length]!;
     const container: Container = { id, name, color, createdAt: this.now() };
     this.containers.push(container);
     this.jars.set(id, new CookieJar());
-    await this.area.set({ [CONTAINERS_KEY]: this.containers, [jarKey(id)]: this.jars.get(id)!.toJSON() });
+    await this.area.set({
+      [CONTAINERS_KEY]: this.containers,
+      [jarKey(id)]: this.jars.get(id)!.toJSON(),
+    });
     return { ...container };
   }
 
-  async update(id: ContainerId, patch: { name?: string; color?: ContainerColor }): Promise<Container> {
+  async update(
+    id: ContainerId,
+    patch: { name?: string; color?: ContainerColor },
+  ): Promise<Container> {
     const container = this.containers.find((c) => c.id === id);
     if (!container) throw new ContainerError(`no container "${id}"`);
     if (patch.name !== undefined) {
       const name = normalizeName(patch.name);
       const clash = this.findByName(name);
-      if (clash && clash.id !== id) throw new ContainerError(`a container named "${name}" already exists`);
+      if (clash && clash.id !== id)
+        throw new ContainerError(`a container named "${name}" already exists`);
       container.name = name;
     }
     if (patch.color !== undefined) {
-      if (!(CONTAINER_COLORS as readonly string[]).includes(patch.color)) throw new ContainerError(`unknown color "${String(patch.color)}"`);
+      if (!(CONTAINER_COLORS as readonly string[]).includes(patch.color))
+        throw new ContainerError(`unknown color "${String(patch.color)}"`);
       container.color = patch.color;
     }
     await this.area.set({ [CONTAINERS_KEY]: this.containers });
@@ -153,7 +186,8 @@ export class ContainerStore {
   touchJar(id: ContainerId): void {
     if (!this.get(id)) return;
     this.dirtyJars.add(id);
-    if (this.timer === null) this.timer = setTimeout(() => void this.flush(), this.debounceMs);
+    if (this.timer === null)
+      this.timer = setTimeout(() => void this.flush(), this.debounceMs);
   }
 
   /** Writes every dirty jar now. */
@@ -170,9 +204,11 @@ export class ContainerStore {
       const jar = this.jars.get(id);
       if (jar) items[jarKey(id)] = jar.toJSON();
     }
-    this.writing = this.writing.then(() => this.area.set(items)).catch(() => {
-      for (const id of ids) this.dirtyJars.add(id);
-    });
+    this.writing = this.writing
+      .then(() => this.area.set(items))
+      .catch(() => {
+        for (const id of ids) this.dirtyJars.add(id);
+      });
     return this.writing;
   }
 }

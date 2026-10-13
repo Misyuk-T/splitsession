@@ -1,7 +1,13 @@
-import type { ComponentChildren } from 'preact';
-import { useEffect, useRef, useState } from 'preact/hooks';
-import { Dot } from './Button';
-import { useOutsidePress, usePopoverPlacement, useTypeahead, useUid } from './hooks';
+import type { ComponentChildren } from "preact";
+import { useEffect, useRef, useState } from "preact/hooks";
+
+import { Dot } from "./Button";
+import {
+  useOutsidePress,
+  usePopoverPlacement,
+  useTypeahead,
+  useUid,
+} from "./hooks";
 
 export interface MenuItem {
   id: string;
@@ -26,8 +32,8 @@ interface MenuButtonProps {
   items: readonly MenuItem[];
   onSelect(id: string): void;
   menuLabel?: string;
-  align?: 'start' | 'end';
-  variant?: 'secondary' | 'primary' | 'ghost';
+  align?: "start" | "end";
+  variant?: "secondary" | "primary" | "ghost";
   small?: boolean;
   icon?: boolean;
   block?: boolean;
@@ -41,8 +47,22 @@ interface MenuButtonProps {
  * Menu button (ARIA menu pattern): ArrowDown/ArrowUp open it and move, Home/End jump, Enter/Space choose, Escape closes
  * and returns focus to the button, Tab closes, typing a letter jumps to a matching item.
  */
-export function MenuButton({ children, ariaLabel, items, onSelect, menuLabel, align = 'start', variant = 'secondary', small, icon, block, disabled, id, title }: MenuButtonProps) {
-  const uid = useUid('menu');
+export const MenuButton = ({
+  children,
+  ariaLabel,
+  items,
+  onSelect,
+  menuLabel,
+  align = "start",
+  variant = "secondary",
+  small,
+  icon,
+  block,
+  disabled,
+  id,
+  title,
+}: MenuButtonProps) => {
+  const uid = useUid("menu");
   const [open, setOpen] = useState(false);
   const [active, setActive] = useState(0);
   const trigger = useRef<HTMLButtonElement>(null);
@@ -50,19 +70,32 @@ export function MenuButton({ children, ariaLabel, items, onSelect, menuLabel, al
   const itemRefs = useRef<Array<HTMLButtonElement | null>>([]);
   const restoreFocus = useRef(false);
   const placement = usePopoverPlacement(trigger, popover, open, align);
-  const enabled = items.map((item, index) => (item.disabled ? -1 : index)).filter((index) => index >= 0);
-  const typeahead = useTypeahead(items.map((i) => i.label), active);
+  const enabled = items
+    .map((item, index) => (item.disabled ? -1 : index))
+    .filter((index) => index >= 0);
+  const typeahead = useTypeahead(
+    items.map((i) => i.label),
+    active,
+  );
 
   useOutsidePress([trigger, popover], () => setOpen(false), open);
 
   useEffect(() => {
-    if (open && placement && !restoreFocus.current) itemRefs.current[active]?.focus();
+    if (open && placement && !restoreFocus.current)
+      itemRefs.current[active]?.focus();
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- `placement` is tracked as "is placed" so focus moves once the popover is positioned, not on every reposition
   }, [open, active, placement !== null]);
 
-  const openAt = (position: 'first' | 'last' | 'checked') => {
+  const openAt = (position: "first" | "last" | "checked") => {
     if (enabled.length === 0) return;
     const checked = items.findIndex((i) => i.checked && !i.disabled);
-    setActive(position === 'last' ? enabled[enabled.length - 1]! : position === 'checked' && checked >= 0 ? checked : enabled[0]!);
+    setActive(
+      position === "last"
+        ? enabled[enabled.length - 1]!
+        : position === "checked" && checked >= 0
+          ? checked
+          : enabled[0]!,
+    );
     setOpen(true);
   };
   // Focus goes back to the button once the menu is gone, whatever its last render was doing meanwhile
@@ -90,7 +123,15 @@ export function MenuButton({ children, ariaLabel, items, onSelect, menuLabel, al
     queueMicrotask(() => onSelect(item.id));
   };
 
-  const classes = ['fx-btn', variant !== 'secondary' && `fx-btn--${variant}`, small && 'fx-btn--small', icon && 'fx-btn--icon', block && 'fx-btn--block'].filter(Boolean).join(' ');
+  const classes = [
+    "fx-btn",
+    variant !== "secondary" && `fx-btn--${variant}`,
+    small && "fx-btn--small",
+    icon && "fx-btn--icon",
+    block && "fx-btn--block",
+  ]
+    .filter(Boolean)
+    .join(" ");
 
   return (
     <>
@@ -105,15 +146,15 @@ export function MenuButton({ children, ariaLabel, items, onSelect, menuLabel, al
         aria-label={ariaLabel}
         title={title ?? ariaLabel}
         disabled={disabled}
-        onClick={() => (open ? close(false) : openAt('checked'))}
+        onClick={() => (open ? close(false) : openAt("checked"))}
         onKeyDown={(event) => {
-          if (event.key === 'ArrowDown') {
+          if (event.key === "ArrowDown") {
             event.preventDefault();
-            openAt('first');
-          } else if (event.key === 'ArrowUp') {
+            openAt("first");
+          } else if (event.key === "ArrowUp") {
             event.preventDefault();
-            openAt('last');
-          } else if (event.key === 'Escape' && open) {
+            openAt("last");
+          } else if (event.key === "Escape" && open) {
             // Focus has not reached the first item yet (it moves there once the menu is placed).
             event.preventDefault();
             event.stopPropagation();
@@ -124,41 +165,58 @@ export function MenuButton({ children, ariaLabel, items, onSelect, menuLabel, al
         {children}
       </button>
       {open && (
+        // eslint-disable-next-line jsx-a11y/interactive-supports-focus -- focus lives on the menu items (arrow-key roving), not on the popover
         <div
           ref={popover}
           id={uid}
           class="fx-popover"
           role="menu"
           aria-label={menuLabel ?? ariaLabel}
-          style={placement ? { left: `${placement.left}px`, top: `${placement.top}px`, ...(placement.maxHeight > 0 ? { maxHeight: `${placement.maxHeight}px` } : {}) } : { left: '0px', top: '0px', visibility: 'hidden' }}
+          style={
+            placement
+              ? {
+                  left: `${placement.left}px`,
+                  top: `${placement.top}px`,
+                  ...(placement.maxHeight > 0
+                    ? { maxHeight: `${placement.maxHeight}px` }
+                    : {}),
+                }
+              : { left: "0px", top: "0px", visibility: "hidden" }
+          }
           onKeyDown={(event) => {
             switch (event.key) {
-              case 'ArrowDown':
+              case "ArrowDown":
                 event.preventDefault();
                 move(1);
                 break;
-              case 'ArrowUp':
+              case "ArrowUp":
                 event.preventDefault();
                 move(-1);
                 break;
-              case 'Home':
+              case "Home":
                 event.preventDefault();
                 setActive(enabled[0]!);
                 break;
-              case 'End':
+              case "End":
                 event.preventDefault();
                 setActive(enabled[enabled.length - 1]!);
                 break;
-              case 'Escape':
+              case "Escape":
                 event.preventDefault();
                 event.stopPropagation();
                 close(true);
                 break;
-              case 'Tab':
+              case "Tab":
                 close(false);
                 break;
               default:
-                if (event.key.length === 1 && !event.ctrlKey && !event.metaKey && !event.altKey && event.key !== ' ') {
+                if (
+                  event.key.length === 1 &&
+                  !event.ctrlKey &&
+                  !event.metaKey &&
+                  !event.altKey &&
+                  event.key !== " "
+                ) {
                   const hit = typeahead(event.key);
                   if (hit >= 0 && !items[hit]!.disabled) setActive(hit);
                 }
@@ -167,20 +225,32 @@ export function MenuButton({ children, ariaLabel, items, onSelect, menuLabel, al
         >
           {items.map((item, index) => (
             <div key={item.id} role="none">
-              {item.separatorBefore && <div class="fx-popover__sep" role="separator" />}
+              {item.separatorBefore && (
+                <div class="fx-popover__sep" role="separator" />
+              )}
               <button
                 ref={(el) => {
                   itemRefs.current[index] = el;
                 }}
                 type="button"
-                role={item.checked !== undefined ? (item.toggle ? 'menuitemcheckbox' : 'menuitemradio') : 'menuitem'}
-                aria-checked={item.checked !== undefined ? item.checked : undefined}
-                class={`fx-popover__item${item.danger ? ' fx-popover__item--danger' : ''}`}
+                role={
+                  item.checked !== undefined
+                    ? item.toggle
+                      ? "menuitemcheckbox"
+                      : "menuitemradio"
+                    : "menuitem"
+                }
+                aria-checked={
+                  item.checked !== undefined ? item.checked : undefined
+                }
+                class={`fx-popover__item${item.danger ? " fx-popover__item--danger" : ""}`}
                 data-active={index === active}
                 tabIndex={index === active ? 0 : -1}
                 disabled={item.disabled}
                 onClick={() => choose(index)}
-                onMouseMove={() => !item.disabled && index !== active && setActive(index)}
+                onMouseMove={() =>
+                  !item.disabled && index !== active && setActive(index)
+                }
               >
                 {item.dot && <Dot color={item.dot} />}
                 <span>{item.label}</span>
@@ -191,4 +261,4 @@ export function MenuButton({ children, ariaLabel, items, onSelect, menuLabel, al
       )}
     </>
   );
-}
+};

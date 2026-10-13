@@ -1,13 +1,13 @@
 import {
+  type ContainerId,
   DOMAIN_RULES_KEY,
+  type DomainRule,
   isDomainRule,
   pruneRules,
   upsertRule,
   validateRule,
-  type ContainerId,
-  type DomainRule,
-} from '../core';
-import type { StorageAreaLike } from '../engine/storage/storage-area';
+} from "../core";
+import type { StorageAreaLike } from "../engine/storage/storage-area";
 
 export class RuleError extends Error {}
 
@@ -25,7 +25,9 @@ export class RuleStore {
   async load(): Promise<void> {
     const stored = (await this.area.get(DOMAIN_RULES_KEY))[DOMAIN_RULES_KEY];
     const list = Array.isArray(stored) ? stored.filter(isDomainRule) : [];
-    this.rules = pruneRules(list, this.knownContainers()).sort((a, b) => a.domain.localeCompare(b.domain));
+    this.rules = pruneRules(list, this.knownContainers()).sort((a, b) =>
+      a.domain.localeCompare(b.domain),
+    );
   }
 
   list(): DomainRule[] {
@@ -79,15 +81,19 @@ export class RuleStore {
   }
 
   private keyFor(domain: string): string {
-    const found = this.rules.find((r) => r.domain === domain.trim().toLowerCase());
+    const found = this.rules.find(
+      (r) => r.domain === domain.trim().toLowerCase(),
+    );
     if (found) return found.domain;
-    const checked = validateRule({ domain, action: 'ask' }, new Set());
+    const checked = validateRule({ domain, action: "ask" }, new Set());
     return checked.ok ? checked.rule.domain : domain;
   }
 
   private persist(): Promise<void> {
     const snapshot = this.rules.map((r) => ({ ...r }));
-    this.writing = this.writing.then(() => this.area.set({ [DOMAIN_RULES_KEY]: snapshot })).catch(() => {});
+    this.writing = this.writing
+      .then(() => this.area.set({ [DOMAIN_RULES_KEY]: snapshot }))
+      .catch(() => {});
     return this.writing;
   }
 }

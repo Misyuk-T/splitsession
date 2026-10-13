@@ -1,7 +1,9 @@
-import { render } from 'preact';
-import '../theme.css';
-import '../components.css';
-import './popup.css';
-import { Popup } from './Popup';
+import { render } from "preact";
 
-render(<Popup />, document.getElementById('app')!);
+import { Popup } from "./Popup";
+
+import "../theme.css";
+import "../components.css";
+import "./popup.css";
+
+render(<Popup />, document.getElementById("app")!);

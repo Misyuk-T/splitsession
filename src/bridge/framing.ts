@@ -16,14 +16,21 @@ export const MAX_EXTENSION_TO_HOST_BYTES = 256 * 1024 * 1024;
 export class FrameError extends Error {}
 
 const encoder = new TextEncoder();
-const decoder = new TextDecoder('utf-8', { fatal: true });
+const decoder = new TextDecoder("utf-8", { fatal: true });
 
 /** Length prefix + JSON body. Throws FrameError when the body is larger than `maxBytes`. */
-export function encodeFrame(message: unknown, maxBytes: number = MAX_HOST_TO_EXTENSION_BYTES): Uint8Array {
+export function encodeFrame(
+  message: unknown,
+  maxBytes: number = MAX_HOST_TO_EXTENSION_BYTES,
+): Uint8Array {
   const json = JSON.stringify(message);
-  if (json === undefined) throw new FrameError('message is not JSON-serializable');
+  if (json === undefined)
+    throw new FrameError("message is not JSON-serializable");
   const body = encoder.encode(json);
-  if (body.length > maxBytes) throw new FrameError(`message is ${body.length} bytes; the limit is ${maxBytes}`);
+  if (body.length > maxBytes)
+    throw new FrameError(
+      `message is ${body.length} bytes; the limit is ${maxBytes}`,
+    );
   const out = new Uint8Array(4 + body.length);
   new DataView(out.buffer).setUint32(0, body.length, true);
   out.set(body, 4);
@@ -40,7 +47,9 @@ export class FrameReader {
   private buffered = 0;
   private need: number | null = null; // body length once the header is known
 
-  constructor(private readonly maxBytes: number = MAX_EXTENSION_TO_HOST_BYTES) {}
+  constructor(
+    private readonly maxBytes: number = MAX_EXTENSION_TO_HOST_BYTES,
+  ) {}
 
   push(chunk: Uint8Array): unknown[] {
     const out: unknown[] = [];
@@ -52,8 +61,15 @@ export class FrameReader {
       if (this.need === null) {
         if (this.buffered < 4) break;
         const header = this.take(4);
-        const length = new DataView(header.buffer, header.byteOffset, 4).getUint32(0, true);
-        if (length > this.maxBytes) throw new FrameError(`frame of ${length} bytes exceeds the limit of ${this.maxBytes}`);
+        const length = new DataView(
+          header.buffer,
+          header.byteOffset,
+          4,
+        ).getUint32(0, true);
+        if (length > this.maxBytes)
+          throw new FrameError(
+            `frame of ${length} bytes exceeds the limit of ${this.maxBytes}`,
+          );
         this.need = length;
       }
       if (this.buffered < this.need) break;
@@ -64,7 +80,9 @@ export class FrameReader {
         text = decoder.decode(body);
         out.push(JSON.parse(text));
       } catch (error) {
-        throw new FrameError(`undecodable frame: ${error instanceof Error ? error.message : String(error)}`);
+        throw new FrameError(
+          `undecodable frame: ${error instanceof Error ? error.message : String(error)}`,
+        );
       }
     }
     return out;
@@ -104,29 +122,34 @@ export class FrameReader {
  * the parsed lines it completed; a line that is not JSON throws FrameError.
  */
 export class LineReader {
-  private rest = '';
+  private rest = "";
 
-  constructor(private readonly maxChars: number = MAX_EXTENSION_TO_HOST_BYTES) {}
+  constructor(
+    private readonly maxChars: number = MAX_EXTENSION_TO_HOST_BYTES,
+  ) {}
 
   push(text: string): unknown[] {
     const out: unknown[] = [];
     this.rest += text;
-    let at = this.rest.indexOf('\n');
+    let at = this.rest.indexOf("\n");
     while (at !== -1) {
       const line = this.rest.slice(0, at);
       this.rest = this.rest.slice(at + 1);
-      if (line.trim() !== '') {
+      if (line.trim() !== "") {
         try {
           out.push(JSON.parse(line));
         } catch (error) {
-          throw new FrameError(`undecodable line: ${error instanceof Error ? error.message : String(error)}`);
+          throw new FrameError(
+            `undecodable line: ${error instanceof Error ? error.message : String(error)}`,
+          );
         }
       }
-      at = this.rest.indexOf('\n');
+      at = this.rest.indexOf("\n");
     }
-    if (this.rest.length > this.maxChars) throw new FrameError('line too long');
+    if (this.rest.length > this.maxChars) throw new FrameError("line too long");
     return out;
   }
 }
 
-export const encodeLine = (message: unknown): string => `${JSON.stringify(message)}\n`;
+export const encodeLine = (message: unknown): string =>
+  `${JSON.stringify(message)}\n`;

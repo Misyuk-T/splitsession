@@ -1,5 +1,13 @@
-import { applySettingsPatch, normalizeSettings, readSettings, SETTINGS_KEY, storedSettings, type Settings, type SettingKey } from '../core';
-import type { StorageAreaLike } from '../engine/storage/storage-area';
+import {
+  applySettingsPatch,
+  normalizeSettings,
+  readSettings,
+  type SettingKey,
+  type Settings,
+  SETTINGS_KEY,
+  storedSettings,
+} from "../core";
+import type { StorageAreaLike } from "../engine/storage/storage-area";
 
 export type SettingsListener = (next: Settings, previous: Settings) => void;
 
@@ -16,11 +24,16 @@ export class SettingsStore {
   constructor(private readonly area: StorageAreaLike) {}
 
   async load(): Promise<Settings> {
-    const read = readSettings((await this.area.get(SETTINGS_KEY))[SETTINGS_KEY]);
+    const read = readSettings(
+      (await this.area.get(SETTINGS_KEY))[SETTINGS_KEY],
+    );
     this.value = read.settings;
     this.explicit = new Set(read.explicit);
     // One-time rewrite of the format without `explicit` (the engine and content scripts read both the same way).
-    if (read.legacy) await this.area.set({ [SETTINGS_KEY]: storedSettings(this.value, this.explicit) });
+    if (read.legacy)
+      await this.area.set({
+        [SETTINGS_KEY]: storedSettings(this.value, this.explicit),
+      });
     return this.get();
   }
 
@@ -33,13 +46,16 @@ export class SettingsStore {
     const previous = this.value;
     const next = applySettingsPatch(previous, patch);
     this.value = next;
-    for (const key of Object.keys(patch as object)) this.explicit.add(key as SettingKey);
-    await this.area.set({ [SETTINGS_KEY]: storedSettings(next, this.explicit) });
+    for (const key of Object.keys(patch as object))
+      this.explicit.add(key as SettingKey);
+    await this.area.set({
+      [SETTINGS_KEY]: storedSettings(next, this.explicit),
+    });
     for (const listener of [...this.listeners]) {
       try {
         listener({ ...next }, { ...previous });
       } catch (error) {
-        console.error('[splitsession] settings listener failed', error);
+        console.error("[splitsession] settings listener failed", error);
       }
     }
     return this.get();

@@ -1,23 +1,34 @@
 import {
-  REGEX_RULE_BUDGET,
-  SESSION_RULE_HARD_LIMIT,
-  SESSION_RULE_SOFT_LIMIT,
   type CompiledRules,
   type DnrRule,
+  REGEX_RULE_BUDGET,
   type RuleIdAllocator,
-} from '../../core';
-import { RuleIdPool } from './id-pool';
+  SESSION_RULE_HARD_LIMIT,
+  SESSION_RULE_SOFT_LIMIT,
+} from "../../core";
+import { RuleIdPool } from "./id-pool";
 
 /** The two calls of `chrome.declarativeNetRequest` the manager needs. */
 export interface DnrSessionApi {
-  updateSessionRules(options: { removeRuleIds?: number[]; addRules?: DnrRule[] }): Promise<void>;
+  updateSessionRules(options: {
+    removeRuleIds?: number[];
+    addRules?: DnrRule[];
+  }): Promise<void>;
   getSessionRules(): Promise<Array<{ id: number }>>;
 }
 
 /** Compiles every rule of one key (a container); null when the key has nothing to install (no tabs). */
-export type KeyCompiler = (key: string, allocator: RuleIdAllocator, regexBudget: number) => CompiledRules | null;
+export type KeyCompiler = (
+  key: string,
+  allocator: RuleIdAllocator,
+  regexBudget: number,
+) => CompiledRules | null;
 
-export type LogFn = (level: 'info' | 'warn' | 'error', message: string, data?: unknown) => void;
+export type LogFn = (
+  level: "info" | "warn" | "error",
+  message: string,
+  data?: unknown,
+) => void;
 
 export interface SessionRuleManagerOptions {
   /** How a flush is scheduled after the first invalidation of a batch. Default: `setTimeout(fn, 0)`. */
@@ -140,7 +151,7 @@ export class SessionRuleManager {
         try {
           ok = await this.flushOnce();
         } catch (error) {
-          this.log('error', 'session rule flush crashed', String(error));
+          this.log("error", "session rule flush crashed", String(error));
         }
         batch.resolve(ok);
       }
@@ -157,9 +168,12 @@ export class SessionRuleManager {
     this.orphanIds = [];
     if (keys.length === 0 && orphanIds.length === 0) return true;
 
-    const previous = new Map<string, Installed | undefined>(keys.map((k) => [k, this.installed.get(k)]));
+    const previous = new Map<string, Installed | undefined>(
+      keys.map((k) => [k, this.installed.get(k)]),
+    );
     const removeRuleIds = [...orphanIds];
-    for (const old of previous.values()) if (old) removeRuleIds.push(...old.ids);
+    for (const old of previous.values())
+      if (old) removeRuleIds.push(...old.ids);
     this.pool.release(removeRuleIds);
 
     let otherRules = 0;
@@ -178,7 +192,7 @@ export class SessionRuleManager {
       try {
         compiled = this.compile(key, this.pool, regexLeft);
       } catch (error) {
-        this.log('error', `compiling rules for ${key} failed`, String(error));
+        this.log("error", `compiling rules for ${key} failed`, String(error));
       }
       if (!compiled) continue;
       regexLeft = Math.max(0, regexLeft - compiled.regexRuleCount);
@@ -189,10 +203,16 @@ export class SessionRuleManager {
     const total = otherRules + addRules.length;
     if (total > this.softLimit && total !== this.lastWarnedTotal) {
       this.lastWarnedTotal = total;
-      this.log('warn', `session rules at ${total}, above the soft limit of ${this.softLimit}`);
+      this.log(
+        "warn",
+        `session rules at ${total}, above the soft limit of ${this.softLimit}`,
+      );
     }
     if (total > this.hardLimit) {
-      this.log('error', `refusing to install ${total} session rules (Chrome's limit is ${this.hardLimit})`);
+      this.log(
+        "error",
+        `refusing to install ${total} session rules (Chrome's limit is ${this.hardLimit})`,
+      );
       this.rollback(previous, addRules, orphanIds);
       return false;
     }
@@ -200,7 +220,7 @@ export class SessionRuleManager {
     try {
       await this.api.updateSessionRules({ removeRuleIds, addRules });
     } catch (error) {
-      this.log('error', 'updateSessionRules failed', String(error));
+      this.log("error", "updateSessionRules failed", String(error));
       this.rollback(previous, addRules, orphanIds);
       return false;
     }
@@ -213,7 +233,11 @@ export class SessionRuleManager {
   }
 
   /** Chrome kept the old rules: give their IDs back to their owners and free the ones we tried to use. */
-  private rollback(previous: Map<string, Installed | undefined>, attempted: DnrRule[], orphanIds: number[]): void {
+  private rollback(
+    previous: Map<string, Installed | undefined>,
+    attempted: DnrRule[],
+    orphanIds: number[],
+  ): void {
     this.pool.release(attempted.map((r) => r.id));
     for (const old of previous.values()) if (old) this.pool.reserve(old.ids);
     // Orphans are still installed: keep their IDs out of the pool and retry removing them next time.

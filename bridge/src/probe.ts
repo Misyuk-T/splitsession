@@ -1,4 +1,4 @@
-import net from 'node:net';
+import net from "node:net";
 
 /**
  * What lives at the socket address:
@@ -7,9 +7,12 @@ import net from 'node:net';
  * - `absent`: nothing there;
  * - `unknown`: neither (permissions, a hung probe): not ours to judge.
  */
-export type SocketState = 'live' | 'stale' | 'absent' | 'unknown';
+export type SocketState = "live" | "stale" | "absent" | "unknown";
 
-export function probeSocket(sock: string, timeoutMs = 1_500): Promise<SocketState> {
+export function probeSocket(
+  sock: string,
+  timeoutMs = 1_500,
+): Promise<SocketState> {
   return new Promise((resolve) => {
     const socket = net.createConnection(sock);
     const done = (state: SocketState) => {
@@ -17,12 +20,13 @@ export function probeSocket(sock: string, timeoutMs = 1_500): Promise<SocketStat
       socket.destroy();
       resolve(state);
     };
-    const timer = setTimeout(() => done('unknown'), timeoutMs);
-    socket.on('connect', () => done('live'));
-    socket.on('error', (error: NodeJS.ErrnoException) => {
-      if (error.code === 'ENOENT') return done('absent');
-      if (error.code === 'ECONNREFUSED' || error.code === 'ENOTSOCK') return done('stale');
-      done('unknown');
+    const timer = setTimeout(() => done("unknown"), timeoutMs);
+    socket.on("connect", () => done("live"));
+    socket.on("error", (error: NodeJS.ErrnoException) => {
+      if (error.code === "ENOENT") return done("absent");
+      if (error.code === "ECONNREFUSED" || error.code === "ENOTSOCK")
+        return done("stale");
+      done("unknown");
     });
   });
 }

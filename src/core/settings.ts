@@ -41,7 +41,7 @@ export interface Settings {
 }
 
 /** `chrome.storage.local` key holding the settings object. */
-export const SETTINGS_KEY = 'settings';
+export const SETTINGS_KEY = "settings";
 
 /**
  * Lite has only `tabGroups`, `strictMode` and `restoreTabs`: the agent bridge, agent activity and page-name settings are
@@ -50,13 +50,22 @@ export const SETTINGS_KEY = 'settings';
  */
 export const DEFAULT_SETTINGS: Readonly<Settings> = Object.freeze(
   __FULL__
-    ? { tabGroups: true, titlePrefix: true, strictMode: false, showNameToPages: false, agentBridge: false, agentActivity: true, restoreTabs: true }
+    ? {
+        tabGroups: true,
+        titlePrefix: true,
+        strictMode: false,
+        showNameToPages: false,
+        agentBridge: false,
+        agentActivity: true,
+        restoreTabs: true,
+      }
     : ({ tabGroups: true, strictMode: false, restoreTabs: true } as Settings),
 );
 
-export const SETTING_KEYS: readonly SettingKey[] = __FULL__
-  ? ['tabGroups', 'titlePrefix', 'strictMode', 'showNameToPages', 'agentBridge', 'agentActivity', 'restoreTabs']
-  : ['tabGroups', 'strictMode', 'restoreTabs'];
+/** The edition's setting keys, in the order of `DEFAULT_SETTINGS` (the one list of them). */
+export const SETTING_KEYS: readonly SettingKey[] = Object.keys(
+  DEFAULT_SETTINGS,
+) as SettingKey[];
 
 export type SettingKey = keyof Settings;
 
@@ -73,7 +82,11 @@ export interface StoredSettings extends Settings {
  * cannot be told apart from a default. Every default was `true` then: a `false` was the user's choice, a `true` is
  * read as "never set" (the one that matters: `showNameToPages`, whose default is now off).
  */
-const LEGACY_DEFAULTS: Readonly<Settings> = Object.freeze({ ...DEFAULT_SETTINGS, strictMode: true, ...(__FULL__ ? { showNameToPages: true } : {}) });
+const LEGACY_DEFAULTS: Readonly<Settings> = Object.freeze({
+  ...DEFAULT_SETTINGS,
+  strictMode: true,
+  ...(__FULL__ ? { showNameToPages: true } : {}),
+});
 
 export interface ReadSettings {
   settings: Settings;
@@ -84,12 +97,25 @@ export interface ReadSettings {
 
 /** Tolerant reader for data from storage: a missing, malformed or never-set field falls back to its default. */
 export function readSettings(raw: unknown): ReadSettings {
-  const source = typeof raw === 'object' && raw !== null ? (raw as Record<string, unknown>) : {};
+  const source =
+    typeof raw === "object" && raw !== null
+      ? (raw as Record<string, unknown>)
+      : {};
   const settings: Settings = { ...DEFAULT_SETTINGS };
-  const legacy = !Array.isArray(source.explicit) && SETTING_KEYS.some((key) => typeof source[key] === 'boolean');
+  const legacy =
+    !Array.isArray(source.explicit) &&
+    SETTING_KEYS.some((key) => typeof source[key] === "boolean");
   const explicit: SettingKey[] = Array.isArray(source.explicit)
-    ? SETTING_KEYS.filter((key) => (source.explicit as unknown[]).includes(key) && typeof source[key] === 'boolean')
-    : SETTING_KEYS.filter((key) => typeof source[key] === 'boolean' && source[key] !== LEGACY_DEFAULTS[key]);
+    ? SETTING_KEYS.filter(
+        (key) =>
+          (source.explicit as unknown[]).includes(key) &&
+          typeof source[key] === "boolean",
+      )
+    : SETTING_KEYS.filter(
+        (key) =>
+          typeof source[key] === "boolean" &&
+          source[key] !== LEGACY_DEFAULTS[key],
+      );
   for (const key of explicit) settings[key] = source[key] as boolean;
   return { settings, explicit, legacy };
 }
@@ -98,7 +124,10 @@ export function normalizeSettings(raw: unknown): Settings {
   return readSettings(raw).settings;
 }
 
-export function storedSettings(settings: Settings, explicit: Iterable<SettingKey>): StoredSettings {
+export function storedSettings(
+  settings: Settings,
+  explicit: Iterable<SettingKey>,
+): StoredSettings {
   const keys = new Set(explicit);
   return { ...settings, explicit: SETTING_KEYS.filter((key) => keys.has(key)) };
 }
@@ -106,12 +135,18 @@ export function storedSettings(settings: Settings, explicit: Iterable<SettingKey
 export class SettingsError extends Error {}
 
 /** Strict merge of a change request: unknown keys and non-boolean values are errors, not silently dropped. */
-export function applySettingsPatch(current: Settings, patch: unknown): Settings {
-  if (typeof patch !== 'object' || patch === null || Array.isArray(patch)) throw new SettingsError('settings patch must be an object');
+export function applySettingsPatch(
+  current: Settings,
+  patch: unknown,
+): Settings {
+  if (typeof patch !== "object" || patch === null || Array.isArray(patch))
+    throw new SettingsError("settings patch must be an object");
   const next: Settings = { ...current };
   for (const [key, value] of Object.entries(patch)) {
-    if (!(SETTING_KEYS as readonly string[]).includes(key)) throw new SettingsError(`unknown setting "${key}"`);
-    if (typeof value !== 'boolean') throw new SettingsError(`setting "${key}" must be true or false`);
+    if (!(SETTING_KEYS as readonly string[]).includes(key))
+      throw new SettingsError(`unknown setting "${key}"`);
+    if (typeof value !== "boolean")
+      throw new SettingsError(`setting "${key}" must be true or false`);
     next[key as keyof Settings] = value;
   }
   return next;

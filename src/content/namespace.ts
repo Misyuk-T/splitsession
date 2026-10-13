@@ -1,4 +1,4 @@
-import { NAMESPACE_PREFIX, namespacePrefix } from '../core/types';
+import { NAMESPACE_PREFIX, namespacePrefix } from "../core/types";
 
 /**
  * Name mapping for origin-scoped page state (Web Storage keys, IndexedDB names, Cache Storage names, BroadcastChannel
@@ -29,14 +29,20 @@ export function containerNamespace(pageKey: string): Namespace {
 
 export function realNamespace(): Namespace {
   return {
-    toRaw: (name) => (name.startsWith(NAMESPACE_PREFIX) ? QUARANTINE + name : name),
-    owns: (raw) => !raw.startsWith(NAMESPACE_PREFIX) || raw.startsWith(QUARANTINE),
-    fromRaw: (raw) => (raw.startsWith(QUARANTINE) ? raw.slice(QUARANTINE.length) : raw),
+    toRaw: (name) =>
+      name.startsWith(NAMESPACE_PREFIX) ? QUARANTINE + name : name,
+    owns: (raw) =>
+      !raw.startsWith(NAMESPACE_PREFIX) || raw.startsWith(QUARANTINE),
+    fromRaw: (raw) =>
+      raw.startsWith(QUARANTINE) ? raw.slice(QUARANTINE.length) : raw,
   };
 }
 
 /** Page-visible keys, in raw order. */
-export function visibleNames(rawNames: Iterable<string>, ns: Namespace): string[] {
+export function visibleNames(
+  rawNames: Iterable<string>,
+  ns: Namespace,
+): string[] {
   const out: string[] = [];
   for (const raw of rawNames) if (ns.owns(raw)) out.push(ns.fromRaw(raw));
   return out;

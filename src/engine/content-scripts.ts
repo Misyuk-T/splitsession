@@ -1,4 +1,4 @@
-import { isIpHost } from '../core/site';
+import { isIpHost } from "../core/site";
 
 /**
  * Runtime registration of the two content scripts. They must run in this order at `document_start` in every frame:
@@ -13,78 +13,100 @@ export interface RegisteredScript {
   id: string;
   js: string[];
   matches: string[];
-  runAt: 'document_start';
+  runAt: "document_start";
   allFrames: boolean;
   matchOriginAsFallback: boolean;
-  world: 'ISOLATED' | 'MAIN';
+  world: "ISOLATED" | "MAIN";
   persistAcrossSessions: boolean;
 }
 
 export const CONTENT_SCRIPTS: readonly RegisteredScript[] = [
   {
-    id: 'facet-beacon',
-    js: ['beacon.js'],
-    matches: ['<all_urls>'],
-    runAt: 'document_start',
+    id: "facet-beacon",
+    js: ["beacon.js"],
+    matches: ["<all_urls>"],
+    runAt: "document_start",
     allFrames: true,
     matchOriginAsFallback: true,
-    world: 'ISOLATED',
+    world: "ISOLATED",
     persistAcrossSessions: true,
   },
   {
-    id: 'facet-shim',
-    js: ['shim.js'],
-    matches: ['<all_urls>'],
-    runAt: 'document_start',
+    id: "facet-shim",
+    js: ["shim.js"],
+    matches: ["<all_urls>"],
+    runAt: "document_start",
     allFrames: true,
     matchOriginAsFallback: true,
-    world: 'MAIN',
+    world: "MAIN",
     persistAcrossSessions: true,
   },
 ];
 
 const SCRIPT_IDS = CONTENT_SCRIPTS.map((s) => s.id);
 /** The manifest's static ruleset with the default beacon answer `{}` (public/rules/defaults.json). */
-export const DEFAULT_BEACON_RULESET = 'facet_defaults';
+export const DEFAULT_BEACON_RULESET = "facet_defaults";
 
 export interface ScriptingApi {
-  getRegisteredContentScripts(filter?: { ids?: string[] }): Promise<Array<Partial<RegisteredScript> & { id: string }>>;
+  getRegisteredContentScripts(filter?: {
+    ids?: string[];
+  }): Promise<Array<Partial<RegisteredScript> & { id: string }>>;
   registerContentScripts(scripts: RegisteredScript[]): Promise<void>;
   unregisterContentScripts(filter?: { ids?: string[] }): Promise<void>;
 }
 
-function sameScript(a: Partial<RegisteredScript>, b: RegisteredScript): boolean {
+function sameScript(
+  a: Partial<RegisteredScript>,
+  b: RegisteredScript,
+): boolean {
   const list = (x: unknown) => JSON.stringify(Array.isArray(x) ? x : []);
   // Chrome reports `matches` in its own order.
-  const set = (x: unknown) => JSON.stringify(Array.isArray(x) ? [...x].sort() : []);
+  const set = (x: unknown) =>
+    JSON.stringify(Array.isArray(x) ? [...x].sort() : []);
   return (
     list(a.js) === list(b.js) &&
     set(a.matches) === set(b.matches) &&
     a.runAt === b.runAt &&
     Boolean(a.allFrames) === b.allFrames &&
     Boolean(a.matchOriginAsFallback) === b.matchOriginAsFallback &&
-    (a.world ?? 'ISOLATED') === b.world &&
+    (a.world ?? "ISOLATED") === b.world &&
     (a.persistAcrossSessions ?? true) === b.persistAcrossSessions
   );
 }
 
 /** Both scripts with `matches` (the beacon first). */
 export function scriptsFor(matches: readonly string[]): RegisteredScript[] {
-  return CONTENT_SCRIPTS.map((s) => ({ ...s, js: [...s.js], matches: [...matches] }));
+  return CONTENT_SCRIPTS.map((s) => ({
+    ...s,
+    js: [...s.js],
+    matches: [...matches],
+  }));
 }
 
 /**
  * Idempotent: does nothing when both scripts are registered with `matches` (default `<all_urls>`), else re-registers
  * both in order.
  */
-export async function ensureContentScripts(scripting: ScriptingApi, matches: readonly string[] = ['<all_urls>']): Promise<'unchanged' | 'registered'> {
+export async function ensureContentScripts(
+  scripting: ScriptingApi,
+  matches: readonly string[] = ["<all_urls>"],
+): Promise<"unchanged" | "registered"> {
   const wanted = scriptsFor(matches);
-  const existing = await scripting.getRegisteredContentScripts({ ids: SCRIPT_IDS });
-  const upToDate = existing.length === wanted.length && wanted.every((want) => existing.some((have) => have.id === want.id && sameScript(have, want)));
-  if (upToDate) return 'unchanged';
-  if (existing.length > 0) await scripting.unregisterContentScripts({ ids: existing.map((s) => s.id) });
+  const existing = await scripting.getRegisteredContentScripts({
+    ids: SCRIPT_IDS,
+  });
+  const upToDate =
+    existing.length === wanted.length &&
+    wanted.every((want) =>
+      existing.some((have) => have.id === want.id && sameScript(have, want)),
+    );
+  if (upToDate) return "unchanged";
+  if (existing.length > 0)
+    await scripting.unregisterContentScripts({
+      ids: existing.map((s) => s.id),
+    });
   await scripting.registerContentScripts(wanted);
-  return 'registered';
+  return "registered";
 }
 
 /**
@@ -95,7 +117,12 @@ export async function ensureContentScripts(scripting: ScriptingApi, matches: rea
 export function managedSiteMatches(sites: readonly string[]): string[] | null {
   const out: string[] = [];
   for (const site of [...sites].sort()) {
-    if (!/^[a-z0-9_.-]+$/.test(site) || site.startsWith('.') || site.endsWith('.')) return null;
+    if (
+      !/^[a-z0-9_.-]+$/.test(site) ||
+      site.startsWith(".") ||
+      site.endsWith(".")
+    )
+      return null;
     out.push(`*://${site}/*`);
     if (!isIpHost(site)) out.push(`*://*.${site}/*`);
   }
@@ -103,7 +130,7 @@ export function managedSiteMatches(sites: readonly string[]): string[] | null {
 }
 
 /** What is registered: nothing, the managed sites only, or every frame. */
-export type ScriptScope = 'off' | 'managed' | 'all';
+export type ScriptScope = "off" | "managed" | "all";
 const RANK: Record<ScriptScope, number> = { off: 0, managed: 1, all: 2 };
 
 /**
@@ -122,12 +149,12 @@ export interface ScriptUsage {
 
 /** Why the wanted scope is what it is (the diagnostics line shows it). */
 export type ScriptReason =
-  | { kind: 'tabs'; count: number }
-  | { kind: 'moving'; count: number }
-  | { kind: 'waiting'; count: number }
-  | { kind: 'starting' }
-  | { kind: 'sites'; count: number }
-  | { kind: 'none' };
+  | { kind: "tabs"; count: number }
+  | { kind: "moving"; count: number }
+  | { kind: "waiting"; count: number }
+  | { kind: "starting" }
+  | { kind: "sites"; count: number }
+  | { kind: "none" };
 
 export interface ContentScriptStatus {
   /** Registered now. */
@@ -150,14 +177,20 @@ export interface ContentScriptStatus {
 
 export interface ContentScriptLifecycleDeps {
   scripting: ScriptingApi & {
-    updateContentScripts(scripts: Array<Pick<RegisteredScript, 'id' | 'matches'>>): Promise<void>;
+    updateContentScripts(
+      scripts: Array<Pick<RegisteredScript, "id" | "matches">>,
+    ): Promise<void>;
   };
   /** Turns the global beacon answers on or off (static ruleset and the dynamic `{m:1}` / `{g:1}` rules). */
   setBeaconRules(on: boolean): Promise<void>;
   /** What is open right now that needs the scripts (see `ScriptUsage`). */
   usage(): ScriptUsage;
   managedSites(): readonly string[];
-  log?: (level: 'info' | 'warn' | 'error', message: string, data?: unknown) => void;
+  log?: (
+    level: "info" | "warn" | "error",
+    message: string,
+    data?: unknown,
+  ) => void;
   /** How long the last container tab must have been gone before the scope goes down (default 30 s). */
   graceMs?: number;
   /** After unregistering, the beacon answers stay this long for documents that were still starting (default 2 s). */
@@ -180,8 +213,8 @@ export interface ContentScriptLifecycleDeps {
  * where nothing has used the scripts since the worker stopped. Every change runs in one queue.
  */
 export class ContentScriptLifecycle {
-  private scope: ScriptScope = 'off';
-  private matchesKey = '';
+  private scope: ScriptScope = "off";
+  private matchesKey = "";
   private beaconOn = true;
   private holds = 0;
   private queue: Promise<void> = Promise.resolve();
@@ -194,7 +227,7 @@ export class ContentScriptLifecycle {
   private readonly graceMs: number;
   private readonly lingerMs: number;
   private readonly now: () => number;
-  private readonly log: NonNullable<ContentScriptLifecycleDeps['log']>;
+  private readonly log: NonNullable<ContentScriptLifecycleDeps["log"]>;
 
   constructor(private readonly deps: ContentScriptLifecycleDeps) {
     this.graceMs = deps.graceMs ?? 30_000;
@@ -206,24 +239,37 @@ export class ContentScriptLifecycle {
   /** Reads what Chrome has registered (call before `ServiceWorkerPolicy.load`, which needs `beaconRules`). */
   async readRegistered(): Promise<ScriptScope> {
     try {
-      const existing = await this.deps.scripting.getRegisteredContentScripts({ ids: SCRIPT_IDS });
-      const all = scriptsFor(['<all_urls>']);
-      if (existing.length === all.length && all.every((want) => existing.some((have) => have.id === want.id && sameScript(have, want)))) {
-        this.scope = 'all';
+      const existing = await this.deps.scripting.getRegisteredContentScripts({
+        ids: SCRIPT_IDS,
+      });
+      const all = scriptsFor(["<all_urls>"]);
+      if (
+        existing.length === all.length &&
+        all.every((want) =>
+          existing.some(
+            (have) => have.id === want.id && sameScript(have, want),
+          ),
+        )
+      ) {
+        this.scope = "all";
       } else if (existing.length > 0) {
         // Managed patterns (checked against the current sites by the first reconcile), or a stale registration: either
         // way there is something to redo, which `managed` with an unknown key makes happen.
-        this.scope = 'managed';
-        this.matchesKey = '?';
+        this.scope = "managed";
+        this.matchesKey = "?";
       } else {
-        this.scope = 'off';
+        this.scope = "off";
       }
     } catch (error) {
-      this.log('error', 'reading the registered content scripts failed', String(error));
-      this.scope = 'all';
-      this.matchesKey = '';
+      this.log(
+        "error",
+        "reading the registered content scripts failed",
+        String(error),
+      );
+      this.scope = "all";
+      this.matchesKey = "";
     }
-    this.beaconOn = this.scope !== 'off';
+    this.beaconOn = this.scope !== "off";
     return this.scope;
   }
 
@@ -241,7 +287,7 @@ export class ContentScriptLifecycle {
     await this.enqueue(async () => {
       await this.apply(this.wanted(), { initial: true });
       // The static ruleset's state is not read back (an update may have enabled it again): set both kinds once.
-      const on = this.scope !== 'off';
+      const on = this.scope !== "off";
       await this.deps.setBeaconRules(on);
       this.beaconOn = on;
     });
@@ -250,18 +296,18 @@ export class ContentScriptLifecycle {
   /** What the tabs and managed sites ask for right now. */
   wanted(): ScriptScope {
     const kind = this.reason().kind;
-    return kind === 'sites' ? 'managed' : kind === 'none' ? 'off' : 'all';
+    return kind === "sites" ? "managed" : kind === "none" ? "off" : "all";
   }
 
   /** Why `wanted()` is what it is. */
   reason(): ScriptReason {
     const usage = this.deps.usage();
-    if (usage.tabs > 0) return { kind: 'tabs', count: usage.tabs };
-    if (this.holds > 0) return { kind: 'moving', count: this.holds };
-    if (usage.waiting > 0) return { kind: 'waiting', count: usage.waiting };
-    if (usage.starting) return { kind: 'starting' };
+    if (usage.tabs > 0) return { kind: "tabs", count: usage.tabs };
+    if (this.holds > 0) return { kind: "moving", count: this.holds };
+    if (usage.waiting > 0) return { kind: "waiting", count: usage.waiting };
+    if (usage.starting) return { kind: "starting" };
     const sites = this.deps.managedSites().length;
-    return sites > 0 ? { kind: 'sites', count: sites } : { kind: 'none' };
+    return sites > 0 ? { kind: "sites", count: sites } : { kind: "none" };
   }
 
   /** Counts as "in use" until released (an assignment under way). */
@@ -281,8 +327,8 @@ export class ContentScriptLifecycle {
     const release = this.hold();
     try {
       this.cancelGrace();
-      if (this.scope === 'all' && this.beaconOn && this.idle) return;
-      await this.enqueue(() => this.apply('all'));
+      if (this.scope === "all" && this.beaconOn && this.idle) return;
+      await this.enqueue(() => this.apply("all"));
     } finally {
       release();
     }
@@ -292,7 +338,12 @@ export class ContentScriptLifecycle {
   changed(): void {
     if (!this.loaded) return;
     const wanted = this.wanted();
-    if (RANK[wanted] > RANK[this.scope] || (wanted === 'managed' && this.scope === 'managed' && this.matchesKeyOf() !== this.matchesKey)) {
+    if (
+      RANK[wanted] > RANK[this.scope] ||
+      (wanted === "managed" &&
+        this.scope === "managed" &&
+        this.matchesKeyOf() !== this.matchesKey)
+    ) {
       this.cancelGrace();
       void this.enqueue(() => this.apply(this.wanted()));
     } else if (RANK[wanted] < RANK[this.scope]) {
@@ -321,7 +372,10 @@ export class ContentScriptLifecycle {
       sites: this.deps.managedSites().length,
       error: this.lastError,
       beaconRules: this.beaconOn,
-      matches: this.scope === 'managed' ? (managedSiteMatches(this.deps.managedSites())?.length ?? 0) : 0,
+      matches:
+        this.scope === "managed"
+          ? (managedSiteMatches(this.deps.managedSites())?.length ?? 0)
+          : 0,
       graceUntil: this.graceUntil,
     };
   }
@@ -342,7 +396,7 @@ export class ContentScriptLifecycle {
       },
       (error) => {
         this.lastError = String(error);
-        this.log('error', 'content-script registration failed', String(error));
+        this.log("error", "content-script registration failed", String(error));
         this.scheduleRetry();
       },
     );
@@ -360,7 +414,8 @@ export class ContentScriptLifecycle {
       this.graceTimer = null;
       this.graceUntil = null;
       const wanted = this.wanted();
-      if (RANK[wanted] < RANK[this.scope]) void this.enqueue(() => this.apply(this.wanted()));
+      if (RANK[wanted] < RANK[this.scope])
+        void this.enqueue(() => this.apply(this.wanted()));
     }, this.graceMs);
   }
 
@@ -383,15 +438,19 @@ export class ContentScriptLifecycle {
     this.graceUntil = null;
   }
 
-  private async apply(target: ScriptScope, options: { initial?: boolean } = {}): Promise<void> {
+  private async apply(
+    target: ScriptScope,
+    options: { initial?: boolean } = {},
+  ): Promise<void> {
     // Re-read inside the queue: `all` asked by `ensure` must never be lowered by a decision taken before it.
-    if (target !== 'all' && RANK[this.wanted()] > RANK[target]) target = this.wanted();
-    if (target === 'off') {
-      if (this.scope !== 'off') {
+    if (target !== "all" && RANK[this.wanted()] > RANK[target])
+      target = this.wanted();
+    if (target === "off") {
+      if (this.scope !== "off") {
         await this.deps.scripting.unregisterContentScripts({ ids: SCRIPT_IDS });
-        this.scope = 'off';
-        this.matchesKey = '';
-        this.log('info', 'content scripts unregistered (no container in use)');
+        this.scope = "off";
+        this.matchesKey = "";
+        this.log("info", "content scripts unregistered (no container in use)");
       }
       if (!this.beaconOn) return;
       if (options.initial) return this.dropBeaconRules();
@@ -413,35 +472,43 @@ export class ContentScriptLifecycle {
       await this.deps.setBeaconRules(true);
       this.beaconOn = true;
     }
-    let matches: string[] = ['<all_urls>'];
-    let key = '';
-    if (target === 'managed') {
+    let matches: string[] = ["<all_urls>"];
+    let key = "";
+    if (target === "managed") {
       const managed = managedSiteMatches(this.deps.managedSites());
-      if (managed === null || managed.length === 0) target = managed === null ? 'all' : 'off';
+      if (managed === null || managed.length === 0)
+        target = managed === null ? "all" : "off";
       else {
         matches = managed;
         key = JSON.stringify(managed);
       }
-      if (target === 'off') return this.apply('off', options);
+      if (target === "off") return this.apply("off", options);
     }
     if (this.scope === target && this.matchesKey === key) return;
-    if (this.scope === 'off' || this.matchesKey === '?') {
+    if (this.scope === "off" || this.matchesKey === "?") {
       // Nothing, or something unknown found at start (an older registration): register exactly what is wanted.
       await ensureContentScripts(this.deps.scripting, matches);
     } else {
       try {
-        await this.deps.scripting.updateContentScripts(SCRIPT_IDS.map((id) => ({ id, matches: [...matches] })));
+        await this.deps.scripting.updateContentScripts(
+          SCRIPT_IDS.map((id) => ({ id, matches: [...matches] })),
+        );
       } catch {
         await ensureContentScripts(this.deps.scripting, matches); // a script missing (stale state): register afresh
       }
     }
     this.scope = target;
     this.matchesKey = key;
-    this.log('info', target === 'all' ? 'content scripts registered for every frame' : `content scripts registered for ${this.deps.managedSites().length} managed sites`);
+    this.log(
+      "info",
+      target === "all"
+        ? "content scripts registered for every frame"
+        : `content scripts registered for ${this.deps.managedSites().length} managed sites`,
+    );
   }
 
   private async dropBeaconRules(): Promise<void> {
-    if (this.scope !== 'off' || !this.beaconOn) return;
+    if (this.scope !== "off" || !this.beaconOn) return;
     await this.deps.setBeaconRules(false);
     this.beaconOn = false;
   }

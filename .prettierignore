@@ -1,0 +1,15 @@
+.output
+.wxt
+node_modules
+bridge/dist
+test-results
+playwright-report
+coverage
+keys
+docs/screenshots
+assets
+public
+pnpm-lock.yaml
+extension-key.pub
+*.md
+docs

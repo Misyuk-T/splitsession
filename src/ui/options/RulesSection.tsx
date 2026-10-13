@@ -1,22 +1,31 @@
-import { useEffect, useState } from 'preact/hooks';
-import type { ContainerInfo } from '../../background/facet';
-import { CONTAINER_HEX, normalizeRuleDomain, type DomainRule } from '../../core';
-import { facetApi } from '../../engine/api-client';
-import { Button, Dot } from '../components/Button';
-import { More } from '../components/More';
-import { Select } from '../components/Select';
-import { TextField } from '../components/TextField';
-import { describeError } from '../format';
+import { useEffect, useState } from "preact/hooks";
+
+import type { ContainerInfo } from "../../background/facet";
+import {
+  CONTAINER_HEX,
+  type DomainRule,
+  normalizeRuleDomain,
+} from "../../core";
+import { facetApi } from "../../engine/api-client";
+import { Button, Dot } from "../components/Button";
+import { More } from "../components/More";
+import { Select } from "../components/Select";
+import { TextField } from "../components/TextField";
+import { describeError } from "../format";
 
 const ACTIONS = [
-  { value: 'always', label: 'Always open in a container' },
-  { value: 'ask', label: 'Ask me every time' },
+  { value: "always", label: "Always open in a container" },
+  { value: "ask", label: "Ask me every time" },
 ];
 
-export function RulesSection({ containers }: { containers: ContainerInfo[] | null }) {
+export const RulesSection = ({
+  containers,
+}: {
+  containers: ContainerInfo[] | null;
+}) => {
   const [rules, setRules] = useState<DomainRule[] | null>(null);
-  const [site, setSite] = useState('');
-  const [action, setAction] = useState<'always' | 'ask'>('always');
+  const [site, setSite] = useState("");
+  const [action, setAction] = useState<"always" | "ask">("always");
   const [containerId, setContainerId] = useState<string | null>(null);
   const [touched, setTouched] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -30,12 +39,19 @@ export function RulesSection({ containers }: { containers: ContainerInfo[] | nul
 
   const list = containers ?? [];
   const checked = normalizeRuleDomain(site);
-  const existing = checked.ok ? rules?.find((r) => r.domain === checked.domain) : undefined;
+  const existing = checked.ok
+    ? rules?.find((r) => r.domain === checked.domain)
+    : undefined;
   const chosen = list.find((c) => c.id === containerId) ?? null;
-  const needsContainer = action === 'always';
+  const needsContainer = action === "always";
   const valid = checked.ok && (!needsContainer || chosen !== null);
-  const siteError = !checked.ok && (site.trim() !== '' || touched) ? checked.message : null;
-  const siteHint = checked.ok ? (existing ? `This replaces the existing rule for ${checked.domain}.` : `Applies to ${checked.domain} and all its subdomains.`) : 'For example github.com or reddit.com.';
+  const siteError =
+    !checked.ok && (site.trim() !== "" || touched) ? checked.message : null;
+  const siteHint = checked.ok
+    ? existing
+      ? `This replaces the existing rule for ${checked.domain}.`
+      : `Applies to ${checked.domain} and all its subdomains.`
+    : "For example github.com or reddit.com.";
 
   const submit = async () => {
     setTouched(true);
@@ -44,13 +60,15 @@ export function RulesSection({ containers }: { containers: ContainerInfo[] | nul
     setBusy(true);
     setError(null);
     try {
-      const rule: DomainRule = needsContainer ? { domain: checked.domain, action: 'always', containerId: chosen!.id } : { domain: checked.domain, action: 'ask' };
+      const rule: DomainRule = needsContainer
+        ? { domain: checked.domain, action: "always", containerId: chosen!.id }
+        : { domain: checked.domain, action: "ask" };
       await facetApi.setDomainRule(rule);
       await load();
       setNote(`Rule saved for ${checked.domain}.`);
-      setSite('');
+      setSite("");
       setTouched(false);
-      document.getElementById('rule-site')?.focus(); // ready for the next rule
+      document.getElementById("rule-site")?.focus(); // ready for the next rule
     } catch (e) {
       setError(describeError(e));
     } finally {
@@ -73,7 +91,7 @@ export function RulesSection({ containers }: { containers: ContainerInfo[] | nul
     setAction(rule.action);
     setContainerId(rule.containerId ?? null);
     setNote(null);
-    document.getElementById('rule-site')?.focus();
+    document.getElementById("rule-site")?.focus();
   };
 
   return (
@@ -83,8 +101,10 @@ export function RulesSection({ containers }: { containers: ContainerInfo[] | nul
         <p class="fx-secondary">Decide where a site opens.</p>
         <More id="more-rules" about="domain rules">
           <p>
-            With “always open in”, a tab that goes to the site moves into that container; with “ask”, you choose each time. A tab
-            that moves has already sent its first request from where it was, so that one request is not isolated.
+            With “always open in”, a tab that goes to the site moves into that
+            container; with “ask”, you choose each time. A tab that moves has
+            already sent its first request from where it was, so that one
+            request is not isolated.
           </p>
         </More>
       </div>
@@ -114,54 +134,100 @@ export function RulesSection({ containers }: { containers: ContainerInfo[] | nul
         />
         <div class="opt-ruleform__row">
           <div class="opt-ruleform__col">
-            <span class="fx-field__label" id="rule-action-label">What to do</span>
-            <Select label="What to do" value={action} options={ACTIONS} onChange={(v) => setAction(v as 'always' | 'ask')} />
+            <span class="fx-field__label" id="rule-action-label">
+              What to do
+            </span>
+            <Select
+              label="What to do"
+              value={action}
+              options={ACTIONS}
+              onChange={(v) => setAction(v as "always" | "ask")}
+            />
           </div>
           {needsContainer && (
             <div class="opt-ruleform__col">
-              <span class="fx-field__label" id="rule-container-label">Container</span>
+              <span class="fx-field__label" id="rule-container-label">
+                Container
+              </span>
               <Select
                 label="Container"
                 value={containerId}
-                options={list.map((c) => ({ value: c.id, label: c.name, dot: CONTAINER_HEX[c.color] }))}
+                options={list.map((c) => ({
+                  value: c.id,
+                  label: c.name,
+                  dot: CONTAINER_HEX[c.color],
+                }))}
                 onChange={setContainerId}
-                placeholder={list.length === 0 ? 'No containers yet' : 'Choose a container'}
+                placeholder={
+                  list.length === 0 ? "No containers yet" : "Choose a container"
+                }
                 emptyText="Create a container in the SplitSession popup first."
                 invalid={touched && chosen === null}
               />
             </div>
           )}
           <Button type="submit" variant="primary" disabled={!valid}>
-            {existing ? 'Replace rule' : 'Add rule'}
+            {existing ? "Replace rule" : "Add rule"}
           </Button>
         </div>
-        {error && <p class="fx-notice fx-notice--error" role="alert">{error}</p>}
+        {error && (
+          <p class="fx-notice fx-notice--error" role="alert">
+            {error}
+          </p>
+        )}
       </form>
 
-      <div class="fx-status" role="status" aria-live="polite">{note}</div>
+      <div class="fx-status" role="status" aria-live="polite">
+        {note}
+      </div>
 
       {rules === null ? (
         <p class="fx-secondary">Loading rules…</p>
       ) : rules.length === 0 ? (
-        <p class="fx-secondary" data-testid="no-rules">No rules yet.</p>
+        <p class="fx-secondary" data-testid="no-rules">
+          No rules yet.
+        </p>
       ) : (
         <ul class="opt-rules" aria-label="Domain rules">
           {rules.map((rule) => {
-            const target = rule.action === 'always' ? list.find((c) => c.id === rule.containerId) : undefined;
+            const target =
+              rule.action === "always"
+                ? list.find((c) => c.id === rule.containerId)
+                : undefined;
             return (
               <li key={rule.domain} class="opt-rule" data-testid="rule-row">
                 <strong class="opt-rule__domain">{rule.domain}</strong>
                 <span class="opt-rule__action">
-                  {rule.action === 'ask' ? (
-                    'Ask every time'
+                  {rule.action === "ask" ? (
+                    "Ask every time"
                   ) : (
                     <>
-                      Always open in {target ? <><Dot color={CONTAINER_HEX[target.color]} /> {target.name}</> : 'a container that no longer exists'}
+                      Always open in{" "}
+                      {target ? (
+                        <>
+                          <Dot color={CONTAINER_HEX[target.color]} />{" "}
+                          {target.name}
+                        </>
+                      ) : (
+                        "a container that no longer exists"
+                      )}
                     </>
                   )}
                 </span>
-                <Button small onClick={() => edit(rule)} aria-label={`Edit the rule for ${rule.domain}`}>Edit</Button>
-                <Button small onClick={() => void remove(rule)} aria-label={`Remove the rule for ${rule.domain}`}>Remove</Button>
+                <Button
+                  small
+                  onClick={() => edit(rule)}
+                  aria-label={`Edit the rule for ${rule.domain}`}
+                >
+                  Edit
+                </Button>
+                <Button
+                  small
+                  onClick={() => void remove(rule)}
+                  aria-label={`Remove the rule for ${rule.domain}`}
+                >
+                  Remove
+                </Button>
               </li>
             );
           })}
@@ -169,4 +235,4 @@ export function RulesSection({ containers }: { containers: ContainerInfo[] | nul
       )}
     </section>
   );
-}
+};

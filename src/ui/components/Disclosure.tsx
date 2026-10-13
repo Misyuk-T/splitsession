@@ -1,6 +1,7 @@
-import { useState } from 'preact/hooks';
-import type { ComponentChildren } from 'preact';
-import { IconChevron } from '../icons';
+import type { ComponentChildren } from "preact";
+import { useState } from "preact/hooks";
+
+import { IconChevron } from "../icons";
 
 interface DisclosureProps {
   /** The id of the panel (what `aria-controls` points at). */
@@ -16,7 +17,15 @@ interface DisclosureProps {
 }
 
 /** A disclosure: a custom button with `aria-expanded` (not a native `<details>`) and the panel it opens. */
-export function Disclosure({ id, title, children, testId, toggleId, open: controlled, onToggle }: DisclosureProps) {
+export const Disclosure = ({
+  id,
+  title,
+  children,
+  testId,
+  toggleId,
+  open: controlled,
+  onToggle,
+}: DisclosureProps) => {
   const [own, setOwn] = useState(false);
   const open = controlled ?? own;
   const toggle = () => {
@@ -25,9 +34,19 @@ export function Disclosure({ id, title, children, testId, toggleId, open: contro
   };
   return (
     <div class="fx-why fx-disclosure" data-testid={testId}>
-      <button type="button" id={toggleId} class="fx-why__toggle fx-disclosure__toggle" aria-expanded={open} aria-controls={id} onClick={toggle}>
+      <button
+        type="button"
+        id={toggleId}
+        class="fx-why__toggle fx-disclosure__toggle"
+        aria-expanded={open}
+        aria-controls={id}
+        onClick={toggle}
+      >
         <span>{title}</span>
-        <span class={`fx-why__chevron${open ? ' fx-why__chevron--open' : ''}`} aria-hidden="true">
+        <span
+          class={`fx-why__chevron${open ? " fx-why__chevron--open" : ""}`}
+          aria-hidden="true"
+        >
           <IconChevron />
         </span>
       </button>
@@ -38,4 +57,4 @@ export function Disclosure({ id, title, children, testId, toggleId, open: contro
       )}
     </div>
   );
-}
+};

@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any -- this is injected, self-contained page code that duck-types page nodes across realms */
 /**
  * The page side of "visible agent activity". `pageActivity` is injected into the top frame of a tab the agent works with
  * (`scripting.executeScript`, ISOLATED world), so it must be SELF-CONTAINED like the functions in inject.ts: no imports,
@@ -40,7 +41,7 @@
  * `hide`/`unhide` take the overlay out of a screenshot.
  */
 
-import type { GlyphPart } from '../../ui/agent-glyphs';
+import type { GlyphPart } from "../../ui/agent-glyphs";
 
 export interface ActivityRect {
   x: number;
@@ -54,11 +55,11 @@ export interface ActivityCommand {
    * `show`: an action (brighter glow, pill, pulse) inside the session; `session`: start or renew the session lease;
    * `end`: the session is over (fade out); `stop`: gone at once (setting or bridge switched off).
    */
-  op: 'show' | 'session' | 'end' | 'hide' | 'unhide' | 'inspect' | 'stop';
+  op: "show" | "session" | "end" | "hide" | "unhide" | "inspect" | "stop";
   /** "reading", "clicking", ... (shown as "Agent: <label>"). */
   label: string;
   /** What the tool does: reads, or can change the page ('' for the other ops). */
-  kind: 'read' | 'act' | '';
+  kind: "read" | "act" | "";
   /** Milliseconds the action's bright layer stays after this action. */
   ttl: number;
   /** Milliseconds the session lives without another command (the lease). */
@@ -66,7 +67,7 @@ export interface ActivityCommand {
   /** Target rectangle in viewport coordinates, for the pulse. */
   rect: ActivityRect | null;
   /** The glyph paths (src/ui/agent-glyphs.ts); needed by `show` and `session`. */
-  glyphs?: Record<'read' | 'act', GlyphPart[]>;
+  glyphs?: Record<"read" | "act", GlyphPart[]>;
 }
 
 /** What `inspect` reports (used by the tests: the shadow root is closed, so only this world can look inside). */
@@ -95,47 +96,79 @@ export interface ActivityInspection {
   /** How many times the overlay element was built in this document (it must stay 1 for a whole session). */
   builds: number;
   /** The base glow's animation: the same one throughout (startTime does not change), running. */
-  base: { startTime: number | null; currentTime: number | null; playState: string } | null;
+  base: {
+    startTime: number | null;
+    currentTime: number | null;
+    playState: string;
+  } | null;
   /** What the glow layers are made of: gradients only, so the other counts must be 0 (no line anywhere). */
-  glowStyle: { layers: number; gradients: number; borders: number; outlines: number; shadows: number; sizePx: number[] };
+  glowStyle: {
+    layers: number;
+    gradients: number;
+    borders: number;
+    outlines: number;
+    shadows: number;
+    sizePx: number[];
+  };
 }
 
-export const OVERLAY_TAG = 'facet-agent-overlay';
-export const OVERLAY_STATE_KEY = '__facetAgentActivity';
+export const OVERLAY_TAG = "facet-agent-overlay";
+export const OVERLAY_STATE_KEY = "__facetAgentActivity";
 /** The colour of every agent indicator (glow, favicon, pill, toolbar badge): "the agent is here". */
-export const AGENT_COLOR = '#8b5cf6';
+export const AGENT_COLOR = "#8b5cf6";
 
-export async function pageActivity(cmd: ActivityCommand): Promise<ActivityInspection | boolean> {
-  const KEY = '__facetAgentActivity';
-  const TAG = 'facet-agent-overlay';
-  const COLOR = '#8b5cf6';
+export async function pageActivity(
+  cmd: ActivityCommand,
+): Promise<ActivityInspection | boolean> {
+  const KEY = "__facetAgentActivity";
+  const TAG = "facet-agent-overlay";
+  const COLOR = "#8b5cf6";
   const root = document.documentElement;
   const holder = globalThis as unknown as Record<string, any>;
   let s = holder[KEY];
 
   /** The computed look of the glow layers: gradients, and a count of anything that would draw a line. */
-  const glowStyle = (): ActivityInspection['glowStyle'] => {
-    const out = { layers: 0, gradients: 0, borders: 0, outlines: 0, shadows: 0, sizePx: [] as number[] };
-    for (const el of [s?.steady, s?.boostGlow] as Array<HTMLElement | undefined>) {
+  const glowStyle = (): ActivityInspection["glowStyle"] => {
+    const out = {
+      layers: 0,
+      gradients: 0,
+      borders: 0,
+      outlines: 0,
+      shadows: 0,
+      sizePx: [] as number[],
+    };
+    for (const el of [s?.steady, s?.boostGlow] as Array<
+      HTMLElement | undefined
+    >) {
       if (!el || !el.isConnected) continue;
       const cs = getComputedStyle(el);
       out.layers++;
       if (/linear-gradient/.test(cs.backgroundImage)) out.gradients++;
-      if ([cs.borderTopWidth, cs.borderRightWidth, cs.borderBottomWidth, cs.borderLeftWidth].some((w) => parseFloat(w) > 0)) out.borders++;
-      if (cs.outlineStyle !== 'none' && parseFloat(cs.outlineWidth) > 0) out.outlines++;
-      if (cs.boxShadow !== 'none') out.shadows++;
+      if (
+        [
+          cs.borderTopWidth,
+          cs.borderRightWidth,
+          cs.borderBottomWidth,
+          cs.borderLeftWidth,
+        ].some((w) => parseFloat(w) > 0)
+      )
+        out.borders++;
+      if (cs.outlineStyle !== "none" && parseFloat(cs.outlineWidth) > 0)
+        out.outlines++;
+      if (cs.boxShadow !== "none") out.shadows++;
       out.sizePx.push(s.glowSize?.get(el) ?? 0);
     }
     return out;
   };
   const inspection = (): ActivityInspection => ({
     present: !!s && !!s.host && s.host.isConnected,
-    text: s?.shadow ? (s.shadow.textContent ?? '') : '',
-    rings: s?.shadow ? s.shadow.querySelectorAll('[data-ring]').length : 0,
+    text: s?.shadow ? (s.shadow.textContent ?? "") : "",
+    rings: s?.shadow ? s.shadow.querySelectorAll("[data-ring]").length : 0,
     pulses: s?.pulses ?? 0,
     lastRect: s?.lastRect ?? null,
-    hidden: !!s?.host && s.host.style.getPropertyValue('visibility') === 'hidden',
-    kind: s?.kind ?? '',
+    hidden:
+      !!s?.host && s.host.style.getPropertyValue("visibility") === "hidden",
+    kind: s?.kind ?? "",
     fading: !!s?.fading,
     glow: !!s?.steady?.isConnected,
     boosted: !!s?.boosted,
@@ -144,13 +177,21 @@ export async function pageActivity(cmd: ActivityCommand): Promise<ActivityInspec
     iconFrames: s?.icon?.frames ?? s?.iconFramesTotal ?? 0,
     iconTicks: s?.icon?.ticks ?? s?.iconTicksTotal ?? 0,
     builds: s?.builds ?? 0,
-    base: s?.base ? { startTime: s.base.startTime as number | null, currentTime: s.base.currentTime as number | null, playState: s.base.playState as string } : null,
+    base: s?.base
+      ? {
+          startTime: s.base.startTime as number | null,
+          currentTime: s.base.currentTime as number | null,
+          playState: s.base.playState as string,
+        }
+      : null,
     glowStyle: glowStyle(),
   });
-  if (cmd.op === 'inspect') return inspection();
+  if (cmd.op === "inspect") return inspection();
   if (!root) return false;
 
-  const reduced = typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const reduced =
+    typeof matchMedia === "function" &&
+    matchMedia("(prefers-reduced-motion: reduce)").matches;
   /**
    * Favicon: 48 frames per revolution of the dots, 1.6 s a turn = 30 frames a second. Measured (e2e/zz, Chromium 156): Chrome
    * reports a changed icon `href` up to 60 times a second, so the browser is not the limit; the frame follows the wall clock.
@@ -164,13 +205,13 @@ export async function pageActivity(cmd: ActivityCommand): Promise<ActivityInspec
   const BREATH_MS = 2800;
   const ICON_PX = 64;
   /** Easing of every breath: a sine. */
-  const SINE = 'cubic-bezier(0.37, 0, 0.63, 1)';
+  const SINE = "cubic-bezier(0.37, 0, 0.63, 1)";
 
   // ---------------------------------------------------------------- hide / unhide (screenshots)
-  if (cmd.op === 'hide' || cmd.op === 'unhide') {
+  if (cmd.op === "hide" || cmd.op === "unhide") {
     if (!s || !s.host) return false;
-    if (cmd.op === 'hide') {
-      s.host.style.setProperty('visibility', 'hidden', 'important');
+    if (cmd.op === "hide") {
+      s.host.style.setProperty("visibility", "hidden", "important");
       // Let the compositor present a frame without the overlay before the caller captures; a tab that is not drawn
       // (hidden window) never fires animation frames, hence the timeout.
       await new Promise<void>((resolve) => {
@@ -179,14 +220,15 @@ export async function pageActivity(cmd: ActivityCommand): Promise<ActivityInspec
         requestAnimationFrame(() => requestAnimationFrame(done));
       });
     } else {
-      s.host.style.removeProperty('visibility');
+      s.host.style.removeProperty("visibility");
     }
     return true;
   }
 
   // ---------------------------------------------------------------- colours
   const rgb = (hex: string): [number, number, number] => {
-    const m = /^#?([0-9a-f]{6})$/i.exec(hex) ?? /^#?([0-9a-f]{6})$/i.exec(COLOR)!;
+    const m =
+      /^#?([0-9a-f]{6})$/i.exec(hex) ?? /^#?([0-9a-f]{6})$/i.exec(COLOR)!;
     const n = parseInt(m[1]!, 16);
     return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
   };
@@ -206,29 +248,37 @@ export async function pageActivity(cmd: ActivityCommand): Promise<ActivityInspec
   // again), a link the page removes or retags is forgotten (after getting its own values back), and at the end each node
   // gets the latest page-owned value. A page with no icon link at all gets one link of ours, appended and removed alone.
   // A final sweep makes sure none of our frames (data: URLs) is left in any link.
-  const ICON_ATTR = 'data-facet-agent-icon';
+  const ICON_ATTR = "data-facet-agent-icon";
   const MAX_CHANGES = 80; // page-side rewrites we answer within 10 s: a page that fights back gets its icons left alone
-  const isIconLink = (n: Node): n is HTMLLinkElement => n instanceof HTMLLinkElement && /(^|\s)icon(\s|$)/i.test(n.getAttribute('rel') ?? '');
-  const iconLinks = (): HTMLLinkElement[] => Array.from(document.querySelectorAll('link')).filter((l) => isIconLink(l) && !l.hasAttribute(ICON_ATTR));
-  const isOurs = (href: string | null): boolean => !!href && !!s.icon && s.icon.recent.has(href);
+  const isIconLink = (n: Node): n is HTMLLinkElement =>
+    n instanceof HTMLLinkElement &&
+    /(^|\s)icon(\s|$)/i.test(n.getAttribute("rel") ?? "");
+  const iconLinks = (): HTMLLinkElement[] =>
+    Array.from(document.querySelectorAll("link")).filter(
+      (l) => isIconLink(l) && !l.hasAttribute(ICON_ATTR),
+    );
+  const isOurs = (href: string | null): boolean =>
+    !!href && !!s.icon && s.icon.recent.has(href);
   const setAttr = (n: Element, name: string, value: string | null): void => {
     if (value === null) n.removeAttribute(name);
     else n.setAttribute(name, value);
   };
   /** Puts a node's attributes back to the page-owned values, except those the page has changed since we wrote ours. */
   const restoreNode = (n: HTMLLinkElement, rec: any): void => {
-    if (n.getAttribute('href') === rec.wrote.href) setAttr(n, 'href', rec.orig.href);
-    if (n.getAttribute('type') === rec.wrote.type) setAttr(n, 'type', rec.orig.type);
+    if (n.getAttribute("href") === rec.wrote.href)
+      setAttr(n, "href", rec.orig.href);
+    if (n.getAttribute("type") === rec.wrote.type)
+      setAttr(n, "type", rec.orig.type);
   };
   /** Records what the page has now as the node's own values (a value that is one of our frames, copied by the page, is not). */
   const takeOwn = (n: HTMLLinkElement, rec: any): boolean => {
     let changed = false;
-    const href = n.getAttribute('href');
+    const href = n.getAttribute("href");
     if (href !== rec.wrote.href) {
       rec.orig.href = isOurs(href) ? s.icon.fallback : href;
       changed = true;
     }
-    const type = n.getAttribute('type');
+    const type = n.getAttribute("type");
     if (type !== rec.wrote.type) {
       rec.orig.type = type;
       changed = true;
@@ -239,7 +289,13 @@ export async function pageActivity(cmd: ActivityCommand): Promise<ActivityInspec
   const dropTickListener = (ic: any): void => {
     if (!ic.onTick) return;
     try {
-      (globalThis as unknown as { chrome?: { runtime?: { onMessage?: { removeListener(l: unknown): void } } } }).chrome?.runtime?.onMessage?.removeListener(ic.onTick);
+      (
+        globalThis as unknown as {
+          chrome?: {
+            runtime?: { onMessage?: { removeListener(l: unknown): void } };
+          };
+        }
+      ).chrome?.runtime?.onMessage?.removeListener(ic.onTick);
     } catch {
       // an orphaned world: nothing to remove from
     }
@@ -261,7 +317,9 @@ export async function pageActivity(cmd: ActivityCommand): Promise<ActivityInspec
     const ic = s.icon;
     if (!ic || ic.gaveUp) return;
     let changes = 0;
-    for (const [n, rec] of Array.from(ic.tracked) as Array<[HTMLLinkElement, any]>) {
+    for (const [n, rec] of Array.from(ic.tracked) as Array<
+      [HTMLLinkElement, any]
+    >) {
       if (!n.isConnected || !isIconLink(n)) {
         restoreNode(n, rec); // gone (or no longer an icon): it keeps its own values if the page ever brings it back
         ic.tracked.delete(n);
@@ -272,9 +330,15 @@ export async function pageActivity(cmd: ActivityCommand): Promise<ActivityInspec
     }
     for (const n of iconLinks()) {
       if (ic.tracked.has(n)) continue;
-      const href = n.getAttribute('href');
+      const href = n.getAttribute("href");
       if (ic.fallback === null && !isOurs(href)) ic.fallback = href;
-      ic.tracked.set(n, { orig: { href: isOurs(href) ? ic.fallback : href, type: n.getAttribute('type') }, wrote: { href: null, type: null } });
+      ic.tracked.set(n, {
+        orig: {
+          href: isOurs(href) ? ic.fallback : href,
+          type: n.getAttribute("type"),
+        },
+        wrote: { href: null, type: null },
+      });
       changes++;
     }
     const now = Date.now();
@@ -291,11 +355,13 @@ export async function pageActivity(cmd: ActivityCommand): Promise<ActivityInspec
     } else if (ic.ours.isConnected) {
       ic.ours.remove();
     }
-    if (ic.ours.getAttribute('href') !== ic.frame) ic.ours.setAttribute('href', ic.frame); // (a same-value write is still a mutation: the observer would loop)
+    if (ic.ours.getAttribute("href") !== ic.frame)
+      ic.ours.setAttribute("href", ic.frame); // (a same-value write is still a mutation: the observer would loop)
     for (const [n, rec] of ic.tracked as Map<HTMLLinkElement, any>) {
-      if (n.getAttribute('href') !== ic.frame) n.setAttribute('href', ic.frame);
-      if (n.getAttribute('type') !== 'image/png') n.setAttribute('type', 'image/png');
-      rec.wrote = { href: ic.frame, type: 'image/png' };
+      if (n.getAttribute("href") !== ic.frame) n.setAttribute("href", ic.frame);
+      if (n.getAttribute("type") !== "image/png")
+        n.setAttribute("type", "image/png");
+      rec.wrote = { href: ic.frame, type: "image/png" };
     }
   };
   /**
@@ -304,7 +370,7 @@ export async function pageActivity(cmd: ActivityCommand): Promise<ActivityInspec
    * reduced motion there is only the first frame.
    */
   const renderFrame = (ic: any, step: number): string | null => {
-    const ctx = (ic.canvas as HTMLCanvasElement).getContext('2d');
+    const ctx = (ic.canvas as HTMLCanvasElement).getContext("2d");
     if (!ctx) return null;
     ctx.clearRect(0, 0, ICON_PX, ICON_PX);
     const c = ICON_PX / 2;
@@ -314,18 +380,26 @@ export async function pageActivity(cmd: ActivityCommand): Promise<ActivityInspec
       const t = k / (ICON_DOTS - 1); // 0: the head, 1: the end of the tail
       const angle = head - (2 * Math.PI * k) / ICON_DOTS;
       ctx.beginPath();
-      ctx.arc(c + ring * Math.sin(angle), c - ring * Math.cos(angle), ICON_PX * (0.102 - 0.036 * t), 0, 2 * Math.PI);
+      ctx.arc(
+        c + ring * Math.sin(angle),
+        c - ring * Math.cos(angle),
+        ICON_PX * (0.102 - 0.036 * t),
+        0,
+        2 * Math.PI,
+      );
       ctx.fillStyle = rgba(ic.color, 1 - 0.85 * t);
       ctx.fill();
     }
     try {
-      return ic.canvas.toDataURL('image/png');
+      return ic.canvas.toDataURL("image/png");
     } catch {
       return null;
     }
   };
   /** The step of the revolution the wall clock is at: every driver (the page's timer, the worker's ticks) agrees on it. */
-  const stepNow = (): number => Math.floor(((Date.now() % ICON_REV_MS) / ICON_REV_MS) * ICON_STEPS) % ICON_STEPS;
+  const stepNow = (): number =>
+    Math.floor(((Date.now() % ICON_REV_MS) / ICON_REV_MS) * ICON_STEPS) %
+    ICON_STEPS;
   const drawIcon = (): void => {
     const ic = s.icon;
     if (!ic || ic.gaveUp) return;
@@ -356,7 +430,9 @@ export async function pageActivity(cmd: ActivityCommand): Promise<ActivityInspec
   };
   /** The extension was reloaded or removed: this world is orphaned, so nothing of ours may be left in the page. */
   const orphaned = (): boolean => {
-    const rt = (globalThis as unknown as { chrome?: { runtime?: { id?: string } } }).chrome?.runtime;
+    const rt = (
+      globalThis as unknown as { chrome?: { runtime?: { id?: string } } }
+    ).chrome?.runtime;
     return !!rt && !rt.id;
   };
   const startIcon = (): void => {
@@ -364,39 +440,87 @@ export async function pageActivity(cmd: ActivityCommand): Promise<ActivityInspec
       syncIcon();
       return;
     }
-    const ours = document.createElement('link');
-    ours.setAttribute('rel', 'icon');
-    ours.setAttribute('type', 'image/png');
-    ours.setAttribute(ICON_ATTR, '');
-    const canvas = document.createElement('canvas');
+    const ours = document.createElement("link");
+    ours.setAttribute("rel", "icon");
+    ours.setAttribute("type", "image/png");
+    ours.setAttribute(ICON_ATTR, "");
+    const canvas = document.createElement("canvas");
     canvas.width = canvas.height = ICON_PX;
-    const cache = ((holder.__facetAgentFrames ??= new Map<string, Map<number, string>>()) as Map<string, Map<number, string>>).get(COLOR) ?? new Map<number, string>();
-    (holder.__facetAgentFrames as Map<string, Map<number, string>>).set(COLOR, cache);
-    s.icon = { ours, canvas, color: COLOR, step: reduced ? 0 : stepNow(), frames: 0, ticks: 0, changeTimes: [], timer: 0, onTick: null, observer: null, tracked: new Map(), recent: new Set<string>(), cache, frame: '', fallback: null, gaveUp: false };
+    const cache =
+      (
+        (holder.__facetAgentFrames ??= new Map<
+          string,
+          Map<number, string>
+        >()) as Map<string, Map<number, string>>
+      ).get(COLOR) ?? new Map<number, string>();
+    (holder.__facetAgentFrames as Map<string, Map<number, string>>).set(
+      COLOR,
+      cache,
+    );
+    s.icon = {
+      ours,
+      canvas,
+      color: COLOR,
+      step: reduced ? 0 : stepNow(),
+      frames: 0,
+      ticks: 0,
+      changeTimes: [],
+      timer: 0,
+      onTick: null,
+      observer: null,
+      tracked: new Map(),
+      recent: new Set<string>(),
+      cache,
+      frame: "",
+      fallback: null,
+      gaveUp: false,
+    };
     // The page changes, adds, retags or removes an icon link meanwhile: its value is the new original, ours goes on top.
     // (Our own frame writes are mutation records too; those are not the page's doing and need no second sync.)
     s.icon.observer = new MutationObserver((records) => {
       const ic = s?.icon;
       if (!ic || ic.gaveUp) return;
       const own = records.every((r) => {
-        if (r.type !== 'attributes' || (r.attributeName !== 'href' && r.attributeName !== 'type')) return false;
+        if (
+          r.type !== "attributes" ||
+          (r.attributeName !== "href" && r.attributeName !== "type")
+        )
+          return false;
         const t = r.target as HTMLLinkElement;
         if (t === ic.ours) return true;
         const rec = ic.tracked.get(t);
-        return !!rec && t.getAttribute(r.attributeName) === rec.wrote[r.attributeName];
+        return (
+          !!rec &&
+          t.getAttribute(r.attributeName) === rec.wrote[r.attributeName]
+        );
       });
       if (!own) syncIcon();
     });
-    s.icon.observer.observe(document.head ?? root, { childList: true, subtree: true, attributes: true, attributeFilter: ['rel', 'href', 'type'] });
-    if (document.head && document.head !== root) s.icon.observer.observe(root, { childList: true });
+    s.icon.observer.observe(document.head ?? root, {
+      childList: true,
+      subtree: true,
+      attributes: true,
+      attributeFilter: ["rel", "href", "type"],
+    });
+    if (document.head && document.head !== root)
+      s.icon.observer.observe(root, { childList: true });
     drawIcon();
     if (!reduced) {
       s.icon.timer = setInterval(advanceIcon, ICON_POLL_MS);
       // A tab in the background: its timers run a few times a second, the worker's `tick` messages do not wait for them.
       try {
-        const onMessage = (globalThis as unknown as { chrome?: { runtime?: { onMessage?: { addListener(l: unknown): void } } } }).chrome?.runtime?.onMessage;
+        const onMessage = (
+          globalThis as unknown as {
+            chrome?: {
+              runtime?: { onMessage?: { addListener(l: unknown): void } };
+            };
+          }
+        ).chrome?.runtime?.onMessage;
         s.icon.onTick = (m: unknown): undefined => {
-          if ((m as { facetAgentTick?: number } | null)?.facetAgentTick && s?.icon) {
+          if (
+            (m as { facetAgentTick?: number } | null)?.facetAgentTick &&
+            s?.icon
+          ) {
             s.icon.ticks += 1;
             advanceIcon();
           }
@@ -418,16 +542,18 @@ export async function pageActivity(cmd: ActivityCommand): Promise<ActivityInspec
     if (!ic.gaveUp) {
       ic.observer?.takeRecords();
       // What the page did in the last instant counts: adopt it, then put every node back to its own latest values.
-      for (const [n, rec] of ic.tracked as Map<HTMLLinkElement, any>) takeOwn(n, rec);
-      for (const [n, rec] of ic.tracked as Map<HTMLLinkElement, any>) restoreNode(n, rec);
+      for (const [n, rec] of ic.tracked as Map<HTMLLinkElement, any>)
+        takeOwn(n, rec);
+      for (const [n, rec] of ic.tracked as Map<HTMLLinkElement, any>)
+        restoreNode(n, rec);
     }
     ic.observer?.disconnect();
     ic.tracked.clear();
     ic.ours.remove(); // the only node that was ever ours
     // Final sweep: none of our frames may stay in any link (a page that copied one, a node we lost track of).
-    for (const l of Array.from(document.querySelectorAll('link'))) {
-      const href = l.getAttribute('href');
-      if (isOurs(href)) setAttr(l, 'href', ic.fallback);
+    for (const l of Array.from(document.querySelectorAll("link"))) {
+      const href = l.getAttribute("href");
+      if (isOurs(href)) setAttr(l, "href", ic.fallback);
     }
     s.iconFramesTotal = ic.frames;
     s.iconTicksTotal = ic.ticks;
@@ -435,30 +561,30 @@ export async function pageActivity(cmd: ActivityCommand): Promise<ActivityInspec
   };
 
   // ---------------------------------------------------------------- overlay
-  const SVG_NS = 'http://www.w3.org/2000/svg';
+  const SVG_NS = "http://www.w3.org/2000/svg";
   /** Puts the glyph of `kind` (inline SVG, white) into the pill. */
   const setGlyph = (kind: string): void => {
     const box = s.glyphBox as HTMLElement | null;
     const parts: GlyphPart[] = s.glyphs?.[kind] ?? [];
     if (!box || s.glyphKind === kind) return;
     s.glyphKind = kind;
-    box.textContent = '';
-    const svg = document.createElementNS(SVG_NS, 'svg');
-    svg.setAttribute('viewBox', '0 0 24 24');
-    svg.setAttribute('width', '18');
-    svg.setAttribute('height', '18');
-    svg.setAttribute('aria-hidden', 'true');
+    box.textContent = "";
+    const svg = document.createElementNS(SVG_NS, "svg");
+    svg.setAttribute("viewBox", "0 0 24 24");
+    svg.setAttribute("width", "18");
+    svg.setAttribute("height", "18");
+    svg.setAttribute("aria-hidden", "true");
     for (const part of parts) {
-      const path = document.createElementNS(SVG_NS, 'path');
-      path.setAttribute('d', part.d);
-      if (part.mode === 'fill') {
-        path.setAttribute('fill', '#fff');
+      const path = document.createElementNS(SVG_NS, "path");
+      path.setAttribute("d", part.d);
+      if (part.mode === "fill") {
+        path.setAttribute("fill", "#fff");
       } else {
-        path.setAttribute('fill', 'none');
-        path.setAttribute('stroke', '#fff');
-        path.setAttribute('stroke-width', String(part.w ?? 2));
-        path.setAttribute('stroke-linecap', 'round');
-        path.setAttribute('stroke-linejoin', 'round');
+        path.setAttribute("fill", "none");
+        path.setAttribute("stroke", "#fff");
+        path.setAttribute("stroke-width", String(part.w ?? 2));
+        path.setAttribute("stroke-linecap", "round");
+        path.setAttribute("stroke-linejoin", "round");
       }
       svg.appendChild(path);
     }
@@ -472,10 +598,20 @@ export async function pageActivity(cmd: ActivityCommand): Promise<ActivityInspec
     const fade = (to: string): string =>
       `linear-gradient(${to}, ${rgba(COLOR, alpha)} 0%, ${rgba(COLOR, alpha * 0.55)} 22%, ${rgba(COLOR, alpha * 0.25)} 48%, ${rgba(COLOR, alpha * 0.07)} 76%, ${rgba(COLOR, 0)} 100%)`;
     const st = el.style;
-    st.backgroundImage = [fade('to bottom'), fade('to top'), fade('to right'), fade('to left')].join(',');
-    st.backgroundSize = [`100% ${size}px`, `100% ${size}px`, `${size}px 100%`, `${size}px 100%`].join(',');
-    st.backgroundPosition = ['top', 'bottom', 'left', 'right'].join(',');
-    st.backgroundRepeat = 'no-repeat';
+    st.backgroundImage = [
+      fade("to bottom"),
+      fade("to top"),
+      fade("to right"),
+      fade("to left"),
+    ].join(",");
+    st.backgroundSize = [
+      `100% ${size}px`,
+      `100% ${size}px`,
+      `${size}px 100%`,
+      `${size}px 100%`,
+    ].join(",");
+    st.backgroundPosition = ["top", "bottom", "left", "right"].join(",");
+    st.backgroundRepeat = "no-repeat";
     s.glowSize.set(el, size);
   };
   /** Applies the colour to the glow layers and the pill. */
@@ -486,31 +622,32 @@ export async function pageActivity(cmd: ActivityCommand): Promise<ActivityInspec
   };
   const build = (): void => {
     const host = document.createElement(TAG);
-    host.setAttribute('data-facet-agent', '');
-    host.setAttribute('aria-hidden', 'true'); // not part of the page for screen readers, nor for the agent's snapshot
+    host.setAttribute("data-facet-agent", "");
+    host.setAttribute("aria-hidden", "true"); // not part of the page for screen readers, nor for the agent's snapshot
     host.style.cssText =
-      'all:initial!important;position:fixed!important;inset:0!important;z-index:2147483647!important;pointer-events:none!important;display:block!important;';
-    const shadow = host.attachShadow({ mode: 'closed' });
+      "all:initial!important;position:fixed!important;inset:0!important;z-index:2147483647!important;pointer-events:none!important;display:block!important;";
+    const shadow = host.attachShadow({ mode: "closed" });
 
-    const steady = document.createElement('div');
-    steady.style.cssText = 'position:fixed;inset:0;pointer-events:none;';
-    const boostWrap = document.createElement('div');
-    boostWrap.style.cssText = 'position:fixed;inset:0;pointer-events:none;opacity:0;';
-    const boostGlow = document.createElement('div');
-    boostGlow.style.cssText = 'position:fixed;inset:0;pointer-events:none;';
-    const pill = document.createElement('div');
+    const steady = document.createElement("div");
+    steady.style.cssText = "position:fixed;inset:0;pointer-events:none;";
+    const boostWrap = document.createElement("div");
+    boostWrap.style.cssText =
+      "position:fixed;inset:0;pointer-events:none;opacity:0;";
+    const boostGlow = document.createElement("div");
+    boostGlow.style.cssText = "position:fixed;inset:0;pointer-events:none;";
+    const pill = document.createElement("div");
     // System font on purpose: the page's closed shadow root could only load Inter through chrome.runtime.getURL, which needs
     // web_accessible_resources, and that lets any page probe whether SplitSession is installed. Not worth it for one label.
     pill.style.cssText =
-      'position:fixed;top:12px;right:12px;display:flex;align-items:center;gap:8px;padding:6px 12px 6px 10px;border-radius:999px;pointer-events:none;' +
+      "position:fixed;top:12px;right:12px;display:flex;align-items:center;gap:8px;padding:6px 12px 6px 10px;border-radius:999px;pointer-events:none;" +
       'color:#fff;font:600 14px/1.2 system-ui,-apple-system,"Segoe UI",sans-serif;letter-spacing:0;box-shadow:0 2px 10px rgba(0,0,0,.35);white-space:nowrap;';
-    const glyphBox = document.createElement('span');
-    glyphBox.style.cssText = 'display:flex;width:18px;height:18px;';
-    const text = document.createElement('span');
+    const glyphBox = document.createElement("span");
+    glyphBox.style.cssText = "display:flex;width:18px;height:18px;";
+    const text = document.createElement("span");
     pill.append(glyphBox, text);
     boostWrap.append(boostGlow, pill);
-    const layer = document.createElement('div');
-    layer.style.cssText = 'position:fixed;inset:0;pointer-events:none;';
+    const layer = document.createElement("div");
+    layer.style.cssText = "position:fixed;inset:0;pointer-events:none;";
     shadow.append(steady, boostWrap, layer);
     root.appendChild(host);
 
@@ -523,10 +660,10 @@ export async function pageActivity(cmd: ActivityCommand): Promise<ActivityInspec
     s.boostGlow = boostGlow;
     s.pill = pill;
     s.glyphBox = glyphBox;
-    s.glyphKind = '';
+    s.glyphKind = "";
     s.builds += 1;
     paint();
-    if (reduced) steady.style.opacity = '0.7';
+    if (reduced) steady.style.opacity = "0.7";
     ensureBreathing();
     watchHost();
   };
@@ -538,10 +675,26 @@ export async function pageActivity(cmd: ActivityCommand): Promise<ActivityInspec
    */
   const ensureBreathing = (): void => {
     if (reduced || !s.steady) return;
-    const breathe = (el: HTMLElement, from: number, current: Animation | null): Animation => {
-      if (current && current.playState === 'running' && (current.effect as KeyframeEffect | null)?.target === el) return current;
+    const breathe = (
+      el: HTMLElement,
+      from: number,
+      current: Animation | null,
+    ): Animation => {
+      if (
+        current &&
+        current.playState === "running" &&
+        (current.effect as KeyframeEffect | null)?.target === el
+      )
+        return current;
       current?.cancel();
-      return el.animate([{ opacity: from }, { opacity: 1 }], { duration: BREATH_MS / 2, direction: 'alternate', iterations: Infinity, easing: SINE, delay: -(Date.now() % BREATH_MS), fill: 'both' });
+      return el.animate([{ opacity: from }, { opacity: 1 }], {
+        duration: BREATH_MS / 2,
+        direction: "alternate",
+        iterations: Infinity,
+        easing: SINE,
+        delay: -(Date.now() % BREATH_MS),
+        fill: "both",
+      });
     };
     s.base = breathe(s.steady, 0.35, s.base);
     s.boostBase = breathe(s.boostGlow, 0.4, s.boostBase);
@@ -563,15 +716,19 @@ export async function pageActivity(cmd: ActivityCommand): Promise<ActivityInspec
   };
   /** Eases an element's opacity to `to` (instantly with reduced motion). */
   const fadeTo = (el: HTMLElement, to: number, ms: number): void => {
-    const from = parseFloat(getComputedStyle(el).opacity || '0');
+    const from = parseFloat(getComputedStyle(el).opacity || "0");
     el.style.opacity = String(to);
-    if (!reduced && from !== to) el.animate([{ opacity: from }, { opacity: to }], { duration: ms, easing: SINE });
+    if (!reduced && from !== to)
+      el.animate([{ opacity: from }, { opacity: to }], {
+        duration: ms,
+        easing: SINE,
+      });
   };
 
   const pulse = (r: ActivityRect): void => {
     if (!(r.w > 0 && r.h > 0)) return;
-    const ring = document.createElement('div');
-    ring.setAttribute('data-ring', '');
+    const ring = document.createElement("div");
+    ring.setAttribute("data-ring", "");
     const pad = 6;
     ring.style.cssText = `position:fixed;left:${r.x - pad}px;top:${r.y - pad}px;width:${r.w + pad * 2}px;height:${r.h + pad * 2}px;box-sizing:border-box;border:3px solid ${COLOR};border-radius:10px;pointer-events:none;box-shadow:0 0 12px ${rgba(COLOR, 0.7)};`;
     s.layer.appendChild(ring);
@@ -581,8 +738,17 @@ export async function pageActivity(cmd: ActivityCommand): Promise<ActivityInspec
     setTimeout(() => ring.remove(), 1700);
     if (!reduced) {
       ring
-        .animate([{ transform: 'scale(1)', opacity: 1 }, { transform: 'scale(1.22)', opacity: 0 }], { duration: 1600, easing: SINE })
-        .finished.then(() => ring.remove(), () => ring.remove());
+        .animate(
+          [
+            { transform: "scale(1)", opacity: 1 },
+            { transform: "scale(1.22)", opacity: 0 },
+          ],
+          { duration: 1600, easing: SINE },
+        )
+        .finished.then(
+          () => ring.remove(),
+          () => ring.remove(),
+        );
     }
   };
 
@@ -609,7 +775,7 @@ export async function pageActivity(cmd: ActivityCommand): Promise<ActivityInspec
     clearTimeout(s.timer);
     clearTimeout(s.boostTimer);
     stopIcon();
-    removeEventListener('pagehide', s.onHide);
+    removeEventListener("pagehide", s.onHide);
     s.host?.remove();
     delete holder[KEY];
   };
@@ -624,7 +790,11 @@ export async function pageActivity(cmd: ActivityCommand): Promise<ActivityInspec
       return;
     }
     s.fading = true;
-    const animation = s.host.animate([{ opacity: 1 }, { opacity: 0 }], { duration: 600, easing: SINE, fill: 'forwards' });
+    const animation = s.host.animate([{ opacity: 1 }, { opacity: 0 }], {
+      duration: 600,
+      easing: SINE,
+      fill: "forwards",
+    });
     s.fadeAnimation = animation;
     const done = (): void => {
       if (s.fadeAnimation === animation) teardown();
@@ -634,11 +804,11 @@ export async function pageActivity(cmd: ActivityCommand): Promise<ActivityInspec
   };
 
   // ---------------------------------------------------------------- stop / end
-  if (cmd.op === 'stop') {
+  if (cmd.op === "stop") {
     if (s) teardown();
     return true;
   }
-  if (cmd.op === 'end') {
+  if (cmd.op === "end") {
     if (s && !s.fading) fadeOut();
     return true;
   }
@@ -646,13 +816,39 @@ export async function pageActivity(cmd: ActivityCommand): Promise<ActivityInspec
   // ---------------------------------------------------------------- show / session
   if (!s) {
     s = holder[KEY] = {
-      host: null, shadow: null, text: null, layer: null, steady: null, boostWrap: null, boostGlow: null, pill: null, glyphBox: null, glyphKind: '', glyphs: null, glowSize: new WeakMap<HTMLElement, number>(),
-      builds: 0, base: null, boostBase: null, guard: null, gone: false, iconTicksTotal: 0,
-      timer: 0, boostTimer: 0, boosted: false, pulses: 0, lastRect: null, kind: '', fading: false, fadeAnimation: null, icon: null, iconFramesTotal: 0, onHide: null,
+      host: null,
+      shadow: null,
+      text: null,
+      layer: null,
+      steady: null,
+      boostWrap: null,
+      boostGlow: null,
+      pill: null,
+      glyphBox: null,
+      glyphKind: "",
+      glyphs: null,
+      glowSize: new WeakMap<HTMLElement, number>(),
+      builds: 0,
+      base: null,
+      boostBase: null,
+      guard: null,
+      gone: false,
+      iconTicksTotal: 0,
+      timer: 0,
+      boostTimer: 0,
+      boosted: false,
+      pulses: 0,
+      lastRect: null,
+      kind: "",
+      fading: false,
+      fadeAnimation: null,
+      icon: null,
+      iconFramesTotal: 0,
+      onHide: null,
     };
     // The page is going away (or into the back/forward cache): everything of ours is taken out of it first.
     s.onHide = (): void => teardown();
-    addEventListener('pagehide', s.onHide);
+    addEventListener("pagehide", s.onHide);
   }
   if (s.fading) {
     s.fadeAnimation?.cancel();
@@ -666,15 +862,15 @@ export async function pageActivity(cmd: ActivityCommand): Promise<ActivityInspec
   } else {
     ensureBreathing();
   }
-  if (cmd.op === 'show') {
+  if (cmd.op === "show") {
     s.kind = cmd.kind;
     s.text.textContent = `Agent: ${cmd.label}`;
-    setGlyph(cmd.kind === 'read' ? 'read' : 'act');
+    setGlyph(cmd.kind === "read" ? "read" : "act");
   } else if (!s.glyphKind) {
-    setGlyph('act');
+    setGlyph("act");
   }
   startIcon();
-  if (cmd.op === 'show') {
+  if (cmd.op === "show") {
     boostOn(cmd.ttl);
     if (cmd.rect) pulse(cmd.rect);
   }

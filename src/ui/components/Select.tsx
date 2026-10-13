@@ -1,6 +1,12 @@
-import { useEffect, useRef, useState } from 'preact/hooks';
-import { Dot } from './Button';
-import { useOutsidePress, usePopoverPlacement, useTypeahead, useUid } from './hooks';
+import { useEffect, useRef, useState } from "preact/hooks";
+
+import { Dot } from "./Button";
+import {
+  useOutsidePress,
+  usePopoverPlacement,
+  useTypeahead,
+  useUid,
+} from "./hooks";
 
 export interface SelectOption {
   value: string;
@@ -26,21 +32,38 @@ interface SelectProps {
  * `aria-activedescendant` names the highlighted option. Enter/Space/ArrowDown open it; arrows, Home/End and
  * type-ahead move; Enter or Space picks; Escape closes; Tab picks nothing and moves on.
  */
-export function Select({ label, value, options, onChange, placeholder = 'Chooseâ€¦', disabled, invalid, id, emptyText = 'Nothing to choose from.' }: SelectProps) {
-  const uid = useUid('select');
+export const Select = ({
+  label,
+  value,
+  options,
+  onChange,
+  placeholder = "Chooseâ€¦",
+  disabled,
+  invalid,
+  id,
+  emptyText = "Nothing to choose from.",
+}: SelectProps) => {
+  const uid = useUid("select");
   const listId = `${uid}-list`;
   const [open, setOpen] = useState(false);
   const selected = options.findIndex((o) => o.value === value);
   const [active, setActive] = useState(Math.max(0, selected));
   const trigger = useRef<HTMLDivElement>(null);
   const popover = useRef<HTMLUListElement>(null);
-  const placement = usePopoverPlacement(trigger, popover, open, 'start', true);
-  const typeahead = useTypeahead(options.map((o) => o.label), active);
+  const placement = usePopoverPlacement(trigger, popover, open, "start", true);
+  const typeahead = useTypeahead(
+    options.map((o) => o.label),
+    active,
+  );
   const current = selected >= 0 ? options[selected] : undefined;
 
   useOutsidePress([trigger, popover], () => setOpen(false), open);
   useEffect(() => {
-    if (open && placement) document.getElementById(`${uid}-opt-${active}`)?.scrollIntoView({ block: 'nearest' });
+    if (open && placement)
+      document
+        .getElementById(`${uid}-opt-${active}`)
+        ?.scrollIntoView({ block: "nearest" });
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- `placement` is tracked as "is placed" so the active option scrolls into view once the list is positioned
   }, [open, active, placement !== null]);
 
   const openList = () => {
@@ -68,52 +91,59 @@ export function Select({ label, value, options, onChange, placeholder = 'Chooseâ
         aria-haspopup="listbox"
         aria-expanded={open}
         aria-controls={listId}
-        aria-activedescendant={open && options.length > 0 ? `${uid}-opt-${active}` : undefined}
+        aria-activedescendant={
+          open && options.length > 0 ? `${uid}-opt-${active}` : undefined
+        }
         aria-disabled={disabled ? true : undefined}
-        aria-invalid={invalid ? 'true' : undefined}
+        aria-invalid={invalid ? "true" : undefined}
         onClick={() => (open ? setOpen(false) : openList())}
         onKeyDown={(event) => {
           if (disabled) return;
           if (!open) {
-            if (['ArrowDown', 'ArrowUp', 'Enter', ' '].includes(event.key)) {
+            if (["ArrowDown", "ArrowUp", "Enter", " "].includes(event.key)) {
               event.preventDefault();
               openList();
             }
             return;
           }
           switch (event.key) {
-            case 'ArrowDown':
+            case "ArrowDown":
               event.preventDefault();
               setActive(Math.min(last, active + 1));
               break;
-            case 'ArrowUp':
+            case "ArrowUp":
               event.preventDefault();
               setActive(Math.max(0, active - 1));
               break;
-            case 'Home':
+            case "Home":
               event.preventDefault();
               setActive(0);
               break;
-            case 'End':
+            case "End":
               event.preventDefault();
               setActive(last);
               break;
-            case 'Enter':
-            case ' ':
+            case "Enter":
+            case " ":
               event.preventDefault();
               if (options.length > 0) pick(active);
               else setOpen(false);
               break;
-            case 'Escape':
+            case "Escape":
               event.preventDefault();
               event.stopPropagation();
               setOpen(false);
               break;
-            case 'Tab':
+            case "Tab":
               setOpen(false);
               break;
             default:
-              if (event.key.length === 1 && !event.ctrlKey && !event.metaKey && !event.altKey) {
+              if (
+                event.key.length === 1 &&
+                !event.ctrlKey &&
+                !event.metaKey &&
+                !event.altKey
+              ) {
                 const hit = typeahead(event.key);
                 if (hit >= 0) setActive(hit);
               }
@@ -121,8 +151,21 @@ export function Select({ label, value, options, onChange, placeholder = 'Chooseâ
         }}
       >
         {current?.dot && <Dot color={current.dot} />}
-        <span class={`fx-select__value${current ? '' : ' fx-select__placeholder'}`}>{current ? current.label : placeholder}</span>
-        <svg class="fx-select__chevron" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <span
+          class={`fx-select__value${current ? "" : " fx-select__placeholder"}`}
+        >
+          {current ? current.label : placeholder}
+        </span>
+        <svg
+          class="fx-select__chevron"
+          viewBox="0 0 14 14"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+          aria-hidden="true"
+        >
           <path d="M3 5l4 4 4-4" />
         </svg>
       </div>
@@ -135,12 +178,32 @@ export function Select({ label, value, options, onChange, placeholder = 'Chooseâ
           aria-label={label}
           style={
             placement
-              ? { left: `${placement.left}px`, top: `${placement.top}px`, minWidth: `${placement.minWidth}px`, ...(placement.maxHeight > 0 ? { maxHeight: `${placement.maxHeight}px` } : {}), margin: 0, listStyle: 'none' }
-              : { left: '0px', top: '0px', visibility: 'hidden', margin: 0, listStyle: 'none' }
+              ? {
+                  left: `${placement.left}px`,
+                  top: `${placement.top}px`,
+                  minWidth: `${placement.minWidth}px`,
+                  ...(placement.maxHeight > 0
+                    ? { maxHeight: `${placement.maxHeight}px` }
+                    : {}),
+                  margin: 0,
+                  listStyle: "none",
+                }
+              : {
+                  left: "0px",
+                  top: "0px",
+                  visibility: "hidden",
+                  margin: 0,
+                  listStyle: "none",
+                }
           }
         >
-          {options.length === 0 && <li class="fx-popover__empty fx-secondary" role="presentation">{emptyText}</li>}
+          {options.length === 0 && (
+            <li class="fx-popover__empty fx-secondary" role="presentation">
+              {emptyText}
+            </li>
+          )}
           {options.map((option, index) => (
+            // eslint-disable-next-line jsx-a11y/click-events-have-key-events -- options are driven from the combobox trigger by keyboard (aria-activedescendant); the click is for the pointer
             <li
               key={option.value}
               id={`${uid}-opt-${index}`}
@@ -160,4 +223,4 @@ export function Select({ label, value, options, onChange, placeholder = 'Chooseâ
       )}
     </div>
   );
-}
+};
