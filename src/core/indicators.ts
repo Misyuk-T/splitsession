@@ -1,4 +1,4 @@
-import type { ContainerColor } from './types';
+import { CONTAINER_COLORS, type ContainerColor } from './types';
 
 /** Colours of the container dots, tab badges and (nearest match) tab groups. Firefox's container palette. */
 export const CONTAINER_HEX: Readonly<Record<ContainerColor, string>> = {
@@ -25,6 +25,15 @@ export const GROUP_COLOR: Readonly<Record<ContainerColor, ChromeGroupColor>> = {
   pink: 'pink',
   purple: 'purple',
 };
+
+/**
+ * The container colour a Chrome group colour stands for (the user recoloured the group in Chrome's menu). The current
+ * colour wins when it maps to that same group colour; null for a colour no container has (grey).
+ */
+export function containerColorOfGroup(group: string, current: ContainerColor): ContainerColor | null {
+  if (GROUP_COLOR[current] === group) return current;
+  return CONTAINER_COLORS.find((color) => GROUP_COLOR[color] === group) ?? null;
+}
 
 /** Black or white, whichever reads better on the colour (WCAG relative luminance). */
 export function readableTextColor(hex: string): '#000000' | '#ffffff' {

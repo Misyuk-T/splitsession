@@ -15,7 +15,6 @@ export const INSTALL_COMMAND = 'pnpm bridge:install';
 const MCP_ADD_COMMAND = 'claude mcp add --scope user splitsession -- <node> <repo>/bridge/dist/splitsession-bridge.mjs mcp';
 const DOCS_URL = 'https://github.com/Misyuk-T/splitsession/blob/main/docs/agents.md';
 
-const USER_SCRIPTS = { permissions: ['userScripts'] } as never;
 const LABEL_MAX = 40;
 const cleanLabel = (raw: string) => raw.replace(/[\u0000-\u001f\u007f]/g, '');
 
@@ -203,22 +202,6 @@ function ConnectGuide({ bridge }: { bridge: ReturnType<typeof useBridge> }) {
 /** Settings, "For AI agents": the switches, "How to connect", and what turning it on means. Low-key: one list of rows, the long text behind disclosures. */
 export function BridgeSection() {
   const bridge = useBridge();
-  const [allowed, setAllowed] = useState<boolean | null>(null);
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    browser.permissions.contains(USER_SCRIPTS).then(setAllowed, () => setAllowed(false));
-  }, []);
-
-  const allow = async () => {
-    try {
-      setAllowed(await browser.permissions.request(USER_SCRIPTS));
-      setError(null);
-    } catch (e) {
-      setError(describeError(e));
-    }
-  };
-
   return (
     <section class="opt-section" aria-labelledby="agent-title" id="agent">
       <h2 id="agent-title">For AI agents</h2>
@@ -255,33 +238,7 @@ export function BridgeSection() {
         <div class="opt-row">
           <Disclosure id="agent-advanced" title="Advanced" testId="bridge-advanced">
             <div class="opt-sub">
-              <div class="opt-row__split">
-                <div class="opt-row__text">
-                  <strong>State page</strong>
-                  <span class="fx-secondary">Containers and tabs as plain text, for agents.</span>
-                </div>
-                <Button small onClick={() => void browser.tabs.create({ url: browser.runtime.getURL('/state.html' as never) })}>
-                  Open state page
-                </Button>
-              </div>
               <ProfileLabel />
-              <div class="opt-row__split">
-                <div class="opt-row__text">
-                  <strong>Run JavaScript on pages that forbid it</strong>
-                  <span class="fx-secondary">
-                    Optional fallback for pages whose Content-Security-Policy blocks “run_js”. Chrome also needs “Allow User Scripts”
-                    switched on in this extension’s details.
-                  </span>
-                </div>
-                {allowed ? (
-                  <span class="fx-secondary" data-testid="userscripts-status">The userScripts fallback is allowed.</span>
-                ) : (
-                  <Button small onClick={() => void allow()} disabled={allowed === null}>
-                    Allow the userScripts fallback
-                  </Button>
-                )}
-              </div>
-              {error && <p class="fx-notice fx-notice--error" role="alert">{error}</p>}
             </div>
           </Disclosure>
         </div>

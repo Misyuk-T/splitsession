@@ -8,7 +8,7 @@ import { at, go, pageJson } from './fixtures';
 /**
  * Lite edition smoke (docs/decisions.md, "Two editions"): loads `.output/lite/chrome-mv3` (`pnpm build:lite`) in its own
  * browser, apart from the Full build every other spec uses. Containers and login isolation work; the agent side is
- * not there: no bridge / debugger permissions, no bridge or state page in the interface, no API for them.
+ * not there: no bridge / debugger permissions, no bridge in the interface, no API for them.
  */
 const LITE_PATH = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../.output/lite/chrome-mv3');
 
@@ -56,7 +56,7 @@ async function openIn(container: string, url: string): Promise<Page> {
 }
 
 test.describe('Lite edition', () => {
-  test('manifest and worker: no agent bridge permissions, no key, no state page', async () => {
+  test('manifest and worker: no agent bridge permissions, no key', async () => {
     const manifest = await worker.evaluate(() => (globalThis as any).chrome.runtime.getManifest());
     const all = [...(manifest.permissions ?? []), ...(manifest.optional_permissions ?? [])];
     for (const forbidden of ['nativeMessaging', 'debugger', 'userScripts']) expect(all).not.toContain(forbidden);
@@ -69,9 +69,6 @@ test.describe('Lite edition', () => {
       return { debugger: typeof c.debugger, connectNative: typeof c.runtime.connectNative, userScripts: typeof c.userScripts };
     });
     expect(apis).toEqual({ debugger: 'undefined', connectNative: 'undefined', userScripts: 'undefined' });
-    const probe = await context.newPage();
-    await expect(probe.goto(ext('state.html'))).rejects.toThrow(/ERR_FILE_NOT_FOUND|ERR_BLOCKED_BY_CLIENT/);
-    await probe.close();
   });
 
   test('settings and API: only the shared settings exist, the bridge API does not', async () => {
@@ -119,7 +116,7 @@ test.describe('Lite edition', () => {
     for (const p of [pa, pb, plain]) await p.close();
   });
 
-  test('popup renders containers without a bridge section or a state page entry', async () => {
+  test('popup renders containers without a bridge section', async () => {
     const popup = await context.newPage();
     await popup.setViewportSize({ width: 380, height: 700 });
     await popup.goto(ext('popup.html'));
@@ -130,7 +127,6 @@ test.describe('Lite edition', () => {
     await expect(popup.getByText(/bridge/i)).toHaveCount(0);
     await expect(popup.getByRole('button', { name: 'More', exact: true })).toHaveCount(0); // no header overflow menu
     await expect(popup.getByRole('switch')).toHaveCount(0);
-    await expect(popup.getByText(/state page/i)).toHaveCount(0);
     await expect(popup.getByRole('button', { name: /MCP/ })).toHaveCount(0); // no agent entry point in Lite
     await expect(popup.getByText('MCP')).toHaveCount(0);
 
@@ -152,7 +148,12 @@ test.describe('Lite edition', () => {
     await expect(options.getByText('Show containers as tab groups')).toBeVisible();
     await expect(options.getByText('Restore container tabs after restart')).toBeVisible();
     await expect(options.getByRole('heading', { name: 'Domain rules' })).toBeVisible();
-    await expect(options.getByRole('heading', { name: 'Export and import' })).toBeVisible();
+    await expect(options.getByRole('heading', { name: 'Advanced' })).toBeVisible();
+    await expect(options.getByRole('button', { name: 'Export and import' })).toBeVisible();
+    expect(await options.locator('main h2').allInnerTexts()).toEqual(['General', 'Domain rules', 'Advanced']);
+    expect(await options.locator('.opt-nav a').allInnerTexts()).toEqual(['General', 'Domain rules', 'Advanced']);
+    await options.goto(ext('options.html#transfer'));
+    await expect(options.getByRole('button', { name: 'Export and import' })).toHaveAttribute('aria-expanded', 'true');
     await expect(options.getByRole('link', { name: 'AI agent' })).toHaveCount(0);
     await expect(options.locator('#agent')).toHaveCount(0);
     await expect(options.getByText(/agent/i)).toHaveCount(0);

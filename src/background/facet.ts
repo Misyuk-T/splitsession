@@ -34,7 +34,7 @@ import {
   type MainFrameSend,
   type Renavigation,
 } from '../engine/capture/stale-detector';
-import { ensureContentScripts, type ScriptingApi } from '../engine/content-scripts';
+import { ContentScriptLifecycle, DEFAULT_BEACON_RULESET, type ContentScriptLifecycleDeps } from '../engine/content-scripts';
 import { SessionRuleManager, type DnrSessionApi } from '../engine/dnr/session-rules';
 import { ContainerError, ContainerStore } from '../engine/storage/container-store';
 import { TabRegistry } from '../engine/storage/tab-registry';
@@ -49,7 +49,7 @@ export const PURGE_ALARM = 'facet-purge';
 /** `about:blank#facet-<nonce>`: how the shim marks the blank child it opens before navigating it. */
 export const CHILD_NONCE = /#facet-([a-z0-9]{6,32})$/;
 const CTR_MARKER = /(?:^|&)ctr=([^&]*)/;
-/** Session-rule key of the strict-mode rule for requests outside tabs (container IDs are [a-z0-9]{10}). */
+/** Session-rule key of the rules for requests outside tabs (container IDs are [a-z0-9]{10}). */
 export const NO_TAB_KEY = '@no-tab';
 /** `storage.local` key of the per-install secret behind page keys (hex). */
 export const PAGE_KEY_SECRET_KEY = 'pageKeySecret';
@@ -65,6 +65,8 @@ const SETTLE_WAIT_MS = 60;
 const ASSIGNMENT_LAG_MS = 1_000;
 /** Browser start: matching the previous session's tabs may hold `ready` this long at most. */
 const STARTUP_PASS_LIMIT_MS = 10_000;
+/** A tab SplitSession created stays "its own" this long after its creation flow ended (`ownTabState`). */
+const OWN_TAB_MS = 5_000;
 
 type WebRequestDetails = {
   requestHeaders?: Array<{ name: string; value?: string }>;
@@ -178,6 +180,8 @@ export class Facet {
   readonly detector: StaleNavigationDetector;
   /** Container tabs that come back (browser restart, reopened tabs and groups): `restore.ts`. */
   readonly restore: TabRestore;
+  /** Content scripts registered only while containers are in use (`engine/content-scripts.ts`). */
+  readonly scripts: ContentScriptLifecycle;
   readonly log: Logger;
   /** Assignment and container changes, for the Stage C modules (tab groups, badges, domain rules). */
   readonly events = new FacetEvents();
@@ -214,6 +218,13 @@ export class Facet {
   private readonly blankWaiters = new Set<() => void>();
   /** One `#ctr=` decision per navigation, shared with the domain-rule engine. */
   private readonly ctrDecisions = new Map<string, { at: number; decision: Promise<ContainerId | null> }>();
+  /** `tabs.create` calls of SplitSession still under way, and the tabs it created (busy: their creation flow still runs). */
+  private readonly creating = new Set<Promise<unknown>>();
+  private readonly ownTabs = new Map<number, { busy: boolean; at: number }>();
+  /** Assignments under way, per tab: a second assignment to the same container joins the first. */
+  private readonly assigning = new Map<number, { containerId: ContainerId; work: Promise<number> }>();
+  /** `handleInstalled` under way (an extension update puts container tabs back after `ready`). */
+  private installing: Promise<void> = Promise.resolve();
 
   constructor(private readonly b: typeof browser = browser) {
     this.log = createLogger();
@@ -232,7 +243,10 @@ export class Facet {
       b.browsingData as unknown as BrowsingDataApi,
       {
         log: this.log,
-        onSitesChanged: () => void (this.settings.strictMode && this.rules.invalidate(NO_TAB_KEY)),
+        onSitesChanged: () => {
+          void this.rules.invalidate(NO_TAB_KEY);
+          this.scripts.changed();
+        },
         onGuardChanged: () => void this.rules.invalidate(NO_TAB_KEY),
       },
     );
@@ -251,9 +265,25 @@ export class Facet {
       prepareNavigation: (url) => this.prepareNavigation(url),
       heldPage: b.runtime.getURL('/held.html' as never),
       heldChanged: (tabIds) => this.events.emit({ type: 'restore-held', tabIds }),
+      waitingChanged: () => this.scripts.changed(),
+    });
+    this.scripts = new ContentScriptLifecycle({
+      scripting: b.scripting as unknown as ContentScriptLifecycleDeps['scripting'],
+      setBeaconRules: async (on) => {
+        const dnr = b.declarativeNetRequest;
+        // On: the answers before any script can ask. Off: only after the scripts are gone (the lifecycle's order).
+        if (on) await dnr.updateEnabledRulesets({ enableRulesetIds: [DEFAULT_BEACON_RULESET] });
+        await this.swPolicy.setBeacon(on);
+        if (!on) await dnr.updateEnabledRulesets({ disableRulesetIds: [DEFAULT_BEACON_RULESET] });
+      },
+      usage: () => ({ tabs: this.tabs.entries().length, waiting: this.restore.waitingCount(), starting: this.restore.isStarting() }),
+      managedSites: () => this.swPolicy.sites(),
+      log: this.log,
     });
     // Where container tabs are (and what they show) is what a restore has to recognise.
     this.events.on(() => this.restore.scheduleSnapshot());
+    // The last container tab gone (or the first one back): the content scripts follow.
+    this.events.on(() => this.scripts.changed());
   }
 
   start(): Promise<void> {
@@ -274,8 +304,12 @@ export class Facet {
     }
     this.pageKeyOf = createPageKeyCache(secret);
     await Promise.all([this.containers.load(), this.tabs.load()]);
+    // What Chrome kept registered decides whether the global beacon answers belong in the dynamic rules.
+    await this.scripts.readRegistered();
     // Managed sites and the strict state first: the no-tab rule compiled below depends on both.
-    await this.swPolicy.load(this.strict.load(this.settings.strictMode)).catch((error) => this.log('error', 'service-worker policy failed to load', String(error)));
+    await this.swPolicy
+      .load(this.strict.load(this.settings.strictMode), this.scripts.beaconRules)
+      .catch((error) => this.log('error', 'service-worker policy failed to load', String(error)));
     const liveTabList = await this.b.tabs.query({});
     const liveTabs = new Set(liveTabList.map((t) => t.id).filter((id): id is number => id !== undefined));
     const now = Date.now();
@@ -290,10 +324,7 @@ export class Facet {
     });
     const ok = await this.rules.reset([...this.tabs.containerIds(), NO_TAB_KEY, RESTORE_KEY]);
     if (!ok) this.log('error', 'could not reinstall session rules after start');
-    await Promise.allSettled([
-      ensureContentScripts(this.b.scripting as unknown as ScriptingApi).then((r) => this.log('info', `content scripts ${r}`)),
-      this.b.alarms.create(PURGE_ALARM, { periodInMinutes: 1 }),
-    ]);
+    await this.b.alarms.create(PURGE_ALARM, { periodInMinutes: 1 }).catch(() => {});
     if (startup) {
       // Browser start (or an extension update): tabs with the address of a container tab wait, blocked, until matched.
       const pass = this.restore.startupPass().catch((error) => this.log('error', 'restoring container tabs failed', String(error)));
@@ -301,6 +332,8 @@ export class Facet {
     } else {
       this.restore.afterLoad();
     }
+    // Registered iff containers are in use, derived from the tab registry and the restore state just loaded.
+    await this.scripts.start().catch((error) => this.log('error', 'content-script registration failed', String(error)));
     this.log('info', `ready: ${this.containers.list().length} containers, ${this.tabs.entries().length} tabs`);
   }
 
@@ -312,7 +345,10 @@ export class Facet {
       const addRules: DnrRule[] = [];
       const cookies = this.settings.strictMode ? compileNoTabRule(allocator.next(), this.swPolicy.sites()) : null;
       if (cookies) addRules.push(cookies);
-      if (this.swPolicy.guarded) addRules.push(compileNoTabWorkerScriptRule(allocator.next()));
+      // Worker scripts outside tabs: blocked on every site in strict mode only. Outside it the shim refuses service
+      // workers on the sites containers use, and a network block would also break shared workers' imports there.
+      const workers = this.swPolicy.guarded ? compileNoTabWorkerScriptRule(allocator.next()) : null;
+      if (workers) addRules.push(workers);
       return addRules.length > 0 ? { addRules, ruleIds: addRules.map((r) => r.id), regexRuleCount: 0 } : null;
     }
     const container = this.containers.get(containerId);
@@ -464,9 +500,34 @@ export class Facet {
   }
 
   /** Returns the time the rules became active. Throws (and leaves the tab unassigned) if they could not be installed. */
-  private async assign(tabId: number, containerId: ContainerId): Promise<number> {
+  private assign(tabId: number, containerId: ContainerId): Promise<number> {
+    const running = this.assigning.get(tabId);
+    if (running && running.containerId === containerId) return running.work;
+    const work = (running ? running.work.catch(() => 0) : Promise.resolve(0)).then(() => this.assignNow(tabId, containerId));
+    const entry = { containerId, work };
+    this.assigning.set(tabId, entry);
+    const done = () => {
+      if (this.assigning.get(tabId) === entry) this.assigning.delete(tabId);
+    };
+    work.then(done, done);
+    return work;
+  }
+
+  private async assignNow(tabId: number, containerId: ContainerId): Promise<number> {
     if (!Number.isInteger(tabId) || tabId < 0) throw new ContainerError(`invalid tab id ${tabId}`);
     if (!this.containers.get(containerId)) throw new ContainerError(`no container "${containerId}"`);
+    // Every way into a container passes here before the tab navigates or reloads: the content scripts must be
+    // registered for every frame first, or the tab's first document would run without them.
+    const release = this.scripts.hold();
+    try {
+      await this.scripts.ensure();
+      return await this.assignRegistered(tabId, containerId);
+    } finally {
+      release();
+    }
+  }
+
+  private async assignRegistered(tabId: number, containerId: ContainerId): Promise<number> {
     const tab = await this.b.tabs.get(tabId);
     const prev = this.tabs.get(tabId);
     if (prev?.containerId === containerId && prev.activeSince !== null) return prev.activeSince;
@@ -512,7 +573,7 @@ export class Facet {
    * commits over it: the tab stays blank ("unloaded") although the request succeeded.
    */
   private async createBlankTab(props: { active?: boolean; windowId?: number; index?: number; pinned?: boolean }): Promise<{ id?: number }> {
-    const tab = await this.b.tabs.create({ ...props, url: 'about:blank' });
+    const tab = await this.trackOwnCreation(this.b.tabs.create({ ...props, url: 'about:blank' }));
     const id = tab.id;
     if (id === undefined) return tab;
     const committed = () => this.blankCommitted.has(id);
@@ -551,16 +612,79 @@ export class Facet {
     });
     if (tab.id === undefined) throw new ContainerError('tab creation failed');
     try {
-      await this.assign(tab.id, container.id);
-    } catch (error) {
-      await this.b.tabs.remove(tab.id).catch(() => {});
-      throw error;
+      try {
+        await this.assign(tab.id, container.id);
+      } catch (error) {
+        await this.b.tabs.remove(tab.id).catch(() => {});
+        throw error;
+      }
+      options.onAssigned?.(tab.id);
+      if (options.openerTabId !== undefined) await this.b.tabs.update(tab.id, { openerTabId: options.openerTabId }).catch(() => {});
+      await this.prepareNavigation(url);
+      await this.b.tabs.update(tab.id, { url });
+    } finally {
+      this.ownTabDone(tab.id);
     }
-    options.onAssigned?.(tab.id);
-    if (options.openerTabId !== undefined) await this.b.tabs.update(tab.id, { openerTabId: options.openerTabId }).catch(() => {});
-    await this.prepareNavigation(url);
-    await this.b.tabs.update(tab.id, { url });
     return tab.id;
+  }
+
+  /**
+   * Wraps a `tabs.create` of SplitSession's: the tab is known as its own before anyone can ask (`ownTabState`), so the
+   * group guard does not take a tab SplitSession is placing for one a person or Chrome put into a group. Call
+   * `ownTabDone` when the tab is where SplitSession wants it (in its container, or decided plain).
+   */
+  trackOwnCreation<T extends { id?: number }>(creation: Promise<T>): Promise<T> {
+    const tracked = creation.then((tab) => {
+      if (tab.id !== undefined) this.ownTabs.set(tab.id, { busy: true, at: Date.now() });
+      return tab;
+    });
+    this.creating.add(tracked);
+    const drop = () => void this.creating.delete(tracked);
+    tracked.then(drop, drop);
+    return tracked;
+  }
+
+  ownTabDone(tabId: number): void {
+    if (this.ownTabs.has(tabId)) this.ownTabs.set(tabId, { busy: false, at: Date.now() });
+  }
+
+  /**
+   * Whether SplitSession created this tab itself: 'busy' while it is still being set up (assigned, navigated), 'own' for a
+   * few seconds afterwards, null otherwise. Waits for SplitSession's `tabs.create` calls still under way first.
+   */
+  async ownTabState(tabId: number): Promise<'busy' | 'own' | null> {
+    if (this.creating.size > 0) await Promise.allSettled([...this.creating]);
+    const now = Date.now();
+    for (const [id, entry] of this.ownTabs) if (!entry.busy && now - entry.at > OWN_TAB_MS) this.ownTabs.delete(id);
+    const entry = this.ownTabs.get(tabId);
+    return entry ? (entry.busy ? 'busy' : 'own') : null;
+  }
+
+  /** SplitSession is putting the tab into a container right now (assignment under way, or a popup child inheriting). */
+  isAssigning(tabId: number): boolean {
+    return this.assigning.has(tabId) || this.inheriting.has(tabId) || this.tabs.get(tabId)?.activeSince === null;
+  }
+
+  /**
+   * Puts a tab into a container where it stands, without loading anything: for tabs with no document of another
+   * identity alive (a page that is not a website, such as the new tab page; a tab Chrome has not loaded or has
+   * discarded; a tab the restore holds back, blocked or on SplitSession's waiting page, which goes to its address now).
+   */
+  async assignInPlace(tabId: number, containerId: ContainerId): Promise<void> {
+    await this.ready;
+    const heldAddress = await this.restore.release(tabId);
+    this.detector.forgetTab(tabId);
+    await this.assign(tabId, containerId);
+    if (heldAddress !== undefined) {
+      await this.prepareNavigation(heldAddress);
+      await this.b.tabs.update(tabId, { url: heldAddress });
+    }
+  }
+
+  /** Resolves once start-up work is over: rehydration, and the container tabs an extension update puts back. */
+  async settled(): Promise<void> {
+    await this.ready;
+    await this.installing;
   }
 
   /**
@@ -585,9 +709,13 @@ export class Facet {
     if (containerId !== null) return this.openInContainer(url, containerId, { ...place, ...(onCreated ? { onAssigned: onCreated } : {}) });
     const tab = await this.createBlankTab(place);
     if (tab.id === undefined) throw new ContainerError('tab creation failed');
-    await this.restore.clear(tab.id);
-    onCreated?.(tab.id);
-    await this.b.tabs.update(tab.id, { url });
+    try {
+      await this.restore.clear(tab.id);
+      onCreated?.(tab.id);
+      await this.b.tabs.update(tab.id, { url });
+    } finally {
+      this.ownTabDone(tab.id);
+    }
     return tab.id;
   }
 
@@ -818,7 +946,9 @@ export class Facet {
     if (nonce) this.childNonces.set(child, nonce);
     const existing = this.tabs.get(child);
     if (existing) {
-      if (existing.activeSince !== null) this.childReady(parent, child);
+      // Assigned meanwhile by someone else (the group guard: Chrome put the child into its opener's group).
+      if (existing.activeSince === null) await this.assigning.get(child)?.work.catch(() => {});
+      if (this.tabs.get(child)?.activeSince != null) this.childReady(parent, child);
       return;
     }
     if (this.inheriting.has(child)) return;
@@ -881,6 +1011,7 @@ export class Facet {
 
   handleTabRemoved(tabId: number, info: { isWindowClosing?: boolean } = {}): void {
     void this.ready.then(() => this.restore.tabRemoved(tabId, info.isWindowClosing === true));
+    this.ownTabs.delete(tabId);
     this.childNonces.delete(tabId);
     this.recentResponses.delete(tabId);
     this.frameSites.delete(tabId);
@@ -1041,7 +1172,13 @@ export class Facet {
    * open container tabs into real-profile tabs. Put back every tab that is still the same tab (id, window and URL
    * match the `storage.local` backup), then reload it so it gets fresh content scripts.
    */
-  async handleInstalled(reason: string): Promise<void> {
+  handleInstalled(reason: string): Promise<void> {
+    const work = this.installed(reason);
+    this.installing = work.catch(() => {});
+    return work;
+  }
+
+  private async installed(reason: string): Promise<void> {
     await this.ready;
     await this.strict.installed(reason).catch((error) => this.log('error', 'strict mode after install failed', String(error)));
     if (reason !== 'update') return;
@@ -1059,6 +1196,8 @@ export class Facet {
       restored.push(tabId);
     }
     if (restored.length === 0) return;
+    // They reload below: the content scripts first (an update may have cleared them).
+    await this.scripts.ensure();
     const ok = await this.rules.invalidate(...new Set(restored.map((id) => this.tabs.containerOf(id)!)));
     const now = Date.now();
     for (const tabId of restored) {
@@ -1096,6 +1235,8 @@ export class Facet {
   async handleAlarm(name: string): Promise<void> {
     if (name !== PURGE_ALARM) return;
     await this.ready;
+    // Catches a grace period the worker did not live to see, and restore decisions that emitted no event.
+    this.scripts.changed();
     for (const container of this.containers.list()) {
       if (this.containers.jar(container.id).purgeExpired() === 0) continue;
       this.containers.touchJar(container.id);

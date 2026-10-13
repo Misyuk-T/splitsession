@@ -1,4 +1,5 @@
 import type { Container, ContainerColor, ContainerId, Cookie } from '../core';
+import type { ContentScriptStatus } from '../engine/content-scripts';
 import type { StrictModeStatus } from '../engine/strict-mode';
 import type { ContainerInfo, Facet, OpenOptions } from './facet';
 import type { RestoreStatus } from './restore';
@@ -46,6 +47,10 @@ export interface FacetApi {
   getJar(containerId: ContainerId): Promise<Cookie[]>;
   getSessionRules(): Promise<unknown[]>;
   getManagedSites(): Promise<string[]>;
+  /** Diagnostics: where the content scripts are registered now (only while containers are in use). */
+  getContentScripts(): Promise<ContentScriptStatus>;
+  /** Tests: applies the wanted registration now, without the grace period after the last container tab. */
+  flushContentScripts(): Promise<ContentScriptStatus>;
   getLog(): Promise<unknown[]>;
   stats(): Promise<{ rules: number; regexRules: number; keys: number }>;
 }
@@ -71,6 +76,8 @@ export const API_METHODS = [
   'getJar',
   'getSessionRules',
   'getManagedSites',
+  'getContentScripts',
+  'flushContentScripts',
   'getLog',
   'stats',
 ] as const satisfies readonly (keyof FacetApi)[];
@@ -101,6 +108,12 @@ export function createApi(facet: Facet, getSessionRules: () => Promise<unknown[]
     getJar: async (id) => (await facet.ready, facet.getJar(id)),
     getSessionRules,
     getManagedSites: async () => (await facet.ready, facet.swPolicy.sites()),
+    getContentScripts: async () => (await facet.ready, facet.scripts.status()),
+    flushContentScripts: async () => {
+      await facet.ready;
+      await facet.scripts.flush();
+      return facet.scripts.status();
+    },
     getLog: async () => facet.log.entries(),
     stats: async () => (await facet.ready, facet.rules.stats()),
   };

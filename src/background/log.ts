@@ -9,7 +9,7 @@ export interface LogEntry {
 
 export interface Logger {
   (level: LogLevel, message: string, data?: unknown): void;
-  /** Most recent entries (bounded), for the state page and e2e diagnostics. */
+  /** Most recent entries (bounded), for the options Diagnostics and e2e. */
   entries(): LogEntry[];
 }
 

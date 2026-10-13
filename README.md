@@ -31,8 +31,7 @@ SplitSession is built from one codebase in two editions. On the Chrome Web Store
 | Agent bridge (native messaging, MCP server, CDP "full hands") | not in the bundle | yes, off by default |
 | Agent activity display (glow, label, tab-title mark, "AI" badge) | not in the bundle | yes |
 | "Show the container name to pages", `data-ctr`, `[name]` title prefix | not in the bundle | yes, off by default |
-| `state.html` (plain-text state for agents) | not in the bundle | yes |
-| Permissions | `declarativeNetRequest`, `webRequest`, `scripting`, `tabs`, `tabGroups`, `storage`, `webNavigation`, `browsingData`, `alarms`, `sessions`, all sites; optional `cookies` | Lite plus `nativeMessaging`, `debugger`, and optional `userScripts` |
+| Permissions | `declarativeNetRequest`, `webRequest`, `scripting`, `tabs`, `tabGroups`, `storage`, `webNavigation`, `browsingData`, `alarms`, `sessions`, all sites; optional `cookies` | Lite plus `nativeMessaging`, `debugger` |
 | Extension ID | assigned by the Web Store (a local build gets a path-derived one) | fixed: `hapfikidacgfgnnajkgnaednpgnhmffk` |
 | Build | `pnpm build:lite` -> `.output/lite/chrome-mv3` | `pnpm build` (= `pnpm build:full`) -> `.output/chrome-mv3` |
 | Zip | `pnpm zip:lite` -> `.output/lite/splitsession-lite-<version>.zip` | `pnpm zip:full` -> `.output/splitsession-full-<version>.zip` |
@@ -45,13 +44,13 @@ The two have different IDs, so both can be installed side by side (don't run bot
 - **Containers**: create, rename, recolour (8 colours), delete. A container is a name, a colour and a cookie jar.
 - **Popup**: shows which container the current tab is in, reopens it in another container (or none), goes to a container (a click on its row opens its tab group and makes its first tab active; a container with no tabs opens a new tab; creating a container opens its first tab), manages the list: on hover or keyboard focus a row's tab count gives way to icons for a new tab in it, moving the current tab into it, editing (name, colour) and deleting.
 - **Domain rules** (like Firefox's "Always open in"): per site, "always open in container X" or "ask me". The ask page can remember your choice.
-- **Tab groups**: containers are shown as Chrome tab groups with the container's name and colour (optional). Dragging a tab out of a group never changes its container; dragging a tab *into* a container's group reopens it in that container, so the group never lies about where a tab is.
+- **Tab groups**: containers are shown as Chrome tab groups titled `⧉ name` in the container's colour (optional). Renaming or recolouring such a group in Chrome's own group menu renames or recolours the container (and its groups in every window); a name that is empty or already taken is put back. Dragging a tab out of a group never changes its container; every tab inside a container's group is in that container: a tab dragged in is reopened there, a new tab Chrome opens inside the group is put in it before anything loads, and a periodic check fixes anything that got in otherwise, so the group never lies about where a tab is.
 - **Container tabs survive a restart**: with Chrome's "Continue where you left off", Reopen closed tab, History or a closed tab group opened again, container tabs come back in their container, held back until SplitSession has matched them. Tabs it cannot match with certainty wait for you in the popup.
 - **Indicators**: a toolbar badge that is a dot in the container's colour (no letters); in the Full edition also the page title prefixed with `[name]` and `data-ctr="name"` on the page's `<html>` (only while "Show the container name to pages" is on; it is off by default, AI agents need it on).
 - **Strict mode** (a setting, off by default; it never asks): when on, removes every service worker of the profile and stops sites from installing new ones, so none can answer a container tab with your regular logins. The price is push notifications on every site, which is why it is off until you switch it on in Settings.
 - **Export and import** of containers and rules as JSON. Cookies are left out unless you tick a clearly marked box.
 - **Links and bookmarks** (both editions): `open.html?container=…&url=…` and a `#ctr=name` marker open a page in a container.
-- **For AI agents** (Full edition only): a plain-text `state.html`, and an opt-in **agent bridge** that lets your own local agent (Claude Code) list, read and operate all your tabs through an MCP server. See [docs/agents.md](docs/agents.md).
+- **For AI agents** (Full edition only): an opt-in **agent bridge** that lets your own local agent (Claude Code) list, read and operate all your tabs through an MCP server. See [docs/agents.md](docs/agents.md).
 - Light and dark theme. Every control is custom and keyboard accessible: no browser `<select>`, `alert` or validation bubbles.
 
 ## Install
@@ -79,7 +78,7 @@ SplitSession asks for access to all sites: rewriting request headers per tab nee
 1. A container is a property of a **tab** (`tabId -> container`), not of a site. Everything that tab requests, on any host, belongs to its container.
 2. Each container has its own **cookie jar**. For the tabs of a container, `declarativeNetRequest` session rules replace the `Cookie` request header with the jar's cookies and strip `Set-Cookie` from responses, so the real profile's cookies are neither sent nor changed. The rules follow `SameSite`: a cross-site request gets only `SameSite=None` cookies, a cross-site top-level GET also `Lax` ones, never `Strict` ones.
 3. `Set-Cookie` headers are read in `webRequest` (before the rules remove them) and stored in the container's jar; the rules are recompiled before the next request. A navigation that raced the update is detected by the `Cookie` header it actually carried and repeated once.
-4. A script that runs **before the page's own scripts** (a synchronous "beacon" answered by a DNR rule tells it the container without any network traffic) namespaces `document.cookie`, `cookieStore`, `localStorage`, `sessionStorage`, IndexedDB, Cache Storage and `BroadcastChannel` per container. Pages can read the beacon too, so it never carries the container's ID, only an opaque key that differs per site.
+4. A script that runs **before the page's own scripts** (a synchronous "beacon" answered by a DNR rule tells it the container without any network traffic) namespaces `document.cookie`, `cookieStore`, `localStorage`, `sessionStorage`, IndexedDB, Cache Storage and `BroadcastChannel` per container. Pages can read the beacon too, so it never carries the container's ID, only an opaque key that differs per site. The script is registered only while containers are in use: afterwards only on the sites containers have used (where plain tabs keep the containers' storage hidden), and in a profile that never had a container not at all, so ordinary pages make no beacon request.
 5. Pages a container tab opens (`window.open`, `target=_blank`, Ctrl-click) are created blank, put into the same container, and only then navigated, so even the first request of an OAuth popup is isolated.
 6. `open.html?container=…&url=…` puts a tab into a container before its first request; that is how the popup, domain rules and agents open pages.
 7. Service workers and shared workers make requests outside every tab's rules, so they are switched off in containers. Strict mode (off by default, switch in Settings) removes every service worker of the profile and refuses new ones everywhere; without it, they are removed and refused on sites used in containers, and SplitSession removes a site's workers before it navigates a container tab there itself.
@@ -101,12 +100,11 @@ The complete, honest list, with the mechanism behind each item, is [docs/limits.
 
 ## For AI agents (Full edition)
 
-`open.html` and `#ctr=` also work in Lite; everything else in this section, the bridge and `state.html`, is Full only.
+`open.html` and `#ctr=` also work in Lite; everything else in this section, the bridge, is Full only.
 
 ```text
 chrome-extension://hapfikidacgfgnnajkgnaednpgnhmffk/open.html?container=Work&url=https%3A%2F%2Fexample.com%2F   (navigate a tab here: it opens in container "Work", created if new)
 https://example.com/#ctr=Work                                                                                       (marker form: container must exist, tab must have none, navigation started by the browser or an extension)
-chrome-extension://hapfikidacgfgnnajkgnaednpgnhmffk/state.html                                                       (plain text: containers, container tabs, ready-to-copy addresses)
 ```
 
 ### The agent bridge (off by default)

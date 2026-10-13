@@ -421,7 +421,6 @@ test.describe('popup', () => {
       ['popup', ext(`popup.html?tab=${tabId}`)],
       ['options', ext('options.html')],
       ['choose', ext(`choose.html?url=${encodeURIComponent(at('a.localhost', '/whoami'))}&tab=${tabId}`)],
-      ['state', ext('state.html')],
     ];
     for (const scheme of ['light', 'dark'] as const) {
       for (const [name, url] of pages) {

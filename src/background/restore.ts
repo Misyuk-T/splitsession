@@ -102,6 +102,8 @@ export interface RestoreDeps {
   heldPage: string;
   /** The set of waiting tabs changed (`tabIds`: those added or removed): badges follow. */
   heldChanged(tabIds: number[]): void;
+  /** Tabs that were being matched or held may be decided now (no event of its own): the content scripts re-check. */
+  waitingChanged?(): void;
 }
 
 interface HeldEntry extends HeldTab {
@@ -196,6 +198,24 @@ export class TabRestore {
     return this.enabled;
   }
 
+  /**
+   * Tabs the restore is deciding about (a tab on a gated address is matched) or holds for the user: they may become
+   * container tabs, so their first request must not precede the content scripts. Records of CLOSED tabs and groups
+   * (saved groups, recently closed; up to 30 days) are not tabs and never count: nothing is open to protect.
+   */
+  waitingCount(): number {
+    return this.pending.size + this.held.size;
+  }
+
+  /** The start pass (matching the previous session's tabs) is still running. */
+  isStarting(): boolean {
+    return this.starting;
+  }
+
+  private notifyWaiting(): void {
+    this.deps.waitingChanged?.();
+  }
+
   // ---------------------------------------------------------------- start
 
   /**
@@ -269,6 +289,7 @@ export class TabRestore {
       if (this.enabled) await this.matchPreviousSession();
     } finally {
       this.starting = false;
+      this.notifyWaiting();
     }
     for (const id of this.recheck) void this.reloadIfBlocked(id);
     this.recheck.clear();
@@ -350,6 +371,7 @@ export class TabRestore {
     const wasPending = this.pending.delete(tabId);
     const wasHeld = this.held.delete(tabId);
     if (wasHeld) this.deps.heldChanged([tabId]);
+    if (wasPending || wasHeld) this.notifyWaiting();
     if (this.cleared.has(tabId)) return false;
     this.cleared.add(tabId);
     if (wasPending || wasHeld || this.enabled) this.persistSession();
@@ -469,6 +491,7 @@ export class TabRestore {
     this.pending.delete(tabId);
     const wasHeld = this.held.delete(tabId);
     if (wasHeld) this.deps.heldChanged([tabId]);
+    if (p || wasHeld) this.notifyWaiting();
     const changed = this.cleared.delete(tabId) || wasHeld;
     this.blocked.delete(tabId);
     this.reloadedAt.delete(tabId);
@@ -592,10 +615,14 @@ export class TabRestore {
     ]);
     if (!this.pending.has(tabId)) return; // decided meanwhile (inherited a container, closed, chosen by the user)
     this.pending.delete(tabId);
-    if (!tab) return;
+    if (!tab) {
+      this.notifyWaiting();
+      return;
+    }
     const ctx = this.context(tabs, groups, Date.now() < this.startupUntil, p.since);
     await this.apply(tab, matchRestoredTab(toLive(tab), ctx));
     this.persistSession();
+    this.notifyWaiting();
   }
 
   /** Puts a decision into effect. True when the tab went into a container. */
@@ -706,6 +733,7 @@ export class TabRestore {
       }
     }
     this.persistSession();
+    this.notifyWaiting();
     return done;
   }
 
@@ -757,7 +785,7 @@ export class TabRestore {
     await this.deps.invalidate();
   }
 
-  /** Diagnostics (state page, e2e). */
+  /** Diagnostics (e2e). */
   debugState(): unknown {
     return {
       enabled: this.enabled,

@@ -470,6 +470,25 @@ export function compileNoTabWorkerScriptRule(id: number): DnrRule {
   };
 }
 
+/**
+ * Without strict mode: a session rule that blocks script requests belonging to no tab (`tabIds: [-1]`) to managed sites
+ * (sites containers have used) that a page of such a site started. That is how a service worker's script, its update
+ * checks and `importScripts` are fetched (measured: type `script`, tab ID -1, the registering page's site as initiator),
+ * so no realm on such a site can install a service worker, in any tab, whether SplitSession's scripts run there or not
+ * (they are registered only while containers are in use). `initiatorDomains` keeps workers of other sites free to
+ * import scripts from a managed site (a CDN). Cost: shared workers of managed sites cannot `importScripts` or
+ * statically import modules from their own site. Strict mode replaces it with the global block above.
+ */
+export function compileManagedWorkerScriptRule(id: number, managedSites: readonly string[]): DnrRule | null {
+  if (managedSites.length === 0) return null;
+  return {
+    id,
+    priority: CATCH_ALL_PRIORITY,
+    condition: { tabIds: [TAB_ID_NONE], resourceTypes: ['script'], requestDomains: [...managedSites], initiatorDomains: [...managedSites] },
+    action: { type: 'block' },
+  };
+}
+
 export function totalRuleCount(compiled: Iterable<Pick<CompiledRules, 'ruleIds'>>): number {
   let total = 0;
   for (const { ruleIds } of compiled) total += ruleIds.length;

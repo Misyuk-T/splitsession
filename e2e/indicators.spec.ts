@@ -87,12 +87,12 @@ test.describe('indicators: title prefix, badge, tab groups', () => {
     expect(ga1).toBe(ga2);
     expect(gb1).not.toBe(ga1);
     expect(gp).toBe(-1);
-    expect(await facet.groupInfo(ga1)).toMatchObject({ title: A.name, color: 'red' });
-    expect(await facet.groupInfo(gb1)).toMatchObject({ title: B.name, color: 'cyan' });
+    expect(await facet.groupInfo(ga1)).toMatchObject({ title: `⧉ ${A.name}`, color: 'red', marker: A.id });
+    expect(await facet.groupInfo(gb1)).toMatchObject({ title: `⧉ ${B.name}`, color: 'cyan' });
 
     // Rename and recolour follow.
     await facet.api('updateContainer', A.id, { name: `${A.name}-2`, color: 'green' });
-    await expect.poll(() => facet.groupInfo(ga1)).toMatchObject({ title: `${A.name}-2`, color: 'green' });
+    await expect.poll(() => facet.groupInfo(ga1)).toMatchObject({ title: `⧉ ${A.name}-2`, color: 'green' });
 
     // Taking a tab out of its group, or into a group of the user's own, leaves its container alone, and the tab is not
     // pulled back. (A tab dragged into another container's group is reopened there: e2e/group-drag.spec.ts.)
@@ -118,7 +118,7 @@ test.describe('indicators: title prefix, badge, tab groups', () => {
     await expect.poll(async () => (await facet.tabInfo(ta1)).groupId).toBeGreaterThanOrEqual(0);
     const regrouped = (await facet.tabInfo(ta1)).groupId;
     await expect.poll(async () => (await facet.tabInfo(ta2)).groupId).toBe(regrouped);
-    expect(await facet.groupInfo(regrouped)).toMatchObject({ title: `${A.name}-2` });
+    expect(await facet.groupInfo(regrouped)).toMatchObject({ title: `⧉ ${A.name}-2` });
 
     // Switching the setting off ungroups; on groups again.
     await facet.api('updateSettings', { tabGroups: false });
@@ -130,6 +130,121 @@ test.describe('indicators: title prefix, badge, tab groups', () => {
     await facet.api('updateSettings', { tabGroups: true });
     await expect.poll(async () => (await facet.tabInfo(tb1)).groupId).toBeGreaterThanOrEqual(0);
     expect(await facet.api('getTabContainer', ta1)).toBe(A.id);
+  });
+});
+
+/** SplitSession's invisible group marker for a container ID (the same encoding as `src/core/restore.ts`). */
+const markerOf = (id: string) => {
+  const digits = ['\u200b', '\u200c', '\u200d', '\u2060'];
+  let out = '\u2063';
+  for (const ch of id) {
+    const n = '0123456789abcdefghijklmnopqrstuvwxyz'.indexOf(ch);
+    out += digits[(n >> 4) & 3]! + digits[(n >> 2) & 3]! + digits[n & 3]!;
+  }
+  return out + '\u2063';
+};
+
+test.describe('tab groups: the ⧉ glyph and two-way sync with Chrome’s group editor', () => {
+  const unique = (label: string) => `${label}-${Date.now().toString(36)}`;
+  // The profile is shared by the specs: containers made here are removed (other specs count and list containers).
+  const made: string[] = [];
+  test.afterEach(async ({ facet }) => {
+    for (const id of made.splice(0)) await facet.api('deleteContainer', id).catch(() => {});
+  });
+  const create = async (facet: import('./fixtures').Facet, name: string, color: string) => {
+    const c = await facet.api<{ id: string; name: string }>('createContainer', { name, color });
+    made.push(c.id);
+    return c;
+  };
+  const groupOf = async (facet: import('./fixtures').Facet, tabId: number) => {
+    await expect.poll(async () => (await facet.tabInfo(tabId)).groupId).toBeGreaterThanOrEqual(0);
+    return (await facet.tabInfo(tabId)).groupId;
+  };
+  const editGroup = (facet: import('./fixtures').Facet, groupId: number, props: { title?: string; color?: string }) =>
+    facet.inWorker(async ([id, p]: [number, { title?: string; color?: string }]) => (globalThis as any).chrome.tabGroups.update(id, p), [groupId, props] as [number, { title?: string; color?: string }]);
+  const containerNow = async (facet: import('./fixtures').Facet, id: string) =>
+    (await facet.api<Array<{ id: string; name: string; color: string }>>('listContainers')).find((c) => c.id === id)!;
+
+  test('a rename and a recolour from Chrome’s group menu change the container and its groups in every window; deleting the glyph or the marker puts it back', async ({ facet }) => {
+    const A = await create(facet, unique('Sync'), 'blue');
+    const page = await facet.openIn(A.name, at('a.localhost', '/whoami'));
+    const tabId = await facet.tabIdOf(page);
+    const group = await groupOf(facet, tabId);
+    expect((await facet.groupInfo(group))!.title).toBe(`⧉ ${A.name}`);
+
+    // Another window with a tab of the same container: its own group.
+    const other = await facet.inWorker(async ([url]: [string]) => {
+      const c = (globalThis as any).chrome;
+      const w = await c.windows.create({ url: 'about:blank' });
+      return w.id as number;
+    }, [at('a.localhost', '/whoami')] as [string]);
+    const second = await facet.inWorker(async ([id, win]: [string, number]) => {
+      const c = (globalThis as any).chrome;
+      const tab = await c.tabs.create({ windowId: win, url: 'about:blank' });
+      return tab.id as number;
+    }, [A.id, other] as [string, number]);
+    await facet.api('assignTab', second, A.id);
+    const group2 = await groupOf(facet, second);
+    expect(group2).not.toBe(group);
+
+    const name = unique('Zed');
+    await editGroup(facet, group, { title: `⧉ ${name}`, color: 'red' });
+    await expect.poll(async () => (await containerNow(facet, A.id)).name).toBe(name);
+    expect((await containerNow(facet, A.id)).color).toBe('red');
+    await expect.poll(() => facet.groupInfo(group2)).toMatchObject({ title: `⧉ ${name}`, color: 'red', marker: A.id });
+    await expect.poll(() => facet.groupInfo(group)).toMatchObject({ title: `⧉ ${name}`, color: 'red', marker: A.id });
+
+    // Glyph and marker deleted (a plain name typed over the title): the same name, glyph and marker back.
+    await editGroup(facet, group, { title: name });
+    await expect.poll(() => facet.groupInfo(group)).toMatchObject({ title: `⧉ ${name}`, marker: A.id });
+    expect((await containerNow(facet, A.id)).name).toBe(name);
+
+    // A name that is empty or another container's: refused, the group shows the container's name again.
+    const B = await create(facet, unique('Other'), 'green');
+    for (const title of ['⧉ ', `⧉ ${B.name}`]) {
+      await editGroup(facet, group, { title });
+      await expect.poll(() => facet.groupInfo(group)).toMatchObject({ title: `⧉ ${name}`, marker: A.id });
+      expect((await containerNow(facet, A.id)).name).toBe(name);
+    }
+    // Collapsing is not a rename.
+    await editGroup(facet, group, { collapsed: true } as never);
+    await settle();
+    expect((await containerNow(facet, A.id)).name).toBe(name);
+  });
+
+  test('a user’s own group titled “⧉ fake” (no marker) decides nothing: its plain tab stays plain, no container appears', async ({ facet }) => {
+    const before = (await facet.api<unknown[]>('listContainers')).length;
+    const plain = await facet.plain(at('a.localhost', '/whoami?t=fake'));
+    const plainId = await facet.tabIdOf(plain);
+    const group = await facet.inWorker(async (id: number) => {
+      const c = (globalThis as any).chrome;
+      const g = await c.tabs.group({ tabIds: [id] });
+      await c.tabGroups.update(g, { title: '⧉ fake', color: 'red' });
+      return g as number;
+    }, plainId);
+    await new Promise((resolve) => setTimeout(resolve, 2_500)); // the guard's sweep and the sync's pause have both run
+    expect(await facet.api('getTabContainer', plainId)).toBeNull();
+    expect((await facet.tabInfo(plainId)).groupId).toBe(group);
+    expect(plain.isClosed()).toBe(false);
+    expect(await facet.inWorker(async (id: number) => (await (globalThis as any).chrome.tabGroups.get(id)).title as string, group)).toBe('⧉ fake');
+    expect((await facet.api<unknown[]>('listContainers')).length).toBe(before);
+  });
+
+  test('a group with an earlier version’s title (name + marker, no glyph) is recognised and rewritten with the glyph', async ({ facet }) => {
+    const A = await create(facet, unique('Legacy'), 'purple');
+    const tabId = await facet.inWorker(async () => (await (globalThis as any).chrome.tabs.create({ url: 'about:blank', active: false })).id as number, null);
+    const group = await facet.inWorker(
+      async ([id, title]: [number, string]) => {
+        const c = (globalThis as any).chrome;
+        const g = await c.tabs.group({ tabIds: [id] });
+        await c.tabGroups.update(g, { title, color: 'purple' });
+        return g as number;
+      },
+      [tabId, A.name + markerOf(A.id)] as [number, string],
+    );
+    // The guard recognises the marker (the empty tab joins the container), and the title is migrated.
+    await expect.poll(() => facet.groupInfo(group), { timeout: 10_000 }).toMatchObject({ title: `⧉ ${A.name}`, marker: A.id });
+    await expect.poll(() => facet.api('getTabContainer', tabId)).toBe(A.id);
   });
 });
 

@@ -121,6 +121,20 @@ describe('ServiceWorkerPolicy', () => {
     expect(removals).toHaveLength(2);
   });
 
+  it('beacon answers off (no content script registered): neither {m:1} nor {g:1}, whatever the sites and the guard', async () => {
+    const { dynamic, policy } = setup();
+    await policy.load(true, false);
+    expect(dynamic.at(-1)).toEqual({ removeRuleIds: [MANAGED_BEACON_RULE_ID, STRICT_GUARD_RULE_ID], addRules: [] });
+    await policy.prepare('http://a.localhost/');
+    expect(dynamic.at(-1)!.addRules).toEqual([]);
+    expect(policy.sites()).toEqual(['a.localhost']);
+    await policy.setBeacon(true);
+    expect((dynamic.at(-1)!.addRules as Array<{ id: number }>).map((r) => r.id).sort()).toEqual([MANAGED_BEACON_RULE_ID, STRICT_GUARD_RULE_ID]);
+    await policy.setBeacon(false);
+    expect(dynamic.at(-1)!.addRules).toEqual([]);
+    expect(policy.guarded).toBe(true);
+  });
+
   it('strict mode: removeAll() clears every origin; the guard rule is global and survives site changes', async () => {
     const { dynamic, removals, policy } = setup();
     await policy.load(true);

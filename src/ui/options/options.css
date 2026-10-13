@@ -30,6 +30,7 @@
 .opt-row .fx-disclosure__toggle { width: 100%; justify-content: space-between; margin-left: 0; padding: 6px 0; }
 .opt-row .fx-disclosure__body { margin-top: 4px; padding-bottom: 6px; }
 .opt-sub { display: flex; flex-direction: column; gap: 14px; }
+.opt-sub--rows { gap: 0; }
 .opt-prose { display: flex; flex-direction: column; gap: 8px; }
 .opt-warn { margin: 4px 0 2px; padding: 10px 12px; border: 1px solid var(--fx-border-strong); border-left: 3px solid var(--fx-danger); border-radius: var(--fx-radius-sm); background: var(--fx-bg); font-size: var(--fx-text-secondary); }
 

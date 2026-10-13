@@ -2,7 +2,7 @@ import { browser } from 'wxt/browser';
 import { ruleKeyOf, type ContainerId } from '../core';
 import type { StorageAreaLike } from '../engine/storage/storage-area';
 import { BadgeIndicator, type ActionApi } from './badges';
-import { GroupDragIn } from './group-drag-in';
+import { GroupGuard, type GuardTab } from './group-guard';
 import { DomainRuleEngine } from './domain-rule-engine';
 import type { FacetEvent } from './events';
 import { ExemptionManager } from './exemption-manager';
@@ -13,6 +13,10 @@ import { TabGroupProjection, type TabGroupsLike, type TabsLike } from './tab-gro
 
 /** Message to the title-prefix content script of a container tab. */
 export const RENAMED_MESSAGE = 'facet/renamed';
+/** Alarm of the group guard's periodic sweep (exists while some tab group stands for a container). */
+export const GROUP_SWEEP_ALARM = 'splitsession-group-sweep';
+/** The sweep after the worker starts waits this long, so the tabs Chrome restores and the restore's decisions come first. */
+const START_SWEEP_DELAY_MS = 1_500;
 
 /**
  * Stage C: everything around the isolation engine that users see: settings, domain rules, tab-group projection and
@@ -26,7 +30,7 @@ export class Extras {
   readonly groups: TabGroupProjection;
   readonly badges: BadgeIndicator;
   readonly engine: DomainRuleEngine;
-  readonly dragIn: GroupDragIn;
+  readonly guard: GroupGuard;
   ready!: Promise<void>;
 
   constructor(
@@ -44,6 +48,8 @@ export class Extras {
       area: session,
       settings: () => this.settings.get(),
       container: (id) => facet.containers.get(id),
+      containers: () => facet.containers.list(),
+      updateContainer: (id, patch) => facet.updateContainer(id, patch),
       containerTabs: () => facet.tabs.entries().map(([tabId, rec]) => ({ tabId, containerId: rec.containerId })),
       log: facet.log,
     });
@@ -72,16 +78,20 @@ export class Extras {
       log: facet.log,
     });
 
-    this.dragIn = new GroupDragIn({
-      getTab: (tabId) => b.tabs.get(tabId).catch(() => null),
+    this.guard = new GroupGuard({
+      getTab: (tabId) => b.tabs.get(tabId).then((t) => t as GuardTab, () => null),
+      groupedTabs: async () => ((await b.tabs.query({})) as GuardTab[]).filter((t) => t.groupId >= 0),
       groupContainer: (groupId) => this.groups.containerOfGroup(groupId),
+      groupsIdle: () => this.groups.idle(),
       containerOf: (tabId) => facet.getTabContainer(tabId),
-      // Assigned but rules not yet active, or a restored tab the restore has not decided on.
-      isSettling: (tabId) => facet.tabs.get(tabId)?.activeSince === null || facet.restore.isWaiting(tabId),
+      isAssigning: (tabId) => facet.isAssigning(tabId),
+      isWaiting: (tabId) => facet.restore.isWaiting(tabId),
+      ownTab: (tabId) => facet.ownTabState(tabId),
       containerName: (id) => facet.containers.get(id)?.name,
+      assignInPlace: (tabId, containerId) => facet.assignInPlace(tabId, containerId),
       move: async (tabId, containerId, url) => {
         const key = ruleKeyOf(url);
-        // The user chose this container by dropping the tab there: the repeated navigation is not judged by domain rules.
+        // The group chose this container (the user dropped the tab there): the repeated navigation is not judged by domain rules.
         const fresh = await facet.replaceTab(tabId, containerId, url, (newTabId) => {
           if (key !== null) this.exemptions.markSite(newTabId, containerId, key);
         });
@@ -89,7 +99,9 @@ export class Extras {
         await this.removeWithRetry(tabId);
         return fresh;
       },
+      placeOwn: (tabId, containerId) => this.groups.placeOwn(tabId, containerId),
       moved: (newTabId, _containerId, name) => void this.badges.notice(newTabId, `moved to “${name}”`),
+      periodic: (on) => void this.setSweepAlarm(on),
       log: facet.log,
     });
 
@@ -105,12 +117,29 @@ export class Extras {
   start(facetReady: Promise<void>): Promise<void> {
     this.ready = facetReady.then(async () => {
       await Promise.all([this.settings.load(), this.exemptions.load(), this.groups.load(), this.rules.load()]);
+      void this.groups.adoptExisting(); // groups Chrome kept through a restart; titles of earlier versions get the glyph
       const tabIds = [...this.facet.tabs.entries().map(([id]) => id), ...this.facet.restore.heldIds()];
       await this.badges.applyGlobal();
       await this.badges.applyMany(tabIds);
       if (__FULL__ && this.settings.get().agentBridge) await this.refreshAllBadges();
+      // Tabs that sit in a container's group without being in it (left from before, or missed while the worker slept).
+      void this.facet
+        .settled()
+        .then(() => new Promise((resolve) => setTimeout(resolve, START_SWEEP_DELAY_MS)))
+        .then(() => this.guard.sweep('worker started'));
     });
     return this.ready;
+  }
+
+  /** The periodic sweep's alarm, created only when missing (creating it again would restart its period). */
+  private async setSweepAlarm(on: boolean): Promise<void> {
+    try {
+      const existing = await this.b.alarms.get(GROUP_SWEEP_ALARM);
+      if (on && !existing) await this.b.alarms.create(GROUP_SWEEP_ALARM, { periodInMinutes: 0.5 });
+      else if (!on && existing) await this.b.alarms.clear(GROUP_SWEEP_ALARM);
+    } catch (error) {
+      this.facet.log('warn', 'group guard: could not set its alarm', String(error));
+    }
   }
 
   /** The agent bridge was switched on or off: every tab's badge says so (or stops saying so). */
@@ -142,6 +171,7 @@ export class Extras {
         void this.ready.then(() => this.badges.apply(event.added));
         break;
       case 'container-updated':
+        this.handleGroupsChanged();
         void this.ready.then(async () => {
           void this.groups.containerUpdated(event.container);
           const tabIds = this.facet.tabs.tabsOf(event.container.id);
@@ -161,6 +191,7 @@ export class Extras {
         });
         break;
       case 'container-deleted':
+        this.handleGroupsChanged();
         void this.ready.then(async () => {
           await this.groups.containerDeleted(event.id);
           await this.rules.pruneDeleted();
@@ -184,14 +215,32 @@ export class Extras {
 
   // ---- called from extras-listeners.ts ----
 
-  handleTabCreated(tabId: number): void {
-    this.dragIn.tabCreated(tabId);
+  /** `tabs.onCreated`: Chrome may create a tab inside a group (it then reports no group change). */
+  handleTabCreated(tab: GuardTab): void {
+    if (tab.id === undefined || !(tab.groupId >= 0)) return;
+    void this.facet.ready.then(() => this.ready).then(() => this.guard.tabCreated(tab));
   }
 
   /** `tabs.onUpdated` with a `groupId`: the user may have dragged the tab into a group that stands for a container. */
   handleGroupChanged(tabId: number, groupId: number): void {
     if (groupId < 0) return;
-    void this.facet.ready.then(() => this.ready).then(() => this.dragIn.groupChanged(tabId, groupId));
+    void this.facet.ready.then(() => this.ready).then(() => this.guard.groupChanged(tabId, groupId));
+  }
+
+  /** `tabGroups.onUpdated`: the user may have renamed or recoloured a group of ours in Chrome's menu. */
+  handleGroupEdited(group: { id: number; title?: string; color: string }): void {
+    void this.facet.ready.then(() => this.ready).then(() => this.groups.groupUpdated(group));
+  }
+
+  /** A tab attached from another window, a group created or retitled, a container renamed or deleted: sweep soon. */
+  handleGroupsChanged(): void {
+    void this.facet.ready.then(() => this.ready).then(() => this.guard.scheduleSweep());
+  }
+
+  /** `alarms.onAlarm` for the periodic sweep. */
+  handleAlarm(name: string): void {
+    if (name !== GROUP_SWEEP_ALARM) return;
+    void this.facet.ready.then(() => this.ready).then(() => this.guard.sweep());
   }
 
   async handleBeforeNavigate(details: { tabId: number; frameId: number; url: string; documentLifecycle?: string; timeStamp?: number }): Promise<void> {

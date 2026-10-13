@@ -36,7 +36,8 @@ export interface ServiceWorkerPolicyOptions {
  *  - Every site seen inside a container tab becomes "managed": its service workers are removed (`browsingData`,
  *    origin-filtered), and a dynamic DNR rule answers the beacon with `{m:1}` for these sites in tabs WITHOUT a
  *    container, so the shim there refuses `serviceWorker.register` and hides container-namespaced storage. The rule is
- *    dynamic so it survives browser restarts before the worker runs.
+ *    dynamic so it survives browser restarts before the worker runs. Only strict mode adds a network block of worker
+ *    scripts outside tabs (on every site); a managed-sites-only block broke shared workers' imports in plain tabs.
  *  - `prepare(origin)` is awaited before SplitSession itself navigates a container tab to an origin (open.html, popups,
  *    domain rules, `#ctr=`...): the origin's workers are gone before the first request.
  *  - Strict mode (after consent): `removeAll()` drops every worker of the profile and `setGuard(true)` installs a
@@ -51,6 +52,8 @@ export class ServiceWorkerPolicy {
   private ruleWrite: Promise<void> = Promise.resolve();
   private ruleTimer: ReturnType<typeof setTimeout> | null = null;
   private guard = false;
+  /** The global beacon answers are wanted (content scripts registered somewhere; `ContentScriptLifecycle`). */
+  private beacon = true;
   private readonly now: () => number;
   private readonly throttleMs: number;
   private readonly prepareThrottleMs: number;
@@ -72,11 +75,25 @@ export class ServiceWorkerPolicy {
     this.onGuardChanged = options.onGuardChanged ?? (() => {});
   }
 
-  /** Loads the managed sites and writes both dynamic rules (`guard`: strict mode active). */
-  async load(guard = false): Promise<void> {
+  /**
+   * Loads the managed sites and writes both dynamic rules (`guard`: strict mode active; `beacon`: false when no content
+   * script is registered, so the beacon answers are left out).
+   */
+  async load(guard = false, beacon = true): Promise<void> {
     const stored = (await this.area.get(MANAGED_SITES_KEY))[MANAGED_SITES_KEY];
     this.managed = new Set(Array.isArray(stored) ? stored.filter((s): s is string => typeof s === 'string') : []);
     this.guard = guard;
+    this.beacon = beacon;
+    await this.writeRules();
+  }
+
+  /**
+   * The global beacon answers (`{m:1}`, `{g:1}`) on or off. Off only while no content script is registered: nothing asks
+   * then, and a page cannot even learn that SplitSession is installed from the beacon URL.
+   */
+  async setBeacon(on: boolean): Promise<void> {
+    if (this.beacon === on) return this.ruleWrite;
+    this.beacon = on;
     await this.writeRules();
   }
 
@@ -191,10 +208,10 @@ export class ServiceWorkerPolicy {
   }
 
   private writeRules(): Promise<void> {
-    const managed = compileManagedBeaconRule(MANAGED_BEACON_RULE_ID, this.sites());
+    const managed = this.beacon ? compileManagedBeaconRule(MANAGED_BEACON_RULE_ID, this.sites()) : null;
     const addRules: DnrRule[] = [];
     if (managed) addRules.push(managed);
-    if (this.guard) addRules.push(compileStrictGuardRule(STRICT_GUARD_RULE_ID));
+    if (this.guard && this.beacon) addRules.push(compileStrictGuardRule(STRICT_GUARD_RULE_ID));
     this.ruleWrite = this.ruleWrite
       .then(() => this.dnr.updateDynamicRules({ removeRuleIds: [MANAGED_BEACON_RULE_ID, STRICT_GUARD_RULE_ID], addRules }))
       .catch((error) => this.log('error', 'updating the dynamic beacon rules failed', String(error)));

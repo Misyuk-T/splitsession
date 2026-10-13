@@ -248,6 +248,9 @@ export const test = base.extend<{ facet: Facet }, { profile: Profile; extContext
     await api('updateSettings', { tabGroups: true, titlePrefix: true, strictMode: true, showNameToPages: true, agentBridge: false, agentActivity: true, restoreTabs: true });
     // Container tabs closed by earlier tests are not reopened by this one.
     await api('forgetClosedTabs');
+    // No container tab is open now: the content scripts go down to what that state needs at once (instead of after the
+    // grace period), so every test starts the same way and its first container tab exercises the registration.
+    await api('flushContentScripts');
     // Strict mode is on for every test (the isolation steady state; tests of the other states change it themselves).
     expect(await api('getStrictMode')).toMatchObject({ enabled: true, active: true });
     await use(facet);

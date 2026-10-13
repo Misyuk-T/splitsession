@@ -20,6 +20,7 @@ import {
   insecureExactHostRulePriority,
   insecureHostRulePriority,
   compileNoTabRule,
+  compileManagedWorkerScriptRule,
   compileNoTabWorkerScriptRule,
   compileStrictGuardRule,
   STRICT_GUARD_PRIORITY,
@@ -634,6 +635,24 @@ describe('strict-mode rules', () => {
     expect(rule).toMatchObject({ id: 11, condition: { tabIds: [TAB_ID_NONE], resourceTypes: ['script'] }, action: { type: 'block' } });
     expect(rule.condition.requestDomains).toBeUndefined();
     expect(rule.condition.initiatorDomains).toBeUndefined(); // touches no cookies; must hold for sites not seen yet
+  });
+});
+
+describe('managed-site worker-script rule (no strict mode)', () => {
+  it('blocks scripts outside tabs to and from managed sites only; nothing without managed sites', () => {
+    expect(compileManagedWorkerScriptRule(3, [])).toBeNull();
+    const rule = compileManagedWorkerScriptRule(3, ['a.localhost', 'example.com'])!;
+    expect(rule).toEqual({
+      id: 3,
+      priority: CATCH_ALL_PRIORITY,
+      condition: {
+        tabIds: [TAB_ID_NONE],
+        resourceTypes: ['script'],
+        requestDomains: ['a.localhost', 'example.com'],
+        initiatorDomains: ['a.localhost', 'example.com'],
+      },
+      action: { type: 'block' },
+    });
   });
 });
 

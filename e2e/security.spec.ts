@@ -438,6 +438,30 @@ test.describe('beacon', () => {
 });
 
 /**
+ * The reviewer's ways around the shim (second review, rv3): a sandboxed frame's own register(), and its native
+ * register() applied to the page's own container. Runs in the page.
+ */
+const viaFramesProbe = async () => {
+  const out: string[] = [];
+  for (const variant of ['src', 'srcdoc']) {
+    const f = document.createElement('iframe');
+    f.setAttribute('sandbox', 'allow-same-origin');
+    if (variant === 'src') f.src = '/blank';
+    else f.srcdoc = '<p>x</p>';
+    document.body.append(f);
+    await new Promise((r) => f.addEventListener('load', r, { once: true }));
+    const w = (window as any)[window.length - 1];
+    for (const [label, attempt] of [
+      ['own', () => w.navigator.serviceWorker.register('/swnet.js')],
+      ['borrowed', () => w.ServiceWorkerContainer.prototype.register.call(navigator.serviceWorker, '/swnet.js')],
+    ] as const) {
+      out.push(`${variant}/${label}: ${await attempt().then(() => 'registered', (e: Error) => e.name)}`);
+    }
+  }
+  return out;
+};
+
+/**
  * Second review (2026-10-09): a document whose scripts are disabled (`<iframe sandbox="allow-same-origin">` without
  * `allow-scripts`) gets no shim, yet the page that embeds it can use its realm. Each test failed before the fix.
  */
@@ -584,6 +608,10 @@ test.describe('frames whose scripts are disabled', () => {
   test('strict mode: no realm can install a service worker, so a link in a container tab still logs in there', async ({ facet }) => {
     expect(await facet.api('getStrictMode')).toMatchObject({ active: true });
     const host = freshHost('byp');
+    // A container tab open elsewhere: the content scripts run in every frame (the shim's guard mode in plain tabs).
+    const A = await facet.container('A');
+    const elsewhere = await facet.openIn(A.name, at('b.localhost', '/blank'));
+    expect(await facet.api('getContentScripts')).toMatchObject({ scope: 'all' });
     const page = await facet.plain(at(host, '/whoami'));
     await go(page, at(host, '/login?user=real'));
     await expect(page.locator('#user')).toHaveText('real');
@@ -592,26 +620,17 @@ test.describe('frames whose scripts are disabled', () => {
 
     // The reviewer's ways around the shim: a sandboxed frame's own register(), and its native register() applied to
     // the page's own container. The shim patches the frame's realm, so all are refused.
-    const viaFrames = await page.evaluate(async () => {
-      const out: string[] = [];
-      for (const variant of ['src', 'srcdoc']) {
-        const f = document.createElement('iframe');
-        f.setAttribute('sandbox', 'allow-same-origin');
-        if (variant === 'src') f.src = '/blank';
-        else f.srcdoc = '<p>x</p>';
-        document.body.append(f);
-        await new Promise((r) => f.addEventListener('load', r, { once: true }));
-        const w = (window as any)[window.length - 1];
-        for (const [label, attempt] of [
-          ['own', () => w.navigator.serviceWorker.register('/swnet.js')],
-          ['borrowed', () => w.ServiceWorkerContainer.prototype.register.call(navigator.serviceWorker, '/swnet.js')],
-        ] as const) {
-          out.push(`${variant}/${label}: ${await attempt().then(() => 'registered', (e: Error) => e.name)}`);
-        }
-      }
-      return out;
-    });
+    const viaFrames = await page.evaluate(viaFramesProbe);
     expect(viaFrames).toEqual(['src/own: SecurityError', 'src/borrowed: SecurityError', 'srcdoc/own: SecurityError', 'srcdoc/borrowed: SecurityError']);
+    // No container tab: no content script on that site any more, and the same attempts meet the network rule instead.
+    await elsewhere.close();
+    await expect.poll(() => facet.api<unknown[]>('listTabs')).toEqual([]);
+    expect(await facet.api('flushContentScripts')).not.toMatchObject({ scope: 'all' });
+    await page.reload();
+    expect(await page.evaluate(() => Object.getOwnPropertySymbols(window).some((sym) => sym.description === 'facet.shim'))).toBe(false);
+    const unscripted = await page.evaluate(viaFramesProbe);
+    expect(unscripted).toEqual(['src/own: TypeError', 'src/borrowed: TypeError', 'srcdoc/own: TypeError', 'srcdoc/borrowed: TypeError']);
+    expect(await registrations(page)).toBe(0);
 
     // A realm SplitSession never patched at all (a CDP isolated world stands in for one): the network layer refuses the
     // worker's script, because in strict mode no script request outside tabs is allowed.
@@ -630,7 +649,6 @@ test.describe('frames whose scripts are disabled', () => {
     expect(await registrations(page)).toBe(0);
 
     // The reviewer's follow-up: a link in container tab A to the site logs in as alice inside A.
-    const A = await facet.container('A');
     const pa = await facet.openIn(A.name, at('b.localhost', `/link?to=${encodeURIComponent(at(host, '/login?user=alice'))}`));
     await facet.clearLog();
     await pa.click('#go');

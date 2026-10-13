@@ -55,11 +55,6 @@ export default defineConfig({
     define: { __FULL__: JSON.stringify(full) },
   }),
   hooks: {
-    // Full-only pages are not part of Lite at all (no file, no manifest entry, no link target).
-    'entrypoints:found': (_wxt, infos) => {
-      if (full) return;
-      for (let i = infos.length - 1; i >= 0; i--) if (infos[i]!.name === 'state') infos.splice(i, 1);
-    },
     // The beacon runs in every frame of every tab: swap the full Public Suffix List for a tiny stand-in there
     // (see src/content/tldts-lite.ts). The background keeps the real one.
     'vite:build:extendConfig': (entrypoints, config) => {
@@ -99,8 +94,7 @@ export default defineConfig({
     // v0.1 asks for every host up front: header rewriting needs host access, and
     // headless e2e cannot click permission prompts. Optional-permission onboarding is deferred.
     host_permissions: ['<all_urls>'],
-    // Full only: userScripts is for run_js on pages whose Content-Security-Policy forbids eval; asked for in the options page.
-    optional_permissions: ['cookies', ...(full ? (['userScripts'] as const) : [])],
+    optional_permissions: ['cookies'],
     icons: iconSet,
     action: { default_title: 'SplitSession', default_icon: iconSet },
     // Static default answer for the beacon (`{}` = no container) so the content script never reaches the network,

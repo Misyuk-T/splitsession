@@ -16,6 +16,14 @@ const openOptions = async (facet: { ctx: import('@playwright/test').BrowserConte
   return page;
 };
 
+/** Opens the folded "Export and import" part of Advanced. */
+const openTransfer = async (page: Page) => {
+  const toggle = page.getByRole('button', { name: 'Export and import' });
+  await expect(toggle).toHaveAttribute('aria-expanded', 'false');
+  await toggle.click();
+  await expect(toggle).toHaveAttribute('aria-expanded', 'true');
+};
+
 /** Picks an option of a custom Select by clicking. */
 const pick = async (page: Page, select: string, option: string | RegExp) => {
   await page.getByRole('combobox', { name: select }).click();
@@ -45,6 +53,44 @@ test.describe('options page', () => {
     const page = await openOptions(facet);
     await page.getByRole('link', { name: 'Domain rules' }).click();
     await expect(page.getByRole('heading', { name: 'Domain rules' })).toBeFocused();
+    await page.close();
+  });
+
+  test('sections come in the order General, For AI agents, Domain rules, Advanced; the top links follow it', async ({ facet }) => {
+    const page = await openOptions(facet);
+    const names = ['General', 'For AI agents', 'Domain rules', 'Advanced'];
+    expect(await page.locator('main h2').allInnerTexts()).toEqual(names);
+    expect(await page.locator('.opt-nav a').allInnerTexts()).toEqual(names);
+    // Export and import and Diagnostics are folded inside Advanced, in that order, and closed.
+    const folded = page.locator('#advanced').getByRole('button');
+    expect(await folded.allInnerTexts()).toEqual(['Export and import', 'Diagnostics']);
+    for (const toggle of await folded.all()) await expect(toggle).toHaveAttribute('aria-expanded', 'false');
+    await expect(page.getByRole('heading', { name: 'Export and import' })).toHaveCount(0);
+    await page.close();
+  });
+
+  test('#transfer and #diagnostics open that part of Advanced and focus it; an in-page link does too', async ({ facet }) => {
+    for (const [hash, title, probe] of [['transfer', 'Export and import', 'import-file'], ['diagnostics', 'Diagnostics', 'diagnostics']] as const) {
+      const page = await facet.ctx.newPage();
+      await page.setViewportSize({ width: 1000, height: 600 });
+      await page.goto(ext(`options.html#${hash}`));
+      const toggle = page.getByRole('button', { name: title });
+      await expect(toggle).toHaveAttribute('aria-expanded', 'true');
+      await expect(toggle).toBeFocused();
+      await expect(toggle).toBeInViewport();
+      await expect(page.getByTestId(probe)).toBeAttached();
+      // The other part stays closed.
+      const other = page.locator(hash === 'transfer' ? 'button#diagnostics' : 'button#transfer');
+      await expect(other).toHaveAttribute('aria-expanded', 'false');
+      await page.close();
+    }
+    // Changing only the hash on a page that is already open does the same.
+    const page = await openOptions(facet);
+    await page.evaluate(() => (location.hash = '#transfer'));
+    await expect(page.getByRole('button', { name: 'Export and import' })).toHaveAttribute('aria-expanded', 'true');
+    await expect(page.getByRole('button', { name: 'Export and import' })).toBeFocused();
+    await page.getByRole('link', { name: 'Advanced' }).click();
+    await expect(page.getByRole('heading', { name: 'Advanced' })).toBeFocused();
     await page.close();
   });
 
@@ -164,6 +210,7 @@ test.describe('options page', () => {
     const login = await facet.openIn(W.name, at('a.localhost', '/login?user=exported'));
     await expect(login.locator('#user')).toHaveText('exported');
     const page = await openOptions(facet);
+    await openTransfer(page);
 
     const plainDownload = page.waitForEvent('download');
     await page.getByRole('button', { name: 'Export', exact: true }).click();
@@ -210,6 +257,7 @@ test.describe('options page', () => {
       },
     };
     const page = await openOptions(facet);
+    await openTransfer(page);
     const input = page.getByTestId('import-file');
 
     await input.setInputFiles({ name: 'broken.json', mimeType: 'application/json', buffer: Buffer.from('{"format":"facet-export","version":1,"containers":[{"id":"x","name":"X","color":"teal"}],"rules":[]}') });
@@ -250,46 +298,13 @@ test.describe('options page', () => {
     await facet.openIn(W.name, at('a.localhost', '/whoami'));
     const page = await openOptions(facet);
     await expect(page.getByTestId('diag-session-rules')).toHaveCount(0); // folded away until asked for
-    const show = page.getByRole('button', { name: 'Show diagnostics' });
+    const show = page.getByRole('button', { name: 'Diagnostics' });
     await expect(show).toHaveAttribute('aria-expanded', 'false');
     await show.click();
     await expect(page.getByTestId('diag-session-rules')).not.toHaveText('0');
     await expect(page.getByTestId('diag-managed')).toContainText('a.localhost');
+    await expect(page.getByTestId('diag-scripts')).toHaveText(/^All sites · \d+ container tabs? open$/);
     await expect(page.getByTestId('diag-log')).toContainText('->');
     await page.close();
-  });
-});
-
-test.describe('state page', () => {
-  test('lists containers, their tabs and copy-ready recipes as plain text', async ({ facet }) => {
-    const W = await facet.container('Work');
-    const tab = await facet.openIn(W.name, at('a.localhost', '/whoami?state=1'));
-    const tabId = await facet.tabIdOf(tab);
-    const page = await facet.ctx.newPage();
-    await page.goto(ext('state.html'));
-    await expect(page.getByRole('heading', { name: /Open container tabs/ })).toBeVisible();
-    const text = await page.innerText('body');
-    expect(text).toContain(`id=${W.id} name="${W.name}"`);
-    expect(text).toMatch(new RegExp(`tabId=${tabId} container="${W.name}" \\(${W.id}\\)`));
-    expect(text).toContain(at('a.localhost', '/whoami?state=1'));
-    expect(text).toContain(`[${W.name}]`); // the title as Chrome sees it, prefix included
-    expect(text).toContain('/open.html?container=');
-    expect(text).toContain('#ctr=');
-    expect(text).toContain('data-ctr');
-
-    // The recipe it prints works as printed.
-    const recipe = await page.locator('pre').first().innerText();
-    const url = recipe.replace(/container=[^&]*&/, `container=${encodeURIComponent(W.name)}&`).replace(/url=.*$/, `url=${encodeURIComponent(at('b.localhost', '/whoami'))}`);
-    const opened = await facet.ctx.newPage();
-    await opened.goto(url);
-    await expect.poll(() => opened.url()).toBe(at('b.localhost', '/whoami'));
-    expect(await facet.api('getTabContainer', await facet.tabIdOf(opened))).toBe(W.id);
-
-    // It follows: the new tab shows up without reloading.
-    await expect(page.getByText(new RegExp(`tabId=${tabId}`))).toBeVisible();
-    await expect.poll(async () => (await page.innerText('body')).match(new RegExp(`tabId=\\d+ container="${W.name}"`, 'g'))?.length).toBe(2);
-    expect(await tab.evaluate(() => document.documentElement.dataset.ctr)).toBe(W.name);
-    await page.close();
-    await opened.close();
   });
 });

@@ -1,33 +1,41 @@
-import { useEffect } from 'preact/hooks';
+import { useCallback, useEffect, useState } from 'preact/hooks';
 import { useContainers } from '../useContainers';
 import { Logo } from '../components/Logo';
 import { BridgeSection } from './BridgeSection';
-import { DiagnosticsSection } from './DiagnosticsSection';
+import { AdvancedSection, type AdvancedOpen } from './AdvancedSection';
 import { GeneralSection } from './GeneralSection';
 import { RulesSection } from './RulesSection';
-import { TransferSection } from './TransferSection';
 
-/** `options.html#agent` (also `#agents`): scroll to that section and put keyboard focus on its heading. Runs again when only the hash changes. */
-function useSectionHash(): void {
+const FOLDED: ReadonlyArray<keyof AdvancedOpen> = ['transfer', 'diagnostics'];
+
+/**
+ * `options.html#agent` (also `#agents`): scroll to that section and put keyboard focus on its heading. Runs again when only the hash changes.
+ * `#transfer` and `#diagnostics` are the folded parts of Advanced: they open that part, then scroll to and focus its button.
+ */
+function useSectionHash(openFolded: (key: keyof AdvancedOpen) => void): void {
   useEffect(() => {
     const go = () => {
       const raw = decodeURIComponent(location.hash.slice(1));
       const id = raw === 'agents' ? 'agent' : raw;
-      const heading = id ? document.getElementById(id)?.querySelector<HTMLElement>('h2') : null;
-      if (!heading) return;
-      heading.tabIndex = -1;
-      heading.scrollIntoView({ block: 'start' });
-      heading.focus({ preventScroll: true });
+      const folded = FOLDED.find((key) => key === id);
+      if (folded) openFolded(folded);
+      const target = folded ? document.getElementById(folded) : id ? document.getElementById(id)?.querySelector<HTMLElement>('h2') : null;
+      if (!target) return;
+      if (!folded) target.tabIndex = -1;
+      target.scrollIntoView({ block: 'start' });
+      target.focus({ preventScroll: true });
     };
     go();
     window.addEventListener('hashchange', go);
     return () => window.removeEventListener('hashchange', go);
-  }, []);
+  }, [openFolded]);
 }
 
 export function Options() {
   const { containers, error, reload } = useContainers();
-  useSectionHash();
+  const [advanced, setAdvanced] = useState<AdvancedOpen>({ transfer: false, diagnostics: false });
+  const openFolded = useCallback((key: keyof AdvancedOpen) => setAdvanced((now) => ({ ...now, [key]: true })), []);
+  useSectionHash(openFolded);
   return (
     <div class="opt-page">
       <header class="opt-head">
@@ -36,18 +44,16 @@ export function Options() {
       </header>
       <nav class="opt-nav" aria-label="Sections">
         <a href="#general">General</a>
-        <a href="#rules">Domain rules</a>
-        <a href="#transfer">Export and import</a>
         {__FULL__ && <a href="#agent">For AI agents</a>}
-        <a href="#diagnostics">Diagnostics</a>
+        <a href="#rules">Domain rules</a>
+        <a href="#advanced">Advanced</a>
       </nav>
       {error && <p class="fx-notice fx-notice--error" role="alert">SplitSession could not load its containers: {error}</p>}
       <main>
         <GeneralSection />
-        <RulesSection containers={containers} />
-        <TransferSection onChanged={() => void reload()} />
         {__FULL__ && <BridgeSection />}
-        <DiagnosticsSection />
+        <RulesSection containers={containers} />
+        <AdvancedSection open={advanced} onToggle={(key, open) => setAdvanced((now) => ({ ...now, [key]: open }))} onChanged={() => void reload()} />
       </main>
     </div>
   );

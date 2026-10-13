@@ -15,6 +15,7 @@ import {
   heldPageUrl,
   GATE_RULE_ID_BASE,
   groupMarker,
+  groupNameOf,
   groupTitle,
   isRestorable,
   layoutWindows,
@@ -38,9 +39,24 @@ describe('group-title marker', () => {
     for (const id of ['a', 'abc123xyz0', '0123456789abcdefghijklmnopqrstuv']) {
       const title = groupTitle('Work', id);
       expect(decodeGroupMarker(title)).toBe(id);
-      expect(stripGroupMarker(title)).toBe('Work');
+      expect(stripGroupMarker(title)).toBe('⧉ Work');
+      expect(groupNameOf(title)).toBe('Work');
       expect(groupMarker(id)).toMatch(/^[⁣​‌‍⁠]+$/);
     }
+  });
+
+  it('titles start with the visible glyph; legacy titles (marker only) still name their container; the glyph alone names nothing', () => {
+    expect(groupTitle('123', 'a1')).toMatch(/^⧉ 123/);
+    const legacy = `Work${groupMarker('work')}`;
+    expect(decodeGroupMarker(legacy)).toBe('work');
+    expect(groupNameOf(legacy)).toBe('Work');
+    expect(decodeGroupMarker('⧉ fake')).toBeNull();
+    expect(groupNameOf('⧉ fake')).toBe('fake');
+    expect(groupNameOf('⧉work')).toBe('work');
+    expect(groupNameOf('  ⧉   Two  words ')).toBe('Two words');
+    expect(groupNameOf(`⧉ ${groupMarker('work')}`)).toBe('');
+    expect(groupNameOf(undefined)).toBe('');
+    expect(groupNameOf(groupTitle('⧉ odd', 'x'))).toBe('⧉ odd'); // only one glyph is the prefix: the name round-trips
   });
 
   it('a title without the marker (the user’s own group, or retyped) names no container', () => {

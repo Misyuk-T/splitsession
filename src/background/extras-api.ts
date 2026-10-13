@@ -96,9 +96,9 @@ export function createExtrasApi(facet: Facet, extras: Extras, b: typeof browser 
       if (!container) throw new ContainerError(`no container "${containerId}"`);
       let tab;
       try {
-        tab = await b.tabs.create({ url: 'chrome://newtab/', active: true });
+        tab = await facet.trackOwnCreation(b.tabs.create({ url: 'chrome://newtab/', active: true }));
       } catch {
-        tab = await b.tabs.create({ url: 'about:blank', active: true });
+        tab = await facet.trackOwnCreation(b.tabs.create({ url: 'about:blank', active: true }));
       }
       if (tab.id === undefined) throw new ContainerError('tab creation failed');
       try {
@@ -106,6 +106,8 @@ export function createExtrasApi(facet: Facet, extras: Extras, b: typeof browser 
       } catch (error) {
         await b.tabs.remove(tab.id).catch(() => {});
         throw error;
+      } finally {
+        facet.ownTabDone(tab.id);
       }
       return tab.id;
     },

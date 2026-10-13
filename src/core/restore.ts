@@ -1,3 +1,4 @@
+import { collapseName, sanitizeNameInput } from './names';
 import type { ContainerId } from './types';
 import type { DnrRule } from './dnr/rule-compiler';
 
@@ -35,10 +36,14 @@ export const STARTUP_GRACE_MS = 5 * 60_000;
 // ---------------------------------------------------------------- group-title marker
 
 /**
- * SplitSession's groups carry the container ID in their title as invisible characters: `name` + U+2063 + three of four
- * zero-width characters per ID character + U+2063. Chrome keeps the title as it is through session restore and saved
- * groups, the user sees only the name, and a group the user made (or renamed by retyping it) has no marker, so its
- * title never decides a container.
+ * SplitSession's groups are titled `⧉ ` + name + marker, where the marker is the container ID as invisible characters:
+ * U+2063 + three of four zero-width characters per ID character + U+2063. Chrome keeps the title as it is through
+ * session restore and saved groups. Two parts, two jobs:
+ * - the visible glyph "⧉ " only tells the user which groups are SplitSession's. It is NOT evidence: a group the user
+ *   titled "⧉ fake" is the user's own and decides nothing;
+ * - the invisible marker is the identification (the group -> container map, `ownedGroups`, is the other one, for a group
+ *   whose marker the user's retyping removed). A title without the marker names no container.
+ * Titles of earlier versions (name + marker, no glyph) are still recognised and are rewritten to the new form.
  */
 const MARK = '⁣';
 const DIGITS = ['​', '‌', '‍', '⁠'] as const;
@@ -55,8 +60,21 @@ export function groupMarker(containerId: ContainerId): string {
   return out + MARK;
 }
 
+/** The visible prefix of every SplitSession group title. */
+export const GROUP_GLYPH = '⧉';
+export const GROUP_PREFIX = `${GROUP_GLYPH} `;
+
 export function groupTitle(name: string, containerId: ContainerId): string {
-  return name + groupMarker(containerId);
+  return GROUP_PREFIX + name + groupMarker(containerId);
+}
+
+/**
+ * The container name a (possibly edited) group title says: the invisible marker and stray invisible characters taken off,
+ * one leading "⧉" with its space taken off, whitespace collapsed. Not validated (see `checkContainerName`).
+ */
+export function groupNameOf(title: string | undefined): string {
+  const bare = stripGroupMarker(title ?? '').replace(/[\u2061-\u2064]/g, '');
+  return collapseName(sanitizeNameInput(bare.replace(/^\s*⧉ ?/, ''), 1000));
 }
 
 /** The container a title's marker names, or null (no marker, or a malformed one). */

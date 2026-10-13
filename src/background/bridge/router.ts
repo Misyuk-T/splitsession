@@ -11,7 +11,7 @@ import { CdpError, dialogBlocks, refusedUrl, type CdpSessions, type TabSession }
 import * as hands from './cdp-tools';
 import * as dom from './dom-tools';
 import { ToolError } from './errors';
-import { pageClick, pageHtml, pageRun, pageScroll, pageText, pageType, type PageError, type PageRect, type RunResult } from './inject';
+import { pageClick, pageHtml, pageScroll, pageText, pageType, type PageError, type PageRect } from './inject';
 import type { Modifier } from './keys';
 import { pageDom, type DomCommand } from './page-dom';
 
@@ -54,8 +54,8 @@ export interface RouterDeps {
   activity?: Pick<AgentActivity, 'touch' | 'hide' | 'unhide'>;
   /**
    * The tabs' DevTools-protocol sessions ("full hands": trusted input, snapshots, background screenshots). Absent (unit
-   * tests of the old paths): click, type, scroll, run_js and screenshot_tab fall back to injected scripts, and the tools
-   * that only exist with CDP say so.
+   * tests of the old paths): click, type, scroll and screenshot_tab fall back to injected scripts, and the tools
+   * that only exist with CDP (run_js among them) say so.
    */
   cdp?: CdpSessions;
   /** macOS: "ControlOrMeta" means Meta, and editing shortcuts are sent as commands. */
@@ -802,43 +802,16 @@ export class BridgeRouter {
         'run_js runs only in the page\'s own (MAIN) world. An isolated world would read the regular profile\'s cookies of a container tab\'s site (SplitSession\'s cookie shim lives in the MAIN world), so SplitSession does not offer it.',
       );
     }
-    if (this.d.cdp) {
-      let outcome: hands.EvalOutcome | null = null;
-      try {
-        outcome = await this.onPage(a.tabId, meta, (s) => hands.evaluate(s, a.code, { awaitPromise: a.awaitPromise, returnByValue: a.returnByValue, maxChars: a.maxChars }));
-      } catch (error) {
-        // A tab SplitSession may not debug, or one that is busy: the injected-script way (needs eval in the page) is next.
-        if (!(error instanceof ToolError) || !/cannot operate this tab|busy|could not attach/.test(error.message) || meta.signal?.aborted) throw error;
-      }
-      if (outcome) {
-        if (!outcome.ok) throw new ToolError(`${outcome.name}: ${outcome.message}`);
-        return this.withDialogNote(a.tabId, {
-          content: [
-            { type: 'text', text: outcome.json === null ? 'undefined' : outcome.json },
-            ...(outcome.truncated ? [{ type: 'text' as const, text: `(result truncated to ${a.maxChars} characters)` }] : []),
-          ],
-        });
-      }
-    }
-    let r: RunResult = await this.inPage(a.tabId, pageRun, [a.code, a.maxChars], 'MAIN', meta);
-    if (!r.ok && r.kind === 'csp') {
-      const viaUserScripts = await this.runViaUserScripts(a.tabId, a.code, a.maxChars, meta);
-      if (viaUserScripts) r = viaUserScripts;
-    }
-    if (!r.ok) {
-      if (r.kind === 'csp') {
-        throw new ToolError(
-          'this page\'s Content-Security-Policy forbids evaluating code strings (no unsafe-eval), and SplitSession could not use the debugger here, so run_js cannot run. Use get_tab_text, get_tab_html, click and type instead, or ask the user to allow the userScripts fallback in the SplitSession settings.',
-        );
-      }
-      throw new ToolError(`${r.name}: ${r.message}`);
-    }
-    return {
+    // `Runtime.evaluate` through the debugger: it works under any page Content-Security-Policy. No fallback: when the
+    // debugger cannot attach (a tab SplitSession may not debug, or one that is busy) the error says so.
+    const outcome = await this.onPage(a.tabId, meta, (s) => hands.evaluate(s, a.code, { awaitPromise: a.awaitPromise, returnByValue: a.returnByValue, maxChars: a.maxChars }));
+    if (!outcome.ok) throw new ToolError(`${outcome.name}: ${outcome.message}`);
+    return this.withDialogNote(a.tabId, {
       content: [
-        { type: 'text', text: r.json === null ? 'undefined' : r.json },
-        ...(r.truncated ? [{ type: 'text' as const, text: `(result truncated to ${a.maxChars} characters)` }] : []),
+        { type: 'text', text: outcome.json === null ? 'undefined' : outcome.json },
+        ...(outcome.truncated ? [{ type: 'text' as const, text: `(result truncated to ${a.maxChars} characters)` }] : []),
       ],
-    };
+    });
   }
 
   private async history(a: Args, meta: ActionMeta, step: -1 | 1): Promise<ToolResult> {
@@ -975,57 +948,4 @@ export class BridgeRouter {
     });
     return json({ tabId: a.tabId, width: size.w, height: size.h });
   }
-
-  /**
-   * Fallback for pages that forbid eval: `chrome.userScripts.execute` evaluates source the page's CSP does not govern.
-   * Only when the user granted the optional `userScripts` permission (and the "Allow user scripts" switch in Chrome).
-   * Null when unavailable.
-   */
-  private async runViaUserScripts(tabId: number, code: string, maxChars: number, meta: ActionMeta): Promise<RunResult | null> {
-    const c = this.b as unknown as {
-      userScripts?: { execute?: (injection: unknown) => Promise<Array<{ result?: unknown; error?: string }>> };
-      permissions?: { contains(p: unknown): Promise<boolean> };
-    };
-    try {
-      if (typeof c.userScripts?.execute !== 'function') return null;
-      if (!(await c.permissions?.contains({ permissions: ['userScripts'] }))) return null;
-      live(meta);
-      const slot = `__facetRun_${Math.random().toString(36).slice(2)}`;
-      // The body becomes a function LITERAL in the source (no eval); the outcome lands in a window property.
-      const source = `(()=>{const s=${JSON.stringify(slot)};window[s]={state:'running'};(async()=>{\n${code}\n})().then(v=>{window[s]={state:'done',value:v}},e=>{window[s]={state:'error',name:String(e&&e.name),message:String(e&&e.message)}})})()`;
-      const run = await c.userScripts.execute({ target: { tabId, frameIds: [0] }, world: 'MAIN', injectImmediately: true, js: [{ code: source }] });
-      if (run?.[0]?.error) return { ok: false, kind: 'error', name: 'Error', message: run[0].error };
-      for (let i = 0; i < 40; i++) {
-        await this.sleep(100);
-        const got = await this.inPage(tabId, pageTakeSlot, [slot, maxChars], 'MAIN', meta);
-        if (got.state === 'running') continue;
-        if (got.state === 'error') return { ok: false, kind: 'error', name: got.name, message: got.message };
-        return { ok: true, json: got.json, truncated: got.truncated };
-      }
-      return { ok: false, kind: 'error', name: 'Timeout', message: 'the script did not finish in time' };
-    } catch (error) {
-      if (meta.signal?.aborted) throw error; // switched off while polling: no result to report
-      return { ok: false, kind: 'error', name: 'UserScriptsError', message: error instanceof Error ? error.message : String(error) };
-    }
-  }
-}
-
-/** Reads (and clears) the result slot of the userScripts fallback; self-contained like the other page functions. */
-export function pageTakeSlot(
-  slot: string,
-  maxChars: number,
-): { state: 'running' } | { state: 'error'; name: string; message: string } | { state: 'done'; json: string | null; truncated: boolean } {
-  const holder = window as unknown as Record<string, any>;
-  const r = holder[slot];
-  if (!r || r.state === 'running') return { state: 'running' };
-  delete holder[slot];
-  if (r.state === 'error') return { state: 'error', name: r.name, message: r.message };
-  if (r.value === undefined) return { state: 'done', json: null, truncated: false };
-  let json: string;
-  try {
-    json = JSON.stringify(r.value) ?? 'null';
-  } catch (e) {
-    return { state: 'error', name: 'SerializeError', message: String((e as Error).message) };
-  }
-  return json.length > maxChars ? { state: 'done', json: json.slice(0, maxChars), truncated: true } : { state: 'done', json, truncated: false };
 }

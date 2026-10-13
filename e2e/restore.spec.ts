@@ -55,7 +55,7 @@ test.describe('container tabs that come back', () => {
       const g = await (globalThis as any).chrome.tabGroups.get(id);
       return { title: g.title as string, color: g.color as string };
     }, groupId);
-    expect(await facet.groupInfo(groupId)).toMatchObject({ title: A.name, marker: A.id });
+    expect(await facet.groupInfo(groupId)).toMatchObject({ title: `⧉ ${A.name}`, marker: A.id });
     await facet.api('flushRestore');
 
     // Close the whole group: Chrome keeps it as a saved group.

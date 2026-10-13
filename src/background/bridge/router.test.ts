@@ -187,7 +187,7 @@ describe('bridge router: switched off while a tool runs', () => {
     const { router, b } = setup([tab()]);
     const { controller, meta } = abortable();
     b.scripting.executeScript.mockImplementation(() => new Promise(() => {}));
-    const pending = router.run('run_js', { tabId: 1, code: 'return 1' }, meta);
+    const pending = router.run('get_tab_text', { tabId: 1 }, meta);
     const settled = expect(pending).rejects.toThrow(SWITCHED_OFF);
     await new Promise((r) => setTimeout(r, 0));
     controller.abort();

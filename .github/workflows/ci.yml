@@ -52,6 +52,7 @@ jobs:
         with:
           name: splitsession-zips
           if-no-files-found: error
+          include-hidden-files: true # the zips live under .output, a dot-folder that v4 skips by default
           path: |
             .output/splitsession-full-*.zip
             .output/lite/splitsession-lite-*.zip

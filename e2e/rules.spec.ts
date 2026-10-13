@@ -15,7 +15,8 @@ test.describe('domain rules', () => {
     expect(await facet.api<Rule[]>('listDomainRules')).toEqual([{ domain: 'a.localhost', action: 'always', containerId: W.id }]);
 
     const original = await facet.plain(at('b.localhost', '/whoami'));
-    expect(await facet.api('getTabContainer', await facet.tabIdOf(original))).toBeNull();
+    const originalId = await facet.tabIdOf(original);
+    expect(await facet.api('getTabContainer', originalId)).toBeNull();
     // The tab is replaced by a fresh one in the container (no window.opener can survive); the old one is closed.
     const page = await followReplacement(facet, original, () => go(original, at('a.localhost', '/whoami?via=rule')));
     await expect(page.locator('#user')).toHaveText('ruled'); // the container's login: the final request carried the container's cookie
@@ -26,7 +27,9 @@ test.describe('domain rules', () => {
     await go(page, at('a.localhost', '/whoami?second=1'));
     await expect(page.locator('#user')).toHaveText('ruled');
     expect(await facet.api('getTabContainer', await facet.tabIdOf(page))).toBe(W.id);
-    const rulesLog = (await facet.api<Array<{ message: string }>>('getLog')).filter((e) => e.message.startsWith('domain rule:'));
+    // The worker's log outlives the test (other specs' rules are in it too): count the ones about this tab and its replacement.
+    const newId = await facet.tabIdOf(page);
+    const rulesLog = (await facet.api<Array<{ message: string }>>('getLog')).filter((e) => e.message.startsWith('domain rule:') && (e.message.endsWith(`tab ${originalId}`) || e.message.endsWith(`tab ${newId}`)));
     expect(rulesLog).toHaveLength(1);
   });
 

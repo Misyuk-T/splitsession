@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { CONTAINER_COLORS } from './types';
-import { CONTAINER_HEX, GROUP_COLOR, prefixedTitle, readableTextColor, titlePrefixFor, unprefixedTitle, withoutAgentMark } from './indicators';
+import { containerColorOfGroup, CONTAINER_HEX, GROUP_COLOR, prefixedTitle, readableTextColor, titlePrefixFor, unprefixedTitle, withoutAgentMark } from './indicators';
 
 describe('palette', () => {
   it('has a hex colour and a Chrome group colour for every container colour', () => {
@@ -55,5 +55,16 @@ describe('agent title mark', () => {
     expect(withoutAgentMark('👁 Inbox')).toBe('Inbox');
     expect(withoutAgentMark('[Work] Inbox')).toBe('[Work] Inbox');
     expect(withoutAgentMark('Inbox 👁 later')).toBe('Inbox 👁 later');
+  });
+});
+
+describe('containerColorOfGroup', () => {
+  it('is the inverse of GROUP_COLOR, keeps the current colour, and refuses grey', () => {
+    for (const color of Object.keys(GROUP_COLOR) as Array<keyof typeof GROUP_COLOR>) {
+      expect(containerColorOfGroup(GROUP_COLOR[color], 'blue')).toBe(color === 'blue' ? 'blue' : color);
+      expect(containerColorOfGroup(GROUP_COLOR[color], color)).toBe(color);
+    }
+    expect(containerColorOfGroup('cyan', 'red')).toBe('turquoise');
+    expect(containerColorOfGroup('grey', 'red')).toBeNull();
   });
 });

@@ -1,5 +1,5 @@
 // Fails when the Lite build contains anything of the Full edition's agent side: bridge / CDP markers in any shipped
-// file, the three forbidden permissions in the manifest, a state page. Run by `pnpm build:lite` and `pnpm zip:lite`
+// file, the three forbidden permissions in the manifest. Run by `pnpm build:lite` and `pnpm zip:lite`
 // (and CI). The lists are deliberately written out here, not derived from wxt.config.ts: a check that reads the same
 // source as the build cannot catch a mistake in it.
 //
@@ -49,7 +49,6 @@ let bytes = 0;
 for (const file of files) {
   const rel = path.relative(dir, file);
   bytes += statSync(file).size;
-  if (/^state(?:[.\-/]|$)/.test(rel) || /(?:^|\/)state-[^/]*\.(?:js|css)$/.test(rel)) problems.push(`${rel}: the state page is Full-only`);
   if (!TEXT.test(file)) continue;
   const text = readFileSync(file, 'utf8');
   for (const [label, re] of MARKERS) {
@@ -74,4 +73,4 @@ if (problems.length > 0) {
   for (const p of problems) console.error(`  - ${p}`);
   process.exit(1);
 }
-console.log(`check-lite: OK, ${files.length} files, ${(bytes / 1024).toFixed(0)} KiB, no bridge / CDP markers, no nativeMessaging / debugger / userScripts, no state page`);
+console.log(`check-lite: OK, ${files.length} files, ${(bytes / 1024).toFixed(0)} KiB, no bridge / CDP markers, no nativeMessaging / debugger / userScripts`);

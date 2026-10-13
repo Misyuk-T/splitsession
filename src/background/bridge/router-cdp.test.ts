@@ -124,10 +124,11 @@ describe('bridge router with the debugger', () => {
     expect(t.methods()).not.toContain('Runtime.evaluate');
   });
 
-  it('run_js falls back to an injected script on a page SplitSession may not debug', async () => {
+  it('run_js on a page SplitSession may not debug is an error, with no injected-script fallback', async () => {
     const t = setup({ url: 'chrome://version/' });
-    expect(await t.run('run_js', { tabId: 1, code: 'return 1' })).toEqual(['"via executeScript"']);
+    await expect(t.run('run_js', { tabId: 1, code: 'return 1' })).rejects.toThrow(/cannot operate this tab/);
     expect(t.methods()).toEqual([]);
+    expect(t.b.scripting.executeScript).not.toHaveBeenCalled();
   });
 
   it('click by selector: the page locates the element, the debugger only sends the trusted mouse events at its middle', async () => {

@@ -13,7 +13,8 @@ interface Pending {
 
 const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
 
-export function TransferSection({ onChanged }: { onChanged(): void }) {
+/** The body of the "Export and import" disclosure under Advanced. */
+export function TransferBody({ onChanged }: { onChanged(): void }) {
   const [includeJars, setIncludeJars] = useState(false);
   const [busy, setBusy] = useState(false);
   const [pending, setPending] = useState<Pending | null>(null);
@@ -85,11 +86,10 @@ export function TransferSection({ onChanged }: { onChanged(): void }) {
   };
 
   return (
-    <section class="opt-section" aria-labelledby="transfer-title" id="transfer">
-      <h2 id="transfer-title">Export and import</h2>
+    <>
       <p class="fx-secondary opt-lead">Back up or move your containers and rules. No cookies unless you ask.</p>
 
-      <div class="opt-card opt-card--rows">
+      <div class="opt-sub opt-sub--rows">
         <div class="opt-row">
           <div class="opt-row__split">
             <div class="opt-row__text">
@@ -163,6 +163,6 @@ export function TransferSection({ onChanged }: { onChanged(): void }) {
 
       {problem && <p class="fx-notice fx-notice--error" role="alert" data-testid="transfer-error">{problem}</p>}
       <div class="fx-status" role="status" aria-live="polite" data-testid="transfer-status">{note}</div>
-    </section>
+    </>
   );
 }
