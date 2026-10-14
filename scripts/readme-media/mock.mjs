@@ -127,7 +127,7 @@ const $ = (id) => document.getElementById(id);
 const GROUP_HEX = ${JSON.stringify(GROUP_HEX)};
 const SVG = ${JSON.stringify(SVG)};
 const ICON = ${JSON.stringify(ICON_48)};
-const FAV = { mail: "#d9480f", ext: "ext", page: "#8a90a0", gh: "#3a3f4b", folder: "#2f7bf5" };
+const FAV = { mail: "#d9480f", loop: "#0b7a75", ext: "ext", page: "#8a90a0", gh: "#3a3f4b", folder: "#2f7bf5" };
 const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
 const fav = (f) => f === "ext" ? '<img class="fav" src="' + ICON + '" alt="">' : '<i class="fav" style="background:' + (FAV[f] || "#8a90a0") + '"></i>';
 const tabHtml = (t, i) => '<div class="tab' + (t.active ? " on" : "") + '" data-hit="tab-' + (t.id ?? i) + '">' + fav(t.fav) + "<span>" + esc(t.title) + "</span></div>";

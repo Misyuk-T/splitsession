@@ -39,7 +39,10 @@ const pageLayer = (id, inner, style = "") =>
     inner,
   );
 
-/** The animation "Two accounts, side by side": the real Lite extension on the demo mail site. */
+/** A bare new-tab page. */
+const NEW_TAB = `<div style="position:absolute;left:225px;top:150px;width:400px;height:46px;border-radius:23px;background:#fff;border:2px solid #d6d9e3;font-size:16px;line-height:42px;padding-left:22px;color:#6b7180">Search or type a URL</div>`;
+
+/** The animation "Two accounts, side by side": the real Lite extension on the demo social network (Loop). */
 export async function howItWorks(browser, cap) {
   const { popup, signIn } = cap;
   const popX = CONTENT.x + CONTENT.w - 420 - 10;
@@ -51,15 +54,17 @@ export async function howItWorks(browser, cap) {
   const layers = [
     imageLayer("v-personal", cap.personal, WHERE.x, WHERE.y),
     imageLayer("v-work", cap.work, WHERE.x, WHERE.y),
-    pageLayer(
-      "v-newtab",
-      `<div style="position:absolute;left:225px;top:150px;width:400px;height:46px;border-radius:23px;background:#fff;border:2px solid #d6d9e3;font-size:16px;line-height:42px;padding-left:22px;color:#6b7180">Search or type a URL</div>`,
-    ),
+    pageLayer("v-newtab", NEW_TAB),
     imageLayer("v-si-empty", signIn.empty, WHERE.x, WHERE.y),
     imageLayer("v-si-focused", signIn.focused, WHERE.x, WHERE.y),
     ...signIn.typed.map((png, i) =>
       imageLayer(`v-si-${i}`, png, WHERE.x, WHERE.y),
     ),
+    imageLayer("v-c-focused", cap.compose.focused, WHERE.x, WHERE.y),
+    ...cap.compose.typed.map((png, i) =>
+      imageLayer(`v-c-${i}`, png, WHERE.x, WHERE.y),
+    ),
+    imageLayer("v-posted", cap.compose.posted, WHERE.x, WHERE.y),
     imageLayer("p-empty", popup.empty, popX, popY, POPUP_STYLE),
     imageLayer("p-form", popup.form, popX, popY, POPUP_STYLE),
     ...popup.typed.map((png, i) =>
@@ -76,7 +81,7 @@ export async function howItWorks(browser, cap) {
         type: "tab",
         id: "personal",
         title: personalTitle,
-        fav: "mail",
+        fav: "loop",
         active: active === "personal",
       },
       ...(work
@@ -94,19 +99,19 @@ export async function howItWorks(browser, cap) {
         : []),
     ];
     const NEW = { title: "New Tab", fav: "page" };
-    const SIGN = { title: "Sign in – Postline", fav: "mail" };
-    const WORK = { title: workTitle, fav: "mail" };
+    const SIGN = { title: "Sign in – Loop", fav: "loop" };
+    const WORK = { title: workTitle, fav: "loop" };
     const base = (over) => ({
       tabs: strip("personal"),
-      url: "mail.example",
+      url: "loop.example",
       tools: TOOLS,
       show: ["v-personal"],
       ...over,
     });
 
     // 1. Dana is signed in, personal.
-    const c1 = caption(1, "Dana is signed in. <em>Personal</em> account");
-    T.hold(base({ caption: c1 }), 2000);
+    const c1 = caption(1, "<em>@dana</em> is signed in. Personal account");
+    T.hold(base({ caption: c1 }), 1600);
 
     // 2. Open the popup, press +, type "Work", Enter.
     const c2 = caption(2, "Open SplitSession. Press <em>+</em>, name it Work");
@@ -155,33 +160,33 @@ export async function howItWorks(browser, cap) {
       show: ["v-newtab"],
       caption: c3,
     };
-    T.hold(fresh, 1500);
+    T.hold(fresh, 1200);
 
     // 4. Sign in there as someone else, on the same site.
-    const c4 = caption(4, "Sign in there as <em>someone else</em>");
+    const c4 = caption(4, "Sign in there as your <em>brand account</em>");
     const hits1 = await stage.hits({ ...fresh, caption: c4 });
     const urlBar = at(hits1.url, -120);
     const go = { ...fresh, caption: c4 };
     T.glide(go, { x: 520, y: 330 }, urlBar, 800);
     T.click(go, urlBar);
     const typing = { ...go, urlFocus: true, caret: true };
-    for (let n = 1; n <= "mail.example".length; n++)
-      T.hold({ ...typing, url: "mail.example".slice(0, n) }, 70);
-    T.hold({ ...typing, url: "mail.example" }, 350);
+    for (let n = 1; n <= "loop.example".length; n++)
+      T.hold({ ...typing, url: "loop.example".slice(0, n) }, 70);
+    T.hold({ ...typing, url: "loop.example" }, 350);
     const signed = {
       tabs: strip("work", SIGN),
-      url: "mail.example",
+      url: "loop.example",
       tools: TOOLS,
       caption: c4,
     };
     T.hold({ ...signed, show: ["v-si-empty"] }, 800);
-    const email = {
-      x: WHERE.x + cap.emailBox.x + 100,
-      y: WHERE.y + cap.emailBox.y + cap.emailBox.h / 2,
+    const handle = {
+      x: WHERE.x + cap.handleBox.x + 100,
+      y: WHERE.y + cap.handleBox.y + cap.handleBox.h / 2,
     };
-    T.glide({ ...signed, show: ["v-si-empty"] }, urlBar, email, 650);
-    T.click({ ...signed, show: ["v-si-empty"] }, email);
-    T.hold({ ...signed, show: ["v-si-focused"], cursor: email }, 400);
+    T.glide({ ...signed, show: ["v-si-empty"] }, urlBar, handle, 650);
+    T.click({ ...signed, show: ["v-si-empty"] }, handle);
+    T.hold({ ...signed, show: ["v-si-focused"], cursor: handle }, 400);
     signIn.typed.forEach((_, i) =>
       T.hold(
         { ...signed, show: [`v-si-${i}`] },
@@ -196,39 +201,66 @@ export async function howItWorks(browser, cap) {
     });
     T.glide(
       { ...signed, show: [`v-si-${signIn.typed.length - 1}`] },
-      email,
+      handle,
       cont,
       600,
     );
     T.click({ ...signed, show: [`v-si-${signIn.typed.length - 1}`] }, cont);
 
-    // 5. Both tabs stay signed in: different inbox, same site.
-    const c5 = caption(5, "Same site. Two accounts. <em>One window.</em>");
+    // 5. Post as the brand, through the site's own composer.
+    const c5 = caption(5, "Post as <em>Northwind Studio</em>");
     const work = {
       tabs: strip("work", WORK),
-      url: "mail.example",
+      url: "loop.example",
       tools: TOOLS,
       show: ["v-work"],
       caption: c5,
     };
-    T.hold({ ...work, cursor: cont }, 1500);
-    const hits2 = await stage.hits(work);
+    T.hold({ ...work, cursor: cont }, 1000);
+    const composer = {
+      x: WHERE.x + cap.composerBox.x + 120,
+      y: WHERE.y + cap.composerBox.y + cap.composerBox.h / 2,
+    };
+    T.glide(work, cont, composer, 650);
+    T.click(work, composer);
+    T.hold({ ...work, show: ["v-c-focused"], cursor: composer }, 400);
+    const last = cap.compose.typed.length - 1;
+    cap.compose.typed.forEach((_, i) =>
+      T.hold({ ...work, show: [`v-c-${i}`] }, i === last ? 600 : 130),
+    );
+    const post = at({
+      x: WHERE.x + cap.postBox.x,
+      y: WHERE.y + cap.postBox.y,
+      w: cap.postBox.w,
+      h: cap.postBox.h,
+    });
+    T.glide({ ...work, show: [`v-c-${last}`] }, composer, post, 600);
+    T.click({ ...work, show: [`v-c-${last}`] }, post);
+
+    // 6. Both tabs stay signed in: a personal feed and a brand feed, same site.
+    const c6 = caption(
+      6,
+      "Personal and brand accounts. Same site, <em>one window.</em>",
+    );
+    const brand = { ...work, show: ["v-posted"], caption: c6 };
+    T.hold({ ...brand, cursor: post }, 1500);
+    const hits2 = await stage.hits(brand);
     const tabP = at(hits2["tab-personal"]);
     const tabW = at(hits2["tab-work"]);
     const onPersonal = {
-      ...work,
+      ...brand,
       tabs: strip("personal", WORK),
       show: ["v-personal"],
     };
-    T.glide(work, cont, tabP, 750);
-    T.click(work, tabP);
-    T.hold({ ...onPersonal, cursor: tabP }, 1500);
+    T.glide(brand, post, tabP, 750);
+    T.click(brand, tabP);
+    T.hold({ ...onPersonal, cursor: tabP }, 1300);
     T.glide(onPersonal, tabP, tabW, 450);
     T.click(onPersonal, tabW);
-    T.hold({ ...work, cursor: tabW }, 1500);
-    T.glide(work, tabW, tabP, 450);
-    T.click(work, tabP);
-    T.hold({ ...onPersonal, cursor: tabP }, 2600);
+    T.hold({ ...brand, cursor: tabW }, 1300);
+    T.glide(brand, tabW, tabP, 450);
+    T.click(brand, tabP);
+    T.hold({ ...onPersonal, cursor: tabP }, 2200);
     return await stage.render(T.items);
   } finally {
     await stage.close();
@@ -236,9 +268,10 @@ export async function howItWorks(browser, cap) {
 }
 
 /**
- * The picture "Chrome's split view": the Work and the Personal tab of the demo mail site as one joined pair in one tab
- * strip, a pane each. REAL: both panes (the extension's own tabs, signed in as two accounts, with the ⧉ mark in the
- * title the extension puts on a container tab outside its group). DRAWN: the window, the joined pair, the divider and
+ * The picture "Chrome's split view": the Work and the Personal tab of the demo social network as one joined pair in one tab
+ * strip, a pane each, outside any tab group (a split pair of two different containers is taken out of its groups; both
+ * tabs keep their containers). REAL: both panes (the extension's own tabs, signed in as two accounts, with the ⧉ mark
+ * in the title the extension puts on a container tab outside its group). DRAWN: the window, the joined pair, the divider and
  * the two container labels. Returns the PNG.
  */
 export async function splitView(browser, cap) {
@@ -272,12 +305,12 @@ export async function splitView(browser, cap) {
         {
           type: "split",
           tabs: [
-            { title: cap.work.title, fav: "mail" },
-            { title: cap.personal.title, fav: "mail" },
+            { title: cap.work.title, fav: "loop" },
+            { title: cap.personal.title, fav: "loop" },
           ],
         },
       ],
-      url: "mail.example",
+      url: "loop.example",
       tools: TOOLS,
       show: ["v-left", "v-right", "divider", "lbl-left", "lbl-right"],
       caption: caption(
@@ -352,6 +385,7 @@ export async function install(browser, cap) {
   const dlX = CONTENT.x + CONTENT.w - 320 - 8;
   const layers = [
     pageLayer("v-releases", releasesHtml),
+    pageLayer("v-newtab-i", NEW_TAB),
     L("v-ext-off", cap.off),
     L("v-ext-on", cap.on),
     L("v-ext-card", cap.card),
@@ -467,25 +501,56 @@ export async function install(browser, cap) {
     T.click({ ...fin, show: ["v-finder", "f-zip-sel", "f-zip"] }, zip);
     T.hold(
       { ...fin, show: ["v-finder", "f-zip", "f-folder"], cursor: zip },
-      2200,
+      1800,
     );
 
-    // 3. chrome://extensions, Developer mode on.
+    // 3. Type chrome://extensions into the address bar of a new tab.
     T.scene();
     const c3 = caption(
       3,
-      "Open <em>chrome://extensions</em>, turn on <em>Developer mode</em>",
+      "Type <em>chrome://extensions</em> in the address bar",
     );
+    const blank = {
+      tabs: [{ type: "tab", title: "New Tab", fav: "page", active: true }],
+      url: "",
+      secure: false,
+      tools: [],
+      show: ["v-newtab-i"],
+      caption: c3,
+    };
+    T.hold(blank, 900);
+    const address = at((await stage.hits(blank)).url, -150);
+    T.glide(blank, { x: 560, y: 300 }, address, 800);
+    T.click(blank, address);
+    const typing = { ...blank, urlFocus: true, caret: true };
+    const WHAT = "chrome://extensions";
+    for (let n = 1; n <= WHAT.length; n++)
+      T.hold({ ...typing, url: WHAT.slice(0, n) }, 70);
+    T.hold({ ...typing, url: WHAT }, 500);
+    T.hold(
+      {
+        tabs: [{ type: "tab", title: "Extensions", fav: "page", active: true }],
+        url: WHAT,
+        secure: false,
+        tools: [],
+        show: ["v-ext-off"],
+        caption: c3,
+      },
+      900,
+    );
+
+    // 4. Developer mode on.
+    const c4 = caption(4, "Turn on <em>Developer mode</em>");
     const ex = (over) => ({
       tabs: ext,
       url: "chrome://extensions",
       secure: false,
       tools: [],
-      caption: c3,
+      caption: c4,
       ...over,
     });
     const off = ex({ show: ["v-ext-off"] });
-    T.hold(off, 1400);
+    T.hold(off, 900);
     const toggle = at({
       x: WHERE.x + cap.devModeBox.x,
       y: WHERE.y + cap.devModeBox.y,
@@ -496,12 +561,12 @@ export async function install(browser, cap) {
     T.click(off, toggle);
     T.hold({ ...ex({ show: ["v-ext-on"] }), cursor: toggle }, 1100);
 
-    // 4. Load unpacked, pick the folder.
-    const c4 = caption(
-      4,
+    // 5. Load unpacked, pick the folder.
+    const c5 = caption(
+      5,
       "Click <em>Load unpacked</em>, choose the unzipped folder",
     );
-    const on = ex({ show: ["v-ext-on"], caption: c4 });
+    const on = ex({ show: ["v-ext-on"], caption: c5 });
     const load = at({
       x: WHERE.x + cap.loadUnpackedBox.x,
       y: WHERE.y + cap.loadUnpackedBox.y,
@@ -510,25 +575,25 @@ export async function install(browser, cap) {
     });
     T.glide(on, toggle, load, 900);
     T.click(on, load);
-    const pick = ex({ show: ["v-ext-on", "p-picker"], caption: c4 });
+    const pick = ex({ show: ["v-ext-on", "p-picker"], caption: c5 });
     T.hold({ ...pick, cursor: load }, 900);
     const hp = await stage.hits(pick);
     const folder = at(hp["pk-folder"], -40);
     T.glide(pick, load, folder, 800);
     T.click(pick, folder);
-    const picked = ex({ show: ["v-ext-on", "p-picker-sel"], caption: c4 });
+    const picked = ex({ show: ["v-ext-on", "p-picker-sel"], caption: c5 });
     T.hold({ ...picked, cursor: folder }, 700);
     const select = at((await stage.hits(picked))["pk-select"]);
     T.glide(picked, folder, select, 600);
     T.click(picked, select);
 
-    // 5. The card appears; pin it to the toolbar.
-    const c5 = caption(
-      5,
+    // 6. The card appears; pin it to the toolbar.
+    const c6 = caption(
+      6,
       "<em>SplitSession</em> is installed. Pin it to the toolbar",
     );
-    const card = ex({ show: ["v-ext-card"], caption: c5 });
-    T.hold({ ...card, cursor: select }, 1800);
+    const card = ex({ show: ["v-ext-card"], caption: c6 });
+    T.hold({ ...card, cursor: select }, 1400);
     const puzzle = at(
       (await stage.hits({ ...card, tools: ["puzzle"] }))["tool-puzzle"],
     );
@@ -560,7 +625,7 @@ export async function install(browser, cap) {
     T.hold({ ...done, cursor: extBtn }, 700);
     const rest = { x: extBtn.x - 70, y: extBtn.y + 90 };
     T.glide(done, extBtn, rest, 500);
-    T.hold({ ...done, cursor: rest }, 2800);
+    T.hold({ ...done, cursor: rest }, 2400);
     return await stage.render(T.items);
   } finally {
     await stage.close();

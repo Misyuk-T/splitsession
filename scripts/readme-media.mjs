@@ -2,12 +2,12 @@
 //
 //   pnpm readme:media [outDir]        (builds the Lite edition first; needs `pnpm exec playwright install chromium` once)
 //
-//   how-it-works.gif   "Two accounts, side by side": two accounts of one site in two tabs of one window
+//   how-it-works.gif   "Two accounts, side by side": a personal and a brand account of one site in two tabs of one window
 //   install.gif        "Install in Chrome": from a GitHub Release zip to the pinned toolbar button
 //   split-view.png     a still: the two accounts as the two halves of Chrome's split view
 //
 // REAL (Playwright's Chromium with the built Lite extension, .output/lite/chrome-mv3, and the demo sites of
-// scripts/store-assets/demo-site.mjs): every picture of the demo mail site, of the popup (+, a name typed, Enter) and
+// scripts/store-assets/demo-site.mjs): every picture of the demo social network (Loop), of the popup (+, a name typed, Enter) and
 // of chrome://extensions (Developer mode off and on, the extension's card). Chrome's split view cannot be driven from
 // Playwright, so the still shows two real container tabs composed as a split pair. DRAWN: the browser window around them, the
 // new-tab page, the Releases page, Finder, the file picker (a real OS picker cannot be recorded), the extensions menu,

@@ -1,7 +1,7 @@
 // The real pictures behind the README animations, taken with Playwright's Chromium (see ../readme-media.mjs):
-//  - captureHowItWorks: the REAL Lite extension on the demo mail site. The popup is driven like a user would (press +,
-//    type "Work", Enter), the new tab opens in its container, and a second account signs in there through the demo's
-//    real sign-in form. The pictures of every step are taken as they happen.
+//  - captureHowItWorks: the REAL Lite extension on the demo social network (Loop). The popup is driven like a user would (press +,
+//    type "Work", Enter), the new tab opens in its container, and a second (brand) account signs in there through
+//    the demo's real sign-in form and posts through its real composer. The pictures of every step are taken as they happen.
 //  - captureInstall: the REAL chrome://extensions page, empty and with Developer mode off and on, and with the
 //    extension loaded (an unpacked extension in Chromium is exactly what "Load unpacked" makes).
 /* eslint-disable import/extensions -- local .mjs modules, run directly by node */
@@ -16,7 +16,8 @@ import { CONTENT, visibleTitle } from "./mock.mjs";
 
 const PORT = 47402;
 const VIEWPORT = { width: CONTENT.w, height: CONTENT.h };
-const EMAIL = "dana@northwind.example";
+const HANDLE = "@northwind_studio";
+const POST = "Spring release is live. Thanks for the feedback!";
 /** A fixed place for the unpacked copy: an unpacked extension's ID comes from its path, so the card is the same every run. */
 const UNPACKED = "/tmp/splitsession-readme-media/splitsession-lite-0.1.0";
 
@@ -85,8 +86,8 @@ export async function captureHowItWorks(extension) {
 
     // 1. Dana, personal, in an ordinary tab.
     const personal = ctx.pages()[0] ?? (await ctx.newPage());
-    await personal.goto("http://mail.example/login?user=personal");
-    await personal.waitForURL("http://mail.example/");
+    await personal.goto("http://loop.example/login?user=dana");
+    await personal.waitForURL("http://loop.example/");
     await settle(personal);
     await sleep(300);
     const personalPng = assertSize(
@@ -96,7 +97,7 @@ export async function captureHowItWorks(extension) {
     const personalTitle = await personal.title();
     const personalTabId = await worker.evaluate(
       async () =>
-        (await chrome.tabs.query({ url: "http://mail.example/*" }))[0].id,
+        (await chrome.tabs.query({ url: "http://loop.example/*" }))[0].id,
     );
 
     // 2. The popup, as a user drives it: + opens the form, a name is typed, Enter creates the container.
@@ -149,11 +150,11 @@ export async function captureHowItWorks(extension) {
       await sleep(150);
     }
     await sleep(600);
-    const emailInput = workPage.getByPlaceholder("Email");
+    const handleInput = workPage.getByPlaceholder("Handle");
     for (let attempt = 1; ; attempt++) {
-      await workPage.goto("http://mail.example/signin");
+      await workPage.goto("http://loop.example/signin");
       try {
-        await emailInput.waitFor({ timeout: 5000 });
+        await handleInput.waitFor({ timeout: 5000 });
         break;
       } catch (error) {
         if (attempt === 3) throw error;
@@ -168,20 +169,20 @@ export async function captureHowItWorks(extension) {
       ),
     };
     const continueButton = workPage.getByRole("button", { name: "Continue" });
-    const emailBox = await rectOf(emailInput);
+    const handleBox = await rectOf(handleInput);
     const continueBox = await rectOf(continueButton);
-    await emailInput.focus();
+    await handleInput.focus();
     await sleep(150);
     signIn.focused = await steady(() => workPage.screenshot(still));
     signIn.typed = [];
-    for (let n = 3; n < EMAIL.length; n += 3) {
-      await emailInput.fill(EMAIL.slice(0, n));
+    for (let n = 3; n < HANDLE.length; n += 3) {
+      await handleInput.fill(HANDLE.slice(0, n));
       signIn.typed.push(await steady(() => workPage.screenshot(still)));
     }
-    await emailInput.fill(EMAIL);
+    await handleInput.fill(HANDLE);
     signIn.typed.push(await steady(() => workPage.screenshot(still)));
     await continueButton.click();
-    await workPage.waitForURL("http://mail.example/");
+    await workPage.waitForURL("http://loop.example/");
     await settle(workPage);
     await sleep(300);
     const workPng = assertSize(
@@ -190,14 +191,46 @@ export async function captureHowItWorks(extension) {
     );
     const workTitle = await workPage.title();
 
+    // 4. Post as the brand, through the site's own composer.
+    const composer = workPage.getByPlaceholder("What's new?");
+    const postButton = workPage.getByRole("button", { name: "Post" });
+    const composerBox = await rectOf(composer);
+    const postBox = await rectOf(postButton);
+    await composer.focus();
+    await sleep(150);
+    const compose = {
+      focused: await steady(() => workPage.screenshot(still)),
+      typed: [],
+    };
+    for (let n = 6; n < POST.length; n += 6) {
+      await composer.fill(POST.slice(0, n));
+      compose.typed.push(await steady(() => workPage.screenshot(still)));
+    }
+    await composer.fill(POST);
+    compose.typed.push(await steady(() => workPage.screenshot(still)));
+    await postButton.click();
+    await workPage
+      .locator(".list li:first-child time", { hasText: "now" })
+      .waitFor();
+    await settle(workPage);
+    await sleep(300);
+    compose.posted = assertSize(
+      await steady(() => workPage.screenshot(still)),
+      "posted",
+    );
+
     // The two tabs must really hold two accounts: that is what the animation claims.
     await personal.reload();
     if (
-      !(await personal.locator("nav .me b").innerText()).startsWith("Dana W.")
+      !(await personal.locator("nav .me > b").innerText()).startsWith("Dana W.")
     )
       throw new Error("the personal tab lost its account");
-    if ((await workPage.locator("nav .me b").innerText()) !== "Dana Whitfield")
-      throw new Error("the Work tab is not signed in as the work account");
+    if ((await personal.locator(".list").innerText()).includes(POST))
+      throw new Error("the brand post leaked into the personal feed");
+    if (
+      (await workPage.locator("nav .me > b").innerText()) !== "Northwind Studio"
+    )
+      throw new Error("the Work tab is not signed in as the brand account");
 
     const groups = await worker.evaluate(async () => {
       const all = await chrome.tabGroups.query({});
@@ -215,8 +248,11 @@ export async function captureHowItWorks(extension) {
       createBox,
       nameBox,
       signIn,
-      emailBox,
+      handleBox,
       continueBox,
+      compose,
+      composerBox,
+      postBox,
       group: { title: visibleTitle(group.title), color: group.color },
     };
   } finally {
@@ -227,7 +263,7 @@ export async function captureHowItWorks(extension) {
 }
 
 /**
- * Two accounts of the demo site in two containers, both tabs OUT of their groups (what Chrome does with the tabs of a
+ * Two accounts of the demo social network in two containers, both tabs OUT of their groups (what Chrome does with the tabs of a
  * split view), as the real extension then shows them: "⧉ " in front of the title. Chrome's split view itself cannot be
  * driven from Playwright; each half is photographed at half the window's width, the pair is composed by scenes.mjs.
  * @param {string} extension folder of the built Lite extension
@@ -266,11 +302,11 @@ export async function captureSplitView(extension) {
       const created = ctx.waitForEvent("page");
       const tabId = await api(
         "openInContainer",
-        `http://mail.example/login?user=${user}`,
+        `http://loop.example/login?user=${{ work: "northwind_studio", personal: "dana" }[user]}`,
         made[user].id,
       );
       const page = await created;
-      await page.waitForURL("http://mail.example/", { timeout: 15_000 });
+      await page.waitForURL("http://loop.example/", { timeout: 15_000 });
       await page.evaluate(() => document.fonts.ready);
       return { tabId, page };
     };
@@ -302,13 +338,13 @@ export async function captureSplitView(extension) {
       };
     }
     if (
-      !(await tabs.work.page.locator("nav .me b").innerText()).startsWith(
-        "Dana Whitfield",
+      !(await tabs.work.page.locator("nav .me > b").innerText()).startsWith(
+        "Northwind Studio",
       )
     )
-      throw new Error("the Work tab is not the work account");
+      throw new Error("the Work tab is not the brand account");
     if (
-      !(await tabs.personal.page.locator("nav .me b").innerText()).startsWith(
+      !(await tabs.personal.page.locator("nav .me > b").innerText()).startsWith(
         "Dana W.",
       )
     )

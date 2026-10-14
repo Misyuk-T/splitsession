@@ -4,9 +4,13 @@
 //
 // "Postline" (mail.example) is a small webmail with two demo accounts. Signing in is a cookie, so the two accounts only
 // stay apart because SplitSession gives each container tab its own cookies: that is the thing the pictures show.
+// "Loop" (loop.example, loop-site.mjs) is a small social network for the README animations.
 import { readFileSync } from "node:fs";
 import { createServer } from "node:http";
 import { createRequire } from "node:module";
+
+// eslint-disable-next-line import/extensions -- local .mjs module, run directly by node
+import { createLoop } from "./loop-site.mjs";
 
 const require = createRequire(import.meta.url);
 const INTER = readFileSync(
@@ -193,19 +197,6 @@ ${LOGO("#d9480f")}<h1 style="font-size:20px;margin:12px 0 18px">Sign in to Postl
   );
 }
 
-/** The same sign-in page with a working form (Email + Continue), for the README animation that types into it. */
-function liveSignInPage() {
-  return shell(
-    "Sign in – Postline",
-    "#d9480f",
-    `<div style="display:grid;place-items:center;height:100%"><form action="/signin" method="get" autocomplete="off" style="width:300px;text-align:center">
-<div style="height:28px;display:flex;justify-content:center">${LOGO("#d9480f")}</div><h1 style="font-size:20px;line-height:28px;margin:12px 0 18px">Sign in to Postline</h1>
-<input name="email" type="text" placeholder="Email" autocomplete="off" spellcheck="false" style="display:block;width:100%;height:42px;font:inherit;border:0;box-shadow:inset 0 0 0 1px #d6d9df;border-radius:8px;padding:0 11px;margin-bottom:10px;color:#1d1f24;outline:none;background:#fff">
-<button type="submit" style="display:block;width:100%;height:40px;font:inherit;border:0;background:#d9480f;color:#fff;border-radius:8px;padding:0 10px;font-weight:600">Continue</button></form></div>`,
-    `input::placeholder{color:#7a808c;opacity:1}input:focus{box-shadow:inset 0 0 0 1px #d9480f!important}`,
-  );
-}
-
 /** Other neutral demo sites: a title, an accent colour and a heading are enough, they only need to be open. */
 const SITES = {
   "board.example": ["Sprint board – Boardly", "#0a7d6a", "Sprint 14"],
@@ -233,6 +224,7 @@ const cookieOf = (req, name) =>
 export function startDemoSite(port) {
   const sessions = new Map(); // sid -> account key
   let next = 0;
+  const loop = createLoop();
   const server = createServer((req, res) => {
     const host = (req.headers.host ?? "").replace(/:\d+$/, "");
     const url = new URL(req.url ?? "/", `http://${host}`);
@@ -247,6 +239,8 @@ export function startDemoSite(port) {
     if (url.pathname === "/_inter.woff2")
       return send(200, INTER, { "content-type": "font/woff2" });
     if (url.pathname === "/favicon.ico") return send(204, "");
+    if (host === "loop.example")
+      return loop(req, res, url, send, cookieOf(req, "sid"));
     if (host !== "mail.example") return send(200, plainPage(host));
     if (url.pathname === "/login") {
       const user = url.searchParams.get("user") ?? "work";
@@ -258,18 +252,6 @@ export function startDemoSite(port) {
       });
     }
     const user = sessions.get(cookieOf(req, "sid") ?? "");
-    if (url.pathname === "/signin") {
-      // A working sign-in: the address typed picks the demo account (a work address means the work account).
-      const email = (url.searchParams.get("email") ?? "").trim().toLowerCase();
-      if (email === "" && !user) return send(200, liveSignInPage());
-      const account = email.includes("homebox") ? "personal" : "work";
-      const sid = `demo${++next}`;
-      sessions.set(sid, email === "" ? user : account);
-      return send(302, "", {
-        location: "/",
-        "set-cookie": `sid=${sid}; HttpOnly; Path=/; SameSite=Lax; Max-Age=2592000`,
-      });
-    }
     return send(200, user ? mailPage(user) : signInPage());
   });
   return new Promise((resolve, reject) => {
