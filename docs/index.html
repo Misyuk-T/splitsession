@@ -1,0 +1,344 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>SplitSession: same site, separate logins</title>
+  <meta name="description" content="SplitSession brings Firefox-style containers to Chrome: keep several accounts of one site signed in at once, side by side, in one profile. Free and open source.">
+  <meta name="theme-color" content="#3f3fd9">
+  <link rel="canonical" href="https://misyuk-t.github.io/splitsession/">
+  <link rel="icon" type="image/png" sizes="32x32" href="assets/icon-32.png">
+  <link rel="apple-touch-icon" href="assets/icon-128.png">
+  <link rel="preload" href="assets/fonts/inter-latin-wght-normal.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="stylesheet" href="assets/site.css">
+
+  <meta property="og:type" content="website">
+  <meta property="og:site_name" content="SplitSession">
+  <meta property="og:title" content="SplitSession: same site, separate logins">
+  <meta property="og:description" content="Containers for Chrome: several accounts of one site signed in at once, in different tabs of one profile.">
+  <meta property="og:url" content="https://misyuk-t.github.io/splitsession/">
+  <meta property="og:image" content="https://misyuk-t.github.io/splitsession/assets/og-image.png">
+  <meta property="og:image:width" content="1400">
+  <meta property="og:image:height" content="560">
+  <meta property="og:image:alt" content="SplitSession: Same site, separate logins. Two accounts of one site side by side, with the container popup.">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="SplitSession: same site, separate logins">
+  <meta name="twitter:description" content="Containers for Chrome: several accounts of one site signed in at once, in different tabs of one profile.">
+  <meta name="twitter:image" content="https://misyuk-t.github.io/splitsession/assets/og-image.png">
+  <meta name="twitter:image:alt" content="SplitSession: Same site, separate logins. Two accounts of one site side by side, with the container popup.">
+</head>
+<body>
+  <a class="skip" href="#main">Skip to content</a>
+
+  <header class="site-header">
+    <div class="wrap">
+      <a class="brand" href="./"><img src="assets/icon-128.png" width="30" height="30" alt="">SplitSession</a>
+      <nav class="nav" aria-label="Main">
+        <a class="nav-optional" href="#features">Features</a>
+        <a class="nav-optional" href="#editions">Lite &amp; Full</a>
+        <a href="#install">Install</a>
+        <a class="nav-optional" href="privacy">Privacy</a>
+        <a href="https://github.com/Misyuk-T/splitsession">GitHub</a>
+      </nav>
+    </div>
+  </header>
+
+  <main id="main">
+    <!-- Hero -->
+    <div class="hero">
+      <div class="wrap">
+        <img class="hero-logo" src="assets/icon-128.png" width="88" height="88" alt="SplitSession logo: three overlapping rounded squares in blue, green and purple">
+        <h1>SplitSession</h1>
+        <p class="tagline">Same site, separate logins.</p>
+        <p class="pitch">Firefox-style containers for Chrome. Keep several accounts of one site signed in at the same time, in different tabs of one profile. No second profile, no second browser.</p>
+        <div class="cta">
+          <a class="btn btn-primary" href="https://github.com/Misyuk-T/splitsession/releases/latest">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12m0 0l-4.5-4.5M12 15l4.5-4.5M4 20h16"/></svg>
+            Download from GitHub
+          </a>
+          <button class="btn" type="button" disabled>Chrome Web Store — coming soon</button>
+          <a class="btn" href="https://github.com/Misyuk-T/splitsession">
+            <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 .5A11.5 11.5 0 0 0 .5 12c0 5.08 3.29 9.39 7.86 10.91.58.1.79-.25.79-.56v-2c-3.2.7-3.87-1.37-3.87-1.37-.52-1.33-1.28-1.69-1.28-1.69-1.04-.71.08-.7.08-.7 1.15.08 1.76 1.18 1.76 1.18 1.03 1.76 2.7 1.25 3.36.96.1-.75.4-1.25.73-1.54-2.55-.29-5.24-1.28-5.24-5.69 0-1.26.45-2.28 1.18-3.09-.12-.29-.51-1.46.11-3.05 0 0 .97-.31 3.17 1.18a11 11 0 0 1 5.77 0c2.2-1.49 3.17-1.18 3.17-1.18.63 1.59.23 2.76.11 3.05.74.81 1.18 1.83 1.18 3.09 0 4.42-2.69 5.39-5.25 5.68.41.36.78 1.06.78 2.14v3.17c0 .31.21.67.8.56A11.5 11.5 0 0 0 23.5 12 11.5 11.5 0 0 0 12 .5z"/></svg>
+            View on GitHub
+          </a>
+        </div>
+        <p class="cta-note">Free, open source (MIT). Beta, version 0.1.</p>
+
+        <figure class="frame">
+          <div class="frame-bar" aria-hidden="true"><i></i><i></i><i></i></div>
+          <img src="media/how-it-works.gif" width="880" height="600" fetchpriority="high" alt="Animation: the SplitSession popup creates a Work container, the same social site is opened in a second tab and signed in as a different account, and switching between the two tabs shows both accounts logged in at once.">
+        </figure>
+      </div>
+    </div>
+
+    <!-- Why -->
+    <section id="why">
+      <div class="wrap">
+        <div class="section-head">
+          <p class="eyebrow">Why containers</p>
+          <h2>Chrome profiles are too heavy for this job</h2>
+          <p class="lead">A profile isolates everything, which is more than you need to be two people on one website.</p>
+        </div>
+        <div class="grid grid-3 pain">
+          <div class="card">
+            <span class="num" aria-hidden="true">1</span>
+            <h3>A whole window per account</h3>
+            <p>Each profile has its own extensions, bookmarks and history. You maintain all of them to keep a second login.</p>
+          </div>
+          <div class="card">
+            <span class="num" aria-hidden="true">2</span>
+            <h3>Switching gets old</h3>
+            <p>Answering a client's account and going back to yours means switching profiles over and over, all day.</p>
+          </div>
+          <div class="card">
+            <span class="num" aria-hidden="true">3</span>
+            <h3>Agents see only one</h3>
+            <p>An AI agent that drives &ldquo;your browser&rdquo; can see just one of your profiles at a time.</p>
+          </div>
+        </div>
+        <p class="callout">Containers isolate only what identifies you to a site, cookies and page storage, and leave the rest of the profile shared. <strong>You pick the account per tab, not per window.</strong></p>
+      </div>
+    </section>
+
+    <!-- Features -->
+    <section id="features" class="alt">
+      <div class="wrap">
+        <div class="section-head">
+          <p class="eyebrow">Features</p>
+          <h2>Everything a tab needs to be someone else</h2>
+        </div>
+        <div class="grid grid-3">
+          <article class="card">
+            <div class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l9 4.5-9 4.5-9-4.5L12 3z"/><path d="M3 12l9 4.5 9-4.5"/><path d="M3 16.5L12 21l9-4.5"/></svg></div>
+            <h3>Containers</h3>
+            <p>A name, a colour and a cookie jar each. Create, rename, recolour and delete them from the toolbar popup.</p>
+          </article>
+          <article class="card">
+            <div class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l8 3v6c0 4.5-3.2 7.9-8 9-4.8-1.1-8-4.5-8-9V6l8-3z"/><path d="M9 12l2 2 4-4"/></svg></div>
+            <h3>Cookie and storage isolation</h3>
+            <p>Network cookies, <code>localStorage</code>, IndexedDB and more stay apart per container. Popups and links opened from a container tab stay in it.</p>
+          </article>
+          <article class="card">
+            <div class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 8a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8z"/></svg></div>
+            <h3>Tab groups</h3>
+            <p>Containers show up as Chrome tab groups in their own colour, kept in sync both ways. Rename a group and you rename the container.</p>
+          </article>
+          <article class="card">
+            <div class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 12h11m0 0l-4-4m4 4l-4 4"/><path d="M20 5v14"/></svg></div>
+            <h3>Domain rules</h3>
+            <p>&ldquo;Always open this site in container X&rdquo; or &ldquo;ask me&rdquo;, like Firefox's &ldquo;Always open in&rdquo;.</p>
+          </article>
+          <article class="card">
+            <div class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="10.5" width="16" height="10" rx="2"/><path d="M8 10.5V7.5a4 4 0 0 1 8 0v3"/></svg></div>
+            <h3>Strict mode</h3>
+            <p>Optional. Removes service workers so none can answer a container tab with your regular logins. The price: push notifications.</p>
+          </article>
+          <article class="card">
+            <div class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 4v13m0 0l-3-3m3 3l3-3"/><path d="M17 20V7m0 0l-3 3m3-3l3 3"/></svg></div>
+            <h3>Export and import</h3>
+            <p>Containers and rules as a JSON file. Cookies stay out unless you tick a clearly marked box.</p>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <!-- Split view -->
+    <section id="split-view">
+      <div class="wrap">
+        <div class="split">
+          <div class="split-text">
+            <p class="eyebrow">Split view</p>
+            <h2>Two accounts, literally side by side</h2>
+            <p>Put two accounts of one site in Chrome's split view. A split view of two containers leaves the container groups instead of being reopened, so each tab keeps its own login.</p>
+            <p>Handy for comparing a work account and a personal one, or checking what a customer sees while you stay signed in as admin.</p>
+          </div>
+          <figure class="frame">
+            <img loading="lazy" decoding="async" src="media/split-view.png" width="880" height="600" alt="Two tabs of the same site shown as the two halves of Chrome's split view: one signed in as Northwind Studio in the Work container, the other as Dana W. in the Personal container.">
+          </figure>
+        </div>
+      </div>
+    </section>
+
+    <!-- Restore -->
+    <section id="restore" class="alt">
+      <div class="wrap">
+        <div class="split reverse">
+          <div class="split-text">
+            <p class="eyebrow">Restore after restart</p>
+            <h2>Tabs come back to their own accounts</h2>
+            <p>Restart Chrome, use Reopen closed tab, History or a reopened tab group, and container tabs return to their containers.</p>
+            <ul>
+              <li>Works with &ldquo;Continue where you left off&rdquo;.</li>
+              <li>A tab SplitSession cannot match with certainty is held back. It waits for you in the popup, and nothing is sent to the site until you choose.</li>
+            </ul>
+          </div>
+          <figure class="frame">
+            <img loading="lazy" decoding="async" src="assets/restart.png" width="1280" height="800" alt="After a restart, a held tab reads &ldquo;This tab is waiting for you&rdquo; and offers to open in Personal or as an ordinary tab; the SplitSession popup lists two tabs waiting.">
+          </figure>
+        </div>
+      </div>
+    </section>
+
+    <!-- Lite vs Full -->
+    <section id="editions">
+      <div class="wrap">
+        <div class="section-head">
+          <p class="eyebrow">Two editions</p>
+          <h2>Lite and Full</h2>
+          <p class="lead">One codebase, two builds. Lite is containers only. Full adds an optional local AI agent bridge.</p>
+        </div>
+        <div class="table-wrap" role="region" aria-label="Lite and Full comparison, scrolls sideways on narrow screens" tabindex="0">
+          <table class="compare">
+            <thead>
+              <tr><th scope="col">&nbsp;</th><th scope="col">Lite</th><th scope="col">Full</th></tr>
+            </thead>
+            <tbody>
+              <tr>
+                <th scope="row">Containers, isolation, tab groups, domain rules, strict mode, restore, export and import</th>
+                <td><span class="yes"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>Yes</span></td>
+                <td><span class="yes"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>Yes</span></td>
+              </tr>
+              <tr>
+                <th scope="row">Local AI agent bridge (MCP), off by default</th>
+                <td><span class="no"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M6 12h12"/></svg>Not in the bundle</span></td>
+                <td><span class="yes"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>Yes</span></td>
+              </tr>
+              <tr>
+                <th scope="row">Extra permissions</th>
+                <td>None</td>
+                <td><code>nativeMessaging</code>, <code>debugger</code></td>
+              </tr>
+              <tr>
+                <th scope="row">Where to get it</th>
+                <td>GitHub Releases. Chrome Web Store: coming soon</td>
+                <td>GitHub Releases</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <p class="table-note">Lite is not Full with the settings hidden: the agent code is not compiled into it, and the Lite build fails if any bridge code or Full-only permission ends up in the bundle.</p>
+      </div>
+    </section>
+
+    <!-- AI agents -->
+    <section id="agents" class="alt">
+      <div class="wrap">
+        <div class="split">
+          <div class="split-text">
+            <p class="eyebrow">AI agents <span class="badge">Full edition</span></p>
+            <h2>Let your agent use your tabs</h2>
+            <p>An optional local MCP server lets your own agent (Claude Code, Codex, Cursor and others) list your Chrome tabs with their containers and operate them: snapshots, trusted clicks and typing, screenshots, console and network, opening pages in a container.</p>
+            <p>It is <strong>off by default</strong> and one all-or-nothing switch in Settings. While it is on, the agent can act in every tab, signed-in pages included.</p>
+          </div>
+          <div>
+            <div class="codeblock">
+              <code id="install-cmd"><span class="prompt" aria-hidden="true">$</span>npx splitsession-bridge install</code>
+              <button class="copy" type="button" id="copy-btn" hidden aria-describedby="copy-status">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V6a2 2 0 0 1 2-2h9"/></svg>
+                <span id="copy-label">Copy</span>
+              </button>
+            </div>
+            <p class="install-note" id="copy-status" role="status">Then switch on &ldquo;Agent bridge&rdquo; under Settings &rsaquo; &ldquo;For AI agents&rdquo;.</p>
+            <ul class="agent-links">
+              <li><a href="https://github.com/Misyuk-T/splitsession/blob/main/docs/agents.md">Tools, security model and client options</a></li>
+              <li><a href="https://www.npmjs.com/package/splitsession-bridge">splitsession-bridge on npm</a></li>
+            </ul>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Install -->
+    <section id="install">
+      <div class="wrap">
+        <div class="split reverse">
+          <div class="split-text">
+            <p class="eyebrow">Install</p>
+            <h2>Up and running in a minute</h2>
+            <p>The Chrome Web Store listing is coming soon. Until then, install from a GitHub release (Lite or Full):</p>
+            <ol class="steps">
+              <li><strong>Download and unzip</strong><span><code>splitsession-lite-&lt;version&gt;.zip</code> or <code>splitsession-full-&lt;version&gt;.zip</code> from <a href="https://github.com/Misyuk-T/splitsession/releases/latest">Releases</a>.</span></li>
+              <li><strong>Open the extensions page</strong><span>Go to <code>chrome://extensions</code> and turn on <em>Developer mode</em>.</span></li>
+              <li><strong>Load unpacked</strong><span>Choose <em>Load unpacked</em>.</span></li>
+              <li><strong>Select the folder</strong><span>Pick the unzipped folder, then pin the toolbar button.</span></li>
+            </ol>
+            <a class="btn btn-primary" href="https://github.com/Misyuk-T/splitsession/releases/latest">Download from GitHub</a>
+          </div>
+          <figure class="frame">
+            <img loading="lazy" decoding="async" src="media/install.gif" width="880" height="600" alt="Animation: download the zip from a GitHub release, unzip it, open chrome://extensions, turn on Developer mode, choose Load unpacked, select the folder and pin the toolbar button.">
+          </figure>
+        </div>
+      </div>
+    </section>
+
+    <!-- Security -->
+    <section id="security" class="alt">
+      <div class="wrap">
+        <div class="section-head">
+          <p class="eyebrow">Security and privacy</p>
+          <h2>Honest about what it does and doesn&rsquo;t do</h2>
+        </div>
+        <ul class="notes">
+          <li><strong>It sends nothing anywhere.</strong><span>No account, analytics, crash reporting or telemetry. The extension makes no network requests of its own, and everything stays on your computer.</span></li>
+          <li><strong>It separates accounts, nothing more.</strong><span>SplitSession is not a privacy tool and not a sandbox. It keeps logins of one site apart.</span></li>
+          <li><strong>Why &ldquo;all sites&rdquo; access?</strong><span>Rewriting request headers per tab needs it, and it cannot know in advance which sites you will use.</span></li>
+          <li><strong>Stored like Chrome's own cookies.</strong><span>Containers and cookie jars live in <code>chrome.storage</code> on your machine, unencrypted. Full-disk encryption is what protects both.</span></li>
+          <li class="caveat"><strong>Not isolated</strong><span>The HTTP cache, HTTP auth, browser fingerprint, saved passwords and history. One known residual hole is documented, same-origin frames and popups during navigation.</span></li>
+          <li class="caveat"><strong>Beta, not widely tested yet</strong><span>It has unit and end-to-end tests against a local stand, but not many real sites. Some may notice two sessions from one browser.</span></li>
+        </ul>
+        <div class="links-row">
+          <a href="privacy">Privacy policy</a>
+          <a href="https://github.com/Misyuk-T/splitsession/blob/main/docs/limits.md">Full list of limits</a>
+          <a href="https://github.com/Misyuk-T/splitsession/blob/main/docs/how-it-works.md">How the isolation works</a>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="site-footer">
+    <div class="wrap">
+      <a class="brand" href="./"><img src="assets/icon-128.png" width="30" height="30" alt="">SplitSession</a>
+      <ul class="foot-links">
+        <li><a href="https://github.com/Misyuk-T/splitsession">GitHub</a></li>
+        <li><a href="https://github.com/Misyuk-T/splitsession/releases/latest">Releases</a></li>
+        <li><a href="privacy">Privacy</a></li>
+        <li><a href="https://github.com/Misyuk-T/splitsession/issues">Report an issue</a></li>
+        <li><a href="https://github.com/Misyuk-T/splitsession/blob/main/LICENSE">MIT license</a></li>
+      </ul>
+      <p class="foot-meta">SplitSession is free and open source under the MIT license, by Taras Misiuk. This site has no cookies, analytics or external requests.</p>
+    </div>
+  </footer>
+
+  <script>
+    (function () {
+      var btn = document.getElementById("copy-btn");
+      if (!btn || !navigator.clipboard) return;
+      btn.hidden = false;
+      var label = document.getElementById("copy-label");
+      var status = document.getElementById("copy-status");
+      var original = status.textContent;
+      var timer;
+      btn.addEventListener("click", function () {
+        navigator.clipboard.writeText("npx splitsession-bridge install").then(function () {
+          label.textContent = "Copied";
+          btn.setAttribute("data-copied", "true");
+          status.textContent = "Command copied to the clipboard.";
+          clearTimeout(timer);
+          timer = setTimeout(function () {
+            label.textContent = "Copy";
+            btn.removeAttribute("data-copied");
+            status.textContent = original;
+          }, 2200);
+        }, function () {
+          label.textContent = "Press Ctrl/Cmd+C";
+          var range = document.createRange();
+          range.selectNodeContents(document.getElementById("install-cmd"));
+          var sel = window.getSelection();
+          sel.removeAllRanges();
+          sel.addRange(range);
+        });
+      });
+    })();
+  </script>
+</body>
+</html>

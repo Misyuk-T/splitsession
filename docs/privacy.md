@@ -1,6 +1,7 @@
 ---
 title: SplitSession privacy policy
 permalink: /privacy
+layout: page
 ---
 
 # SplitSession privacy policy

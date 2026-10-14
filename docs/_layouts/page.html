@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{ page.title | escape }}</title>
+  <meta name="description" content="How SplitSession handles your data: everything stays on your computer, and the extension sends nothing to the developer or to any server.">
+  <meta name="theme-color" content="#3f3fd9">
+  <link rel="canonical" href="https://misyuk-t.github.io/splitsession{{ page.url }}">
+  <link rel="icon" type="image/png" sizes="32x32" href="assets/icon-32.png">
+  <link rel="apple-touch-icon" href="assets/icon-128.png">
+  <link rel="preload" href="assets/fonts/inter-latin-wght-normal.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="stylesheet" href="assets/site.css">
+  <meta property="og:type" content="article">
+  <meta property="og:site_name" content="SplitSession">
+  <meta property="og:title" content="{{ page.title | escape }}">
+  <meta property="og:image" content="https://misyuk-t.github.io/splitsession/assets/og-image.png">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:image" content="https://misyuk-t.github.io/splitsession/assets/og-image.png">
+</head>
+<body>
+  <a class="skip" href="#main">Skip to content</a>
+
+  <header class="site-header">
+    <div class="wrap">
+      <a class="brand" href="./"><img src="assets/icon-128.png" width="30" height="30" alt="">SplitSession</a>
+      <nav class="nav" aria-label="Main">
+        <a href="https://github.com/Misyuk-T/splitsession">GitHub</a>
+      </nav>
+    </div>
+  </header>
+
+  <main id="main" class="prose">
+    <a class="back" href="./">&larr; Back to SplitSession</a>
+    {{ content }}
+  </main>
+
+  <footer class="site-footer">
+    <div class="wrap">
+      <a class="brand" href="./"><img src="assets/icon-128.png" width="30" height="30" alt="">SplitSession</a>
+      <ul class="foot-links">
+        <li><a href="https://github.com/Misyuk-T/splitsession">GitHub</a></li>
+        <li><a href="https://github.com/Misyuk-T/splitsession/releases/latest">Releases</a></li>
+        <li><a href="privacy">Privacy</a></li>
+        <li><a href="https://github.com/Misyuk-T/splitsession/issues">Report an issue</a></li>
+        <li><a href="https://github.com/Misyuk-T/splitsession/blob/main/LICENSE">MIT license</a></li>
+      </ul>
+      <p class="foot-meta">SplitSession is free and open source under the MIT license, by Taras Misiuk.</p>
+    </div>
+  </footer>
+</body>
+</html>
