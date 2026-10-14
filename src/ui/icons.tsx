@@ -32,6 +32,15 @@ export const IconSettings = () => (
   </Icon>
 );
 
+/** A coffee cup with a handle and two wisps of steam: "buy me a coffee" (the popup's support button). */
+export const IconCoffee = () => (
+  <Icon>
+    <path d="M3 9h13v7a5 5 0 0 1-5 5H8a5 5 0 0 1-5-5z" />
+    <path d="M16 11h2a3 3 0 0 1 0 6h-2" />
+    <path d="M7.5 2.5v3M11.5 2.5v3" />
+  </Icon>
+);
+
 export const IconMore = () => (
   <Icon>
     <circle cx="5.5" cy="12" r="1.25" fill="currentColor" stroke="none" />

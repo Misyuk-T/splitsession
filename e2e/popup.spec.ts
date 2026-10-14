@@ -736,4 +736,94 @@ test.describe("popup", () => {
       }
     }
   });
+  test("header: the support cup sits left of Settings, fits at the popup width, and opens Ko-fi in a plain tab", async ({
+    facet,
+  }) => {
+    const SUPPORT = "https://ko-fi.com/tomashdev/tip";
+    await facet.ctx.route("https://ko-fi.com/**", (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: "text/html",
+        body: "<!doctype html><title>Ko-fi stub</title><p>stub</p>",
+      }),
+    );
+    const popup = await facet.ctx.newPage();
+    await popup.setViewportSize({ width: 420, height: 700 });
+    await popup.goto(ext("popup.html"));
+    await expect(
+      popup.getByRole("heading", { name: "Containers" }),
+    ).toBeVisible();
+    // The active tab is a container tab inside its group and the last tab of the window (where Chrome could put a new tab
+    // next to it, into the group).
+    const c = await facet.container("Support");
+    const grouped = await facet.openIn(c.id, at("a.localhost", "/whoami"));
+    const groupedId = await facet.tabIdOf(grouped);
+    await expect
+      .poll(async () => (await facet.tabInfo(groupedId)).groupId)
+      .toBeGreaterThanOrEqual(0);
+
+    const support = popup.getByTestId("popup-support");
+    await expect(support).toHaveAttribute(
+      "aria-label",
+      "Support development on Ko-fi",
+    );
+    await expect(support).toHaveAttribute("title", "Support development");
+
+    // Layout: one row, nothing overflows, the cup is right before Settings (after the MCP pill, when there is one).
+    const layout = await popup.evaluate(() => {
+      const head = document.querySelector(".popup__head")!;
+      const box = (el: Element | null) => el?.getBoundingClientRect() ?? null;
+      const cup = box(head.querySelector("[data-testid=popup-support]"))!;
+      const gear = box(head.querySelector("[aria-label=Settings]"))!;
+      const mcp = box(head.querySelector("[data-testid=mcp-button]"));
+      const title = box(head.querySelector("h1"))!;
+      return {
+        overflow: head.scrollWidth - head.clientWidth,
+        sameRow:
+          Math.abs(cup.top - gear.top) < 1 &&
+          Math.abs(title.top + title.height / 2 - (cup.top + cup.height / 2)) <
+            12,
+        cupRight: cup.right,
+        gearLeft: gear.left,
+        mcpRight: mcp?.right ?? null,
+        cupLeft: cup.left,
+        headRight: head.getBoundingClientRect().right,
+        gearRight: gear.right,
+      };
+    });
+    expect(layout.overflow).toBeLessThanOrEqual(0);
+    expect(layout.sameRow).toBe(true);
+    expect(layout.cupRight).toBeLessThanOrEqual(layout.gearLeft);
+    if (layout.mcpRight !== null)
+      expect(layout.mcpRight).toBeLessThanOrEqual(layout.cupLeft);
+    expect(layout.gearRight).toBeLessThanOrEqual(layout.headRight + 0.5);
+
+    // Keyboard reachable: Tab from the cup moves to Settings.
+    await support.focus();
+    await popup.keyboard.press("Tab");
+    await expect(
+      popup.getByRole("button", { name: "Settings", exact: true }),
+    ).toBeFocused();
+
+    // Make the container tab the active one (as when the real popup is opened from it), then click the cup.
+    await grouped.bringToFront();
+    const opened = facet.ctx.waitForEvent("page");
+    await support.evaluate((el: HTMLElement) => el.click());
+    const kofi = await opened;
+    facet.adopt(kofi);
+    await expect.poll(() => kofi.url()).toBe(SUPPORT);
+    await expect.poll(() => popup.isClosed()).toBe(true); // the popup closes itself
+    const kofiId = await facet.tabIdOf(kofi);
+    // Give the group guard time to react (it waits ~150 ms, then reopens a foreign tab found in a group in its container).
+    await new Promise((r) => setTimeout(r, 1500));
+    expect(kofi.isClosed()).toBe(false);
+    expect((await facet.tabInfo(kofiId)).groupId).toBe(-1);
+    expect(
+      (await facet.api<Array<{ tabId: number }>>("listTabs")).some(
+        (t) => t.tabId === kofiId,
+      ),
+    ).toBe(false); // in no container
+    expect(await facet.api("getTabContainer", kofiId)).toBeNull();
+    await facet.ctx.unroute("https://ko-fi.com/**");
+  });
 });
