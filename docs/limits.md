@@ -140,7 +140,7 @@ on by default). How it works is in decisions.md ("Container tabs that come back"
 - **A waiting tab is visible.** Instead of Chrome's "blocked by an extension" the tab shows SplitSession's own page
   (`held.html`, no network request) with the choices of the popup banner, its toolbar button carries a red "!" on that
   tab, and every other tab's button says "N tabs are waiting" in its tooltip and shows "!" (unless the agent bridge's
-  "ON" is showing). The tab is on SplitSession's page, not on its address, until the user chooses; if the browser is closed
+  purple dot is showing). The tab is on SplitSession's page, not on its address, until the user chooses; if the browser is closed
   meanwhile, the page comes back as "no longer on hold" and offers "Open as an ordinary tab" / "Choose a container…".
 - **What is gated and costs.** Addresses of open container tabs are blocked for unknown tabs only at the next browser
   start (every tab SplitSession already knows, and every tab it sees appear, passes). Addresses of closed container tabs that

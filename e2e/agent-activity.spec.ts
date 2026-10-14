@@ -12,7 +12,7 @@ import { at, expect, ext, type Facet, test } from "./fixtures";
 /**
  * Visible agent activity: while the agent works with a tab (a tool touched it within ~8 s, or the debugger is held on it by
  * a viewport override, a watch or a dialog) the tab shows a soft purple vignette along its edges (gradients only, no line)
- * and a favicon of purple dots that rotate; each action adds a stronger layer with a pill, and "AI" on the toolbar button.
+ * and a favicon of purple dots that rotate; each action adds a stronger layer with a pill, and a blinking purple dot on the toolbar button.
  * Purple is the agent's colour whatever the container. The title is never touched. The overlay lives in a CLOSED shadow
  * root, so these tests look inside it from the extension's own ISOLATED world (the only place that can).
  */
@@ -161,6 +161,31 @@ async function turnOn(
   return { popup, card };
 }
 
+const rgb = (hex: string): number[] => [
+  parseInt(hex.slice(1, 3), 16),
+  parseInt(hex.slice(3, 5), 16),
+  parseInt(hex.slice(5, 7), 16),
+];
+const AGENT_RGB = rgb("#8b5cf6");
+
+/** The toolbar dot of a tab, sampled every ~80 ms for `ms`: the distinct colours seen (as "r,g,b") and the texts. */
+async function sampleDot(
+  facet: Facet,
+  tabId: number,
+  ms = 1_200,
+): Promise<{ colors: string[]; texts: string[] }> {
+  const colors = new Set<string>();
+  const texts = new Set<string>();
+  const end = Date.now() + ms;
+  while (Date.now() < end) {
+    const info = await facet.tabInfo(tabId);
+    texts.add(info.badge);
+    colors.add(info.badgeColor.slice(0, 3).join(","));
+    await new Promise((r) => setTimeout(r, 80));
+  }
+  return { colors: [...colors], texts: [...texts] };
+}
+
 /** Color of the pixel (x, y) of a PNG, decoded in a page (no image library needed). */
 async function pixel(
   facet: Facet,
@@ -296,7 +321,7 @@ test.describe("visible agent activity", () => {
     await expect.poll(() => hostPids(facet), { timeout: 10_000 }).toEqual([]);
   });
 
-  test("a read shows the glow, the pill and the AI badge in the target tab, never touches the title, and the glow lasts the session and then fades", async ({
+  test("a read shows the glow, the pill and the blinking dot in the target tab, never touches the title, and the glow lasts the session and then fades", async ({
     facet,
   }) => {
     await turnOn(facet);
@@ -304,7 +329,12 @@ test.describe("visible agent activity", () => {
     const page = await facet.plain(at("a.localhost", "/agent"));
     const tabId = await facet.tabIdOf(page);
     const quiet = await facet.tabInfo(tabId);
-    expect(quiet).toMatchObject({ title: "Agent page", badge: "ON" }); // the bridge is on: every tab says so
+    // The bridge is on: a plain tab has the agent's purple dot (one space, no letters), not blinking.
+    expect(quiet).toMatchObject({ title: "Agent page", badge: " " });
+    expect(quiet.badgeColor.slice(0, 3)).toEqual(AGENT_RGB);
+    expect((await sampleDot(facet, tabId, 500)).colors).toEqual([
+      AGENT_RGB.join(","),
+    ]);
     expect(await overlayOf(facet, tabId)).toMatchObject({ present: false });
     const layoutBefore = await page.evaluate(() => ({
       w: document.documentElement.scrollWidth,
@@ -332,7 +362,18 @@ test.describe("visible agent activity", () => {
       await page.waitForTimeout(100);
     }
     expect((await facet.tabInfo(tabId)).title).toBe("Agent page");
-    expect((await facet.tabInfo(tabId)).badge).toBe("AI");
+    // The dot of this tab blinks: purple and lighter purples, never letters.
+    const blinking = await sampleDot(facet, tabId);
+    expect(blinking.texts).toEqual([" "]);
+    expect(blinking.colors.length).toBeGreaterThanOrEqual(2);
+    expect(blinking.colors).toContain(AGENT_RGB.join(","));
+    for (const c of blinking.colors) {
+      const [r, g, b] = c.split(",").map(Number);
+      expect(r).toBeGreaterThanOrEqual(0x8b);
+      expect(r).toBeLessThanOrEqual(0xc4);
+      expect(b).toBeGreaterThanOrEqual(0xf6);
+      expect(g).toBeGreaterThanOrEqual(0x5c);
+    }
     expect(
       (
         await mcp.json<Array<{ tabId: number; title: string }>>("list_tabs")
@@ -382,9 +423,11 @@ test.describe("visible agent activity", () => {
       ),
     ).toBe(true);
     expect(await page.title()).toBe("Agent page");
+    // The blink is over: the idle purple dot, steady.
     await expect
-      .poll(() => facet.tabInfo(tabId).then((t) => t.badge))
-      .toBe("ON");
+      .poll(async () => (await sampleDot(facet, tabId, 400)).colors)
+      .toEqual([AGENT_RGB.join(",")]);
+    expect((await facet.tabInfo(tabId)).badge).toBe(" ");
   });
 
   test("the agent is purple on a container tab too (the container's colour stays on its own UI), and the title keeps its [container] prefix exactly (no mark ever)", async ({
@@ -401,13 +444,18 @@ test.describe("visible agent activity", () => {
     );
     await expect.poll(() => page.title()).toBe(`${prefix}Agent page`);
     const quiet = await facet.tabInfo(tabId);
-    expect(quiet.badge).not.toBe("AI");
+    expect(quiet.badge).toBe(" "); // the container's colour dot, no "ON"
+    expect(quiet.badgeColor.slice(0, 3)).not.toEqual(AGENT_RGB);
 
     await mcp.call("get_tab_html", { tabId, selector: "#title" });
     const o = await overlayOf(facet, tabId);
     expect(o).toMatchObject({ present: true, glow: true });
     expectPurpleVignette(o); // purple, not the container's colour
-    expect((await facet.tabInfo(tabId)).badge).toBe("AI");
+    // The container dot blinks between the container's colour and purple.
+    const blinkingC = await sampleDot(facet, tabId);
+    expect(blinkingC.texts).toEqual([" "]);
+    expect(blinkingC.colors).toContain(quiet.badgeColor.slice(0, 3).join(","));
+    expect(blinkingC.colors).toContain(AGENT_RGB.join(","));
     await mcp.json("click", { tabId, selector: "#go" });
     // The page rewrites its own title during the session: nothing of ours is in it, before or after.
     await page.evaluate(() => (document.title = "Rewritten"));
@@ -426,10 +474,10 @@ test.describe("visible agent activity", () => {
       })
       .toBe(false);
     expect(await page.title()).toMatch(rewritten);
-    // The container's own badge is back (not "AI", not empty).
+    // The container's own dot is back, steady.
     await expect
-      .poll(() => facet.tabInfo(tabId).then((x) => x.badge))
-      .toBe(quiet.badge);
+      .poll(async () => (await sampleDot(facet, tabId, 400)).colors)
+      .toEqual([quiet.badgeColor.slice(0, 3).join(",")]);
 
     // Out of its tab group the page title carries "⧉ " (Chrome's own view of the tab too), and the agent never sees it.
     await facet.inWorker(
@@ -564,15 +612,42 @@ test.describe("visible agent activity", () => {
     expect(await overlayOf(facet, tabId)).toMatchObject({ present: false });
     expect(await pageSees(page)).toMatchObject({ element: false });
     expect(await page.title()).toBe("Agent page");
+    // The bridge is on (idle purple dot), but nothing blinks.
     expect(await facet.tabInfo(tabId)).toMatchObject({
       title: "Agent page",
-      badge: "ON",
-    }); // "on", but no "AI"
+      badge: " ",
+    });
+    expect((await sampleDot(facet, tabId, 600)).colors).toEqual([
+      AGENT_RGB.join(","),
+    ]);
 
     // On again: back.
     await facet.api("updateSettings", { agentActivity: true });
     await mcp.call("get_tab_text", { tabId });
     expect(await overlayOf(facet, tabId)).toMatchObject({ present: true });
+  });
+
+  test("bridge off: no agent dot on a plain tab, the container dot stays; on: the purple dot", async ({
+    facet,
+  }) => {
+    const c = await facet.container("Dot");
+    await turnOn(facet);
+    const plain = await facet.plain(at("a.localhost", "/agent"));
+    const plainId = await facet.tabIdOf(plain);
+    const boxed = await facet.openIn(c.name, at("a.localhost", "/agent"));
+    const boxedId = await facet.tabIdOf(boxed);
+    await expect
+      .poll(async () => (await facet.tabInfo(plainId)).badge)
+      .toBe(" ");
+    const containerDot = (await facet.tabInfo(boxedId)).badgeColor.slice(0, 3);
+    await facet.api("updateSettings", { agentBridge: false });
+    await expect
+      .poll(async () => (await facet.tabInfo(plainId)).badge)
+      .toBe("");
+    expect(await facet.tabInfo(boxedId)).toMatchObject({ badge: " " });
+    expect((await facet.tabInfo(boxedId)).badgeColor.slice(0, 3)).toEqual(
+      containerDot,
+    );
   });
 
   test("the setting is in the options page (the popup row has no menu any more)", async ({
@@ -610,12 +685,15 @@ test.describe("visible agent activity", () => {
     const result = await mcp.call("get_tab_text", { tabId: opened.tabId });
     expect(result.isError).toBe(true);
     expect(result.text).toMatch(/cannot be scripted/);
-    expect((await facet.tabInfo(opened.tabId)).badge).toBe("AI"); // the one signal that needs no page access
+    // The one signal that needs no page access: the dot blinks, then it is steady again.
+    expect(
+      (await sampleDot(facet, opened.tabId)).colors.length,
+    ).toBeGreaterThanOrEqual(2);
     await expect
-      .poll(() => facet.tabInfo(opened.tabId).then((t) => t.badge), {
+      .poll(async () => (await sampleDot(facet, opened.tabId, 400)).colors, {
         timeout: 20_000,
       })
-      .toBe("ON");
+      .toEqual([AGENT_RGB.join(",")]);
     await mcp.call("close_tab", { tabId: opened.tabId });
   });
 

@@ -55,6 +55,26 @@ export function readableTextColor(hex: string): "#000000" | "#ffffff" {
   return luminance > 0.35 ? "#000000" : "#ffffff";
 }
 
+/** The colour of every agent indicator (glow, favicon, pill, toolbar dot): "the agent is here". */
+export const AGENT_COLOR = "#8b5cf6";
+/** The lighter purple the agent dot blinks to (violet-300). */
+export const AGENT_DIM_COLOR = "#c4b5fd";
+
+/** `a` mixed with `b`: `t` 0 is `a`, 1 is `b`. Opaque lowercase `#rrggbb`; a colour that is not `#rrggbb` gives `a`. */
+export function mixHex(a: string, b: string, t: number): string {
+  const ma = /^#?([0-9a-f]{6})$/i.exec(a);
+  const mb = /^#?([0-9a-f]{6})$/i.exec(b);
+  if (!ma || !mb) return a;
+  const na = parseInt(ma[1]!, 16);
+  const nb = parseInt(mb[1]!, 16);
+  const k = Math.min(1, Math.max(0, t));
+  const part = (shift: number) =>
+    Math.round(((na >> shift) & 255) * (1 - k) + ((nb >> shift) & 255) * k)
+      .toString(16)
+      .padStart(2, "0");
+  return `#${part(16)}${part(8)}${part(0)}`;
+}
+
 // ---- Title prefix ----
 
 /**

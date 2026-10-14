@@ -415,5 +415,6 @@ export class Extras {
     this.exemptions.forget(tabId);
     this.engine.forgetTab(tabId);
     this.mark.forget(tabId);
+    this.badges.forget(tabId);
   }
 }

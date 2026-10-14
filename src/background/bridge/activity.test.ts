@@ -1,6 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { ACTIVITY_TTL_MS, AgentActivity, ICON_TICK_MS } from "./activity";
+import {
+  ACTIVITY_TTL_MS,
+  AgentActivity,
+  ICON_TICK_MS,
+  SESSION_TICK_MS,
+} from "./activity";
 
 function setup(tabs: Record<number, { active: boolean }>) {
   const sent: Array<{ id: number; message: unknown }> = [];
@@ -36,12 +41,23 @@ function setup(tabs: Record<number, { active: boolean }>) {
       setBadgeBackgroundColor: vi.fn(async () => {}),
     },
   };
+  const blink = { start: vi.fn(), stop: vi.fn(async () => {}) };
+  const state = { enabled: true };
   const activity = new AgentActivity({
     b: b as never,
-    enabled: () => true,
-    restoreBadge: async () => {},
+    enabled: () => state.enabled,
+    startBlink: blink.start,
+    stopBlink: blink.stop,
   });
-  return { activity, sent, injected, tabs, activate: () => onActivated?.() };
+  return {
+    activity,
+    sent,
+    injected,
+    tabs,
+    blink,
+    state,
+    activate: () => onActivated?.(),
+  };
 }
 
 describe("AgentActivity: favicon ticks and the action layer", () => {
@@ -103,5 +119,42 @@ describe("AgentActivity: favicon ticks and the action layer", () => {
     await activity.touch(1, "click");
     await vi.advanceTimersByTimeAsync(ICON_TICK_MS * 10);
     expect(sent).toHaveLength(0);
+  });
+
+  it("blinks the dot of the touched tab from the first action, re-arms it on each action and ends it ~3.65 s after the last", async () => {
+    const { activity, blink } = setup({ 1: { active: true } });
+    await activity.touch(1, "click");
+    expect(blink.start).toHaveBeenCalledWith(1);
+    await vi.advanceTimersByTimeAsync(3_000);
+    await activity.touch(1, "click"); // re-arms the end
+    await vi.advanceTimersByTimeAsync(3_000);
+    expect(blink.stop).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(ACTIVITY_TTL_MS);
+    expect(blink.stop).toHaveBeenCalledTimes(1);
+    expect(blink.stop).toHaveBeenCalledWith(1);
+  });
+
+  it('no blink for tools that touch no tab, or with "Show agent activity" off', async () => {
+    const { activity, blink, state } = setup({ 1: { active: true } });
+    await activity.touch(1, "list_tabs");
+    state.enabled = false;
+    await activity.touch(1, "click");
+    expect(blink.start).not.toHaveBeenCalled();
+  });
+
+  it("stopAll and a closed tab end the blink at once and leave no timer behind", async () => {
+    const { activity, blink } = setup({
+      1: { active: true },
+      2: { active: true },
+    });
+    await activity.touch(1, "click");
+    await activity.touch(2, "click");
+    activity.forget(2);
+    expect(blink.stop).toHaveBeenCalledWith(2);
+    await activity.stopAll();
+    expect(blink.stop).toHaveBeenCalledWith(1);
+    await vi.advanceTimersByTimeAsync(SESSION_TICK_MS * 10);
+    expect(blink.stop).toHaveBeenCalledTimes(2); // no late end timers
+    expect(vi.getTimerCount()).toBe(0);
   });
 });

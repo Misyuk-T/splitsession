@@ -1398,3 +1398,19 @@ Goal: a container tab that is not in its container's tab group (dragged out, or 
   after "Re-group"; a split view of one container stays in its group. Both fail on the previous code (the joined tab was
   reopened). The e2e joins with `tabs.group` + `tabs.createSplit`, not Chrome's own UI (drag onto a tab, "Add tab to split
   view"), whose event order is not measurable from tests: manual check in the release gate (`docs/development.md`).
+
+## Agent dot instead of the amber "ON" and the "AI" badge (2026-10-14)
+
+- **Idle, bridge on:** plain tabs get a one-space badge on the agent purple (`#8b5cf6`, `AGENT_COLOR` moved to
+  `src/core/indicators.ts`, so `badges.ts` does not import the Full-only overlay module); container tabs keep their container
+  dot, with no letters. Bridge off: no purple dot. Held `!` and the move notice (`→`) keep priority over the dot and the blink.
+- **Blink instead of "AI":** while the agent works with a tab the dot of that tab blinks, four steps of 125 ms (a 0.5 s
+  cycle): purple and `#c4b5fd` on plain tabs, the container colour and purple on container tabs (the light purple when the
+  container is purple itself). Colours between are opaque mixes (`mixHex`), since badge colours take no reliable alpha.
+  `AgentActivity` still decides start and end (each touch re-arms an end timer `ACTIVITY_TTL_MS + 150` ms long); `BadgeIndicator`
+  owns the interval (`startBlink` / `stopBlink` / `stopAllBlinks` / `forget`) and repaints through `apply`, so a navigation in
+  the middle of a blink, a notice or a held tab cannot be overwritten. The interval exists only while a tab blinks; it ends on the
+  end timer, "Show agent activity" off or bridge off (`stopAll`, and `apply` ends it when the bridge is off), and tab removal. A
+  sleeping worker loses its timers, and the idle dot is what a restarted worker paints. Setting off: `touch` returns before the blink.
+- Tests: `badges.test.ts` (state machine, no leaked timers), `activity.test.ts` (start, re-arm, end, stop), `mixHex`; e2e samples the
+  badge colour a dozen times during a tool call and checks the idle dot before and after (`agent-activity.spec.ts`).

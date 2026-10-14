@@ -311,12 +311,13 @@ toolbar badge's colour dot).
   page's own values back when the session ends, when "Show agent activity" or the bridge is switched off, and when the page
   unloads. No icon node is removed, moved or replaced; `apple-touch-icon` is not touched; a value the page sets meanwhile
   becomes the new original; a page without an icon link gets one link of ours, removed alone. Chrome follows an `href`
-  change (SVG-icon pages too), so the tab strip animates. The toolbar button shows **AI** on a purple badge for that tab for
-  ~2.6 s after each action; the tab's own badge comes back afterwards.
-- **While the bridge is on**, every tab's toolbar badge is amber: **ON** on amber for plain tabs, **ON** on the
-  container's colour for container tabs; the button's tooltip says the agent has full access.
+  change (SVG-icon pages too), so the tab strip animates. The toolbar button's dot of that tab **blinks** (about twice a second:
+  purple and a lighter purple; on a container tab the container's colour and purple) for as long as the agent works with
+  the tab and ~3.6 s after its last action; then the idle dot comes back. With "Show agent activity" off it does not blink.
+- **While the bridge is on**, plain tabs show a small **purple dot** on the toolbar button (idle, steady); container tabs keep
+  their container-colour dot. With the bridge off there is no purple dot at all. The button's tooltip says the agent has full access.
 - `list_tabs`, `list_containers` and `bridge_info` touch no specific tab: popup counter and list only.
-- A page that cannot be scripted (`chrome://`, the Web Store, error pages) gets the badge only. Nothing here can make a
+- A page that cannot be scripted (`chrome://`, the Web Store, error pages) gets the blinking dot only. Nothing here can make a
   tool fail.
 - What the agent reads is not changed by it: `get_tab_text` and `get_tab_html` leave the overlay out (and show the page's own icon values), `snapshot` does not see the overlay (it is `aria-hidden`), `list_tabs` and the `title` fields
   are given **without** the mark, and `screenshot_tab` hides the overlay for the moment of capture. `run_js` (an

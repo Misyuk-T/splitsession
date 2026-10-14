@@ -1,12 +1,10 @@
 import type { browser } from "wxt/browser";
 
-import { readableTextColor } from "../../core";
 import { AGENT_GLYPHS } from "../../ui/agent-glyphs";
 import {
   type ActivityCommand,
   type ActivityInspection,
   type ActivityRect,
-  AGENT_COLOR,
   pageActivity,
 } from "./overlay";
 
@@ -29,7 +27,7 @@ export const LEASE_MS = 3 * SESSION_TICK_MS;
  * tabs with a message at this interval and the page draws the frame the clock says (overlay.ts).
  */
 export const ICON_TICK_MS = 33;
-/** The badge is put back a little after the page side has faded, so the two never flicker against each other. */
+/** The blinking dot is put back to idle a little after the page side has faded, so the two never flicker against each other. */
 const BADGE_HOLD_MS = ACTIVITY_TTL_MS + 150;
 
 export type MarkKind = "read" | "act";
@@ -82,8 +80,10 @@ export interface ActivityDeps {
   b: Browser;
   /** The "Show agent activity" setting, read at every action. */
   enabled: () => boolean;
-  /** Puts the tab's own badge (the container's colour dot, or none) back. */
-  restoreBadge: (tabId: number) => Promise<void>;
+  /** The tab's toolbar dot starts to blink (a no-op while it already blinks, or while the bridge is off). */
+  startBlink: (tabId: number) => void;
+  /** The blink ends and the tab's own badge (idle dot, container dot, or none) comes back. */
+  stopBlink: (tabId: number) => Promise<void>;
   /**
    * Whether the agent bridge's debugger session is held on the tab by more than its idle window (a viewport override, a
    * watch, an open dialog): that keeps the agent session alive. The idle minute after a burst of actions does not.
@@ -105,9 +105,9 @@ interface Session {
  * tab lasts while the bridge's debugger session is attached to it, or the agent touched it within `SESSION_MS`. During
  * it the page shows a steady, slowly breathing neon glow along its edges and a breathing favicon; each action adds a
  * brighter layer, a pill with the glyph (eye for reads, pointer for actions) and a pulse at the target (overlay.ts); the
- * "AI" badge is on the toolbar button. The session is kept alive by `session` commands that renew a lease on the page
+ * toolbar button's dot of that tab blinks (badges.ts) until `BADGE_HOLD_MS` after the last action. The session is kept alive by `session` commands that renew a lease on the page
  * side; a new document (navigation) gets it again at commit. Every step is best effort: a page that cannot be scripted
- * (chrome://, the Web Store, an error page) gets the badge only, and nothing here can make a tool fail. The tab title is
+ * (chrome://, the Web Store, an error page) gets the blinking dot only, and nothing here can make a tool fail. The tab title is
  * never touched.
  */
 export class AgentActivity {
@@ -151,13 +151,11 @@ export class AgentActivity {
     const look = TOOL_LOOK[tool];
     if (!look || !this.d.enabled() || tabId < 0) return;
     this.hold(tabId);
-    const [done] = await Promise.all([
-      this.inject(
-        tabId,
-        this.command("show", { label: look.label, kind: look.kind, rect }),
-      ),
-      this.badge(tabId),
-    ]);
+    this.blink(tabId);
+    const done = await this.inject(
+      tabId,
+      this.command("show", { label: look.label, kind: look.kind, rect }),
+    );
     this.markScripted(tabId, done);
   }
 
@@ -183,7 +181,7 @@ export class AgentActivity {
         if (timer) clearTimeout(timer);
         this.badgeTimers.delete(tabId);
         await this.inject(tabId, this.command("stop"));
-        await this.d.restoreBadge(tabId).catch(() => {});
+        await this.d.stopBlink(tabId).catch(() => {});
       }),
     );
   }
@@ -298,6 +296,7 @@ export class AgentActivity {
     const timer = this.badgeTimers.get(tabId);
     if (timer) clearTimeout(timer);
     this.badgeTimers.delete(tabId);
+    void this.d.stopBlink(tabId).catch(() => {}); // ends the interval
   }
 
   /** Renews the page side's lease (or starts it in a new document). */
@@ -353,35 +352,16 @@ export class AgentActivity {
     }
   }
 
-  private async badge(tabId: number): Promise<void> {
-    const action = this.d.b.action as unknown as {
-      setBadgeText(details: { tabId: number; text: string }): Promise<void>;
-      setBadgeBackgroundColor(details: {
-        tabId: number;
-        color: string;
-      }): Promise<void>;
-      setBadgeTextColor?(details: {
-        tabId: number;
-        color: string;
-      }): Promise<void>;
-    };
-    try {
-      await action.setBadgeText({ tabId, text: "AI" });
-      await action.setBadgeBackgroundColor({ tabId, color: AGENT_COLOR });
-      await action.setBadgeTextColor?.({
-        tabId,
-        color: readableTextColor(AGENT_COLOR),
-      });
-    } catch {
-      return; // the tab closed meanwhile
-    }
+  /** The dot of the tab blinks; the end is re-armed by every touch. */
+  private blink(tabId: number): void {
+    this.d.startBlink(tabId);
     const previous = this.badgeTimers.get(tabId);
     if (previous) clearTimeout(previous);
     this.badgeTimers.set(
       tabId,
       setTimeout(() => {
         this.badgeTimers.delete(tabId);
-        void this.d.restoreBadge(tabId).catch(() => {});
+        void this.d.stopBlink(tabId).catch(() => {});
       }, BADGE_HOLD_MS),
     );
   }

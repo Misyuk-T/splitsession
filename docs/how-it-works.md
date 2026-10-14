@@ -22,6 +22,6 @@ SplitSession separates accounts on the same site; it is not a privacy tool and n
 
 ## The agent bridge (Full)
 
-The bridge is **off by default** and one all-or-nothing switch: when on, the agent can do everything in every tab, logged-in pages included. Every tab's toolbar badge turns amber, and pages the agent touches show a glow and a label (this can be turned off). Chrome shows its own "started debugging this browser" bar meanwhile. The debugger is never used to read or set cookies, headers or storage, so container isolation still holds.
+The bridge is **off by default** and one all-or-nothing switch: when on, the agent can do everything in every tab, logged-in pages included. Plain tabs get a small purple dot on the toolbar button (it blinks when the agent acts on that tab), and pages the agent touches show a glow and a label (this can be turned off). Chrome shows its own "started debugging this browser" bar meanwhile. The debugger is never used to read or set cookies, headers or storage, so container isolation still holds.
 
 Chrome's native messaging connects the extension to a local host; the MCP server talks to the host over a private Unix socket (mode 0600), never over a network port. The tool list, the install options and the security model are in [agents.md](agents.md).

@@ -40,7 +40,8 @@ export function createAgentSide(
       const activity = new AgentActivity({
         b,
         enabled: () => extras.settings.get().agentActivity,
-        restoreBadge: (tabId) => extras.badges.apply(tabId),
+        startBlink: (tabId) => extras.badges.startBlink(tabId),
+        stopBlink: (tabId) => extras.badges.stopBlink(tabId),
         held: (tabId) => cdp.isHeld(tabId),
       });
       // CDP sessions of the agent bridge: attached on demand while the bridge is on (its listeners register right here).

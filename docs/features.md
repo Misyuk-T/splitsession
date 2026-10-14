@@ -38,7 +38,7 @@ One codebase, two builds. **Lite** is containers only and is the edition for the
 | --- | --- | --- |
 | Containers, isolation, strict mode, domain rules, tab groups, restore, export / import, `open.html` and `#ctr=` | yes | yes |
 | Agent bridge (native messaging, MCP server, Chrome DevTools Protocol), off by default | not in the bundle | yes |
-| Agent activity display (glow, label, tab-title mark, "AI" badge) | not in the bundle | yes |
+| Agent activity display (glow, label, toolbar dot that blinks when the agent acts on a tab) | not in the bundle | yes |
 | "Show the container name to pages" (`data-ctr`, `[name]` title prefix), off by default | not in the bundle | yes |
 | Extra permissions | none | `nativeMessaging`, `debugger` |
 | Extension ID | assigned by the Web Store (a local build gets a path-derived one) | fixed: `hapfikidacgfgnnajkgnaednpgnhmffk` |

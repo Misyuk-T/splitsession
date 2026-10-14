@@ -4,6 +4,7 @@ import {
   CONTAINER_HEX,
   containerColorOfGroup,
   GROUP_COLOR,
+  mixHex,
   OUTSIDE_MARK,
   prefixedTitle,
   readableTextColor,
@@ -123,5 +124,15 @@ describe("containerColorOfGroup", () => {
     }
     expect(containerColorOfGroup("cyan", "red")).toBe("turquoise");
     expect(containerColorOfGroup("grey", "red")).toBeNull();
+  });
+});
+
+describe("mixHex", () => {
+  it("mixes two colours and clamps", () => {
+    expect(mixHex("#000000", "#ffffff", 0)).toBe("#000000");
+    expect(mixHex("#000000", "#ffffff", 1)).toBe("#ffffff");
+    expect(mixHex("#000000", "#ffffff", 0.5)).toBe("#808080");
+    expect(mixHex("#8b5cf6", "#c4b5fd", 2)).toBe("#c4b5fd");
+    expect(mixHex("nope", "#ffffff", 0.5)).toBe("nope");
   });
 });

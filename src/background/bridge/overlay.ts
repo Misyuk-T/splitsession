@@ -41,6 +41,7 @@
  * `hide`/`unhide` take the overlay out of a screenshot.
  */
 
+import { AGENT_COLOR } from "../../core";
 import type { GlyphPart } from "../../ui/agent-glyphs";
 
 export interface ActivityRect {
@@ -115,7 +116,7 @@ export interface ActivityInspection {
 export const OVERLAY_TAG = "facet-agent-overlay";
 export const OVERLAY_STATE_KEY = "__facetAgentActivity";
 /** The colour of every agent indicator (glow, favicon, pill, toolbar badge): "the agent is here". */
-export const AGENT_COLOR = "#8b5cf6";
+export { AGENT_COLOR };
 
 export async function pageActivity(
   cmd: ActivityCommand,
