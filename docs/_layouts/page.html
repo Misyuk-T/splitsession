@@ -5,11 +5,15 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{{ page.title | escape }}</title>
   <meta name="description" content="How SplitSession handles your data: everything stays on your computer, and the extension sends nothing to the developer or to any server.">
-  <meta name="theme-color" content="#3f3fd9">
+  <meta name="color-scheme" content="light dark">
+  <meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#000000" media="(prefers-color-scheme: dark)">
   <link rel="canonical" href="https://misyuk-t.github.io/splitsession{{ page.url }}">
+  <link rel="icon" type="image/svg+xml" href="assets/logo.svg">
   <link rel="icon" type="image/png" sizes="32x32" href="assets/icon-32.png">
   <link rel="apple-touch-icon" href="assets/icon-128.png">
-  <link rel="preload" href="assets/fonts/inter-latin-wght-normal.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="preload" href="assets/fonts/silkscreen-latin-700-normal.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="preload" href="assets/fonts/jetbrains-mono-latin-wght-normal.woff2" as="font" type="font/woff2" crossorigin>
   <link rel="stylesheet" href="assets/site.css">
   <meta property="og:type" content="article">
   <meta property="og:site_name" content="SplitSession">
@@ -21,32 +25,43 @@
 <body>
   <a class="skip" href="#main">Skip to content</a>
 
-  <header class="site-header">
+  <header class="top">
     <div class="wrap">
-      <a class="brand" href="./"><img src="assets/icon-128.png" width="30" height="30" alt="">SplitSession</a>
-      <nav class="nav" aria-label="Main">
-        <a href="https://github.com/Misyuk-T/splitsession">GitHub</a>
-      </nav>
+      <a class="brand" href="./"><img class="logo" src="assets/logo.svg" width="32" height="32" alt="">SplitSession</a>
     </div>
   </header>
 
   <main id="main" class="prose">
-    <a class="back" href="./">&larr; Back to SplitSession</a>
-    {{ content }}
+    <div class="wrap">
+      <a class="back" href="./">&lt; Back to SplitSession</a>
+      {{ content }}
+    </div>
   </main>
 
-  <footer class="site-footer">
+  <footer class="foot">
     <div class="wrap">
-      <a class="brand" href="./"><img src="assets/icon-128.png" width="30" height="30" alt="">SplitSession</a>
-      <ul class="foot-links">
+      <ul>
+        <li><a href="https://github.com/Misyuk-T/splitsession/blob/main/LICENSE">MIT</a></li>
         <li><a href="https://github.com/Misyuk-T/splitsession">GitHub</a></li>
-        <li><a href="https://github.com/Misyuk-T/splitsession/releases/latest">Releases</a></li>
         <li><a href="privacy">Privacy</a></li>
-        <li><a href="https://github.com/Misyuk-T/splitsession/issues">Report an issue</a></li>
-        <li><a href="https://github.com/Misyuk-T/splitsession/blob/main/LICENSE">MIT license</a></li>
+        <li><a href="https://github.com/Misyuk-T/splitsession/issues">Issues</a></li>
       </ul>
-      <p class="foot-meta">SplitSession is free and open source under the MIT license, by Taras Misiuk.</p>
+      <p>By Taras Misiuk. This site sets no cookies and loads nothing from other hosts.</p>
     </div>
   </footer>
+
+  <script>
+    (function () {
+      var tables = document.querySelectorAll(".prose table");
+      Array.prototype.forEach.call(tables, function (t) {
+        var heads = Array.prototype.map.call(t.querySelectorAll("thead th"), function (th) { return th.textContent.trim(); });
+        Array.prototype.forEach.call(t.querySelectorAll("tbody tr"), function (tr) {
+          Array.prototype.forEach.call(tr.children, function (td, i) {
+            if (i > 0 && heads[i]) td.setAttribute("data-label", heads[i]);
+          });
+        });
+      });
+    })();
+  </script>
 </body>
 </html>
