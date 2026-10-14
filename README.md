@@ -2,12 +2,16 @@
 
 **Same site, separate logins.**
 
+![Two accounts, side by side: open the popup, add a Work container, sign in as someone else on the same site, switch between the tabs](docs/media/how-it-works.gif)
+
 [![CI](https://github.com/Misyuk-T/splitsession/actions/workflows/ci.yml/badge.svg)](https://github.com/Misyuk-T/splitsession/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
 SplitSession is an open-source Manifest V3 extension that brings Firefox-style containers to Chrome. Keep several accounts of the same site open **side by side, in different tabs of one Chrome profile**: two Reddit accounts, a work and a personal Supabase, all logged in at the same moment, with no second profile and no second browser. Each container has its own cookies and page storage; a tab belongs to one container, and everything that tab does happens inside it.
 
-![Two accounts of the same site, logged in at the same time in two containers](docs/release/assets/screenshot-1-two-accounts.png)
+It also works with Chrome's split view: two accounts of one site, literally side by side. Chrome takes tabs out of their tab group while they are in a split view, so SplitSession puts a ⧉ in front of their titles. (The picture composes two real container tabs; a split view cannot be scripted.)
+
+![Two container tabs of the same site shown as the two halves of Chrome's split view, signed in as two accounts](docs/media/split-view.png)
 
 ## Features
 
@@ -36,6 +40,8 @@ Lite is the Chrome Web Store edition. Full adds the agent bridge; its code is no
 **Chrome Web Store:** coming soon.
 
 **From GitHub Releases** (Lite or Full):
+
+![Install from a GitHub Release: download the zip, unzip it, turn on Developer mode, Load unpacked, pin the toolbar button](docs/media/install.gif)
 
 1. Download `splitsession-lite-<version>.zip` or `splitsession-full-<version>.zip` from [Releases](https://github.com/Misyuk-T/splitsession/releases) and unzip it.
 2. Open `chrome://extensions` and turn on *Developer mode*.
