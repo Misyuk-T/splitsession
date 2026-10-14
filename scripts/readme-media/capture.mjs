@@ -22,7 +22,7 @@ const POST = "Spring release is live. Thanks for the feedback!";
 const UNPACKED = "/tmp/splitsession-readme-media/splitsession-lite-0.1.0";
 
 /** Software rasterising with fixed font rendering: no run-to-run differences in anti-aliased corners and text. */
-const RASTER = [
+export const RASTER = [
   "--disable-gpu",
   "--disable-lcd-text",
   "--font-render-hinting=none",
@@ -42,12 +42,12 @@ async function steady(shoot) {
   throw new Error("the page never settled");
 }
 
-const assertSize = (png, label, size = VIEWPORT) => {
+const assertSize = (png, label, size = VIEWPORT, scale = 1) => {
   const w = png.readUInt32BE(16);
   const h = png.readUInt32BE(20);
-  if (w !== size.width || h !== size.height)
+  if (w !== size.width * scale || h !== size.height * scale)
     throw new Error(
-      `${label}: ${w}x${h}, expected ${size.width}x${size.height}`,
+      `${label}: ${w}x${h}, expected ${size.width * scale}x${size.height * scale}`,
     );
   return png;
 };
@@ -266,21 +266,29 @@ export async function captureHowItWorks(extension) {
  * Two accounts of the demo social network in two containers, both tabs OUT of their groups (what Chrome does with the tabs of a
  * split view), as the real extension then shows them: "⧉ " in front of the title. Chrome's split view itself cannot be
  * driven from Playwright; each half is photographed at half the window's width, the pair is composed by scenes.mjs.
+ * The Chrome Web Store pictures (scripts/store-assets.mjs) take the same pair at their own size and at 2x.
  * @param {string} extension folder of the built Lite extension
+ * @param {{ scale?: number, width?: number, height?: number, port?: number }} [options] picture scale, size of each
+ *   half in CSS pixels and the demo server's port (the README's own by default)
  */
-export async function captureSplitView(extension) {
-  const half = (CONTENT.w - 2) / 2;
-  const server = await startDemoSite(PORT);
+export async function captureSplitView(extension, options = {}) {
+  const {
+    scale = 1,
+    width: half = (CONTENT.w - 2) / 2,
+    height = CONTENT.h,
+    port = PORT,
+  } = options;
+  const server = await startDemoSite(port);
   const profile = mkdtempSync(resolve(tmpdir(), "splitsession-readme-"));
   const ctx = await chromium.launchPersistentContext(profile, {
     channel: "chromium",
     headless: true,
-    deviceScaleFactor: 1,
-    viewport: { width: half, height: CONTENT.h },
+    deviceScaleFactor: scale,
+    viewport: { width: half, height },
     args: [
       `--disable-extensions-except=${extension}`,
       `--load-extension=${extension}`,
-      `--host-resolver-rules=MAP *.example 127.0.0.1:${PORT}`,
+      `--host-resolver-rules=MAP *.example 127.0.0.1:${port}`,
       ...RASTER,
     ],
   });
@@ -330,7 +338,8 @@ export async function captureSplitView(extension) {
         png: assertSize(
           await steady(() => page.screenshot({ animations: "disabled" })),
           user,
-          { width: half, height: CONTENT.h },
+          { width: half, height },
+          scale,
         ),
         title: await page.title(),
         color: made[user].color,

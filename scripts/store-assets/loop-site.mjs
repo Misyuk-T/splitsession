@@ -1,4 +1,5 @@
-// "Loop" (loop.example): a small invented social network for the README animations (scripts/readme-media.mjs).
+// "Loop" (loop.example): a small invented social network for the README animations (scripts/readme-media.mjs) and the
+// Chrome Web Store pictures (scripts/store-assets.mjs).
 // Neutral on purpose: its own name and logo, no resemblance to a real service. Two demo accounts, a personal one
 // (@dana) and a brand one (@northwind_studio), each with its own feed. Signing in is a cookie, so the two accounts
 // only stay apart because SplitSession gives each container tab its own cookies. The sign-in form and the composer
@@ -161,7 +162,8 @@ main{flex:1;min-width:0}
 .txt{min-width:0;flex:1}.top{display:flex;gap:6px;align-items:baseline;white-space:nowrap;overflow:hidden}.top b{font-weight:650;overflow:hidden;text-overflow:ellipsis}
 .top .h{color:#6f7a7a;font-size:13px;overflow:hidden;text-overflow:ellipsis}.top time{margin-left:auto;color:#6f7a7a;font-size:12px;flex:none}
 .body{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;margin-top:1px}
-.acts{color:#6f7a7a;font-size:12px;margin-top:3px}`,
+.acts{color:#6f7a7a;font-size:12px;margin-top:3px}
+@media (min-width:1000px){main{flex:none;width:580px}}`,
   );
 }
 

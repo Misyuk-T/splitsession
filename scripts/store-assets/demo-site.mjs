@@ -4,7 +4,8 @@
 //
 // "Postline" (mail.example) is a small webmail with two demo accounts. Signing in is a cookie, so the two accounts only
 // stay apart because SplitSession gives each container tab its own cookies: that is the thing the pictures show.
-// "Loop" (loop.example, loop-site.mjs) is a small social network for the README animations.
+// "Loop" (loop.example, loop-site.mjs) is a small social network: the demo of the README animations and of the Chrome Web
+// Store pictures. The pictures no longer use Postline; it stays as a second demo site.
 import { readFileSync } from "node:fs";
 import { createServer } from "node:http";
 import { createRequire } from "node:module";

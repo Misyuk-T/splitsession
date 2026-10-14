@@ -2,21 +2,24 @@
 //
 //   pnpm store:assets [outDir]        (builds the Lite edition first; needs `pnpm exec playwright install chromium` once)
 //
-//   screenshot-1-two-accounts.png   1280x800   two accounts of one site side by side, tab groups, popup open
+//   screenshot-1-two-accounts.png   1280x800   a personal and a brand account in two tab groups of one window, popup open
 //   screenshot-2-popup.png          1280x800   the popup close-up and the tab groups it makes
-//   screenshot-3-settings.png       1280x800   Settings: tab groups, restore after restart, strict mode
-//   screenshot-4-domain-rules.png   1280x800   Domain rules (dark theme)
+//   screenshot-3-split-view.png     1280x800   the two accounts as the halves of Chrome's split view (outside the groups)
+//   screenshot-4-settings.png       1280x800   Settings: tab groups, restore after restart, strict mode
 //   screenshot-5-restart.png        1280x800   after a browser restart: groups are back, an unsure tab waits for a choice
 //   promo-small-440x280.png         440x280    small promo tile
 //   promo-marquee-1400x560.png      1400x560   marquee promo tile
 //
 // How: Playwright's Chromium loads the built Lite extension (.output/lite/chrome-mv3) and a small demo server
-// (scripts/store-assets/demo-site.mjs: fake sites on *.example names). The real extension makes the containers, tab
-// groups and domain rules, two demo accounts sign in to the same site in two containers, and the REAL popup, settings
-// page and sites are photographed at 2x. scripts/store-assets/frames.mjs then composes marketing frames (brand
-// background, headline, a drawn browser window whose tab strip comes from the real group data) and every PNG is
-// flattened to 24-bit RGB (the Store refuses alpha). Everything is fixed (demo data, ports, sizes), nothing leaves the
-// machine, and only a temporary profile is touched.
+// (scripts/store-assets/demo-site.mjs: fake sites on *.example names; the demo social network is "Loop",
+// loop-site.mjs). The real extension makes the containers and tab groups, two demo accounts (personal and brand) sign in
+// to Loop in two containers, and the REAL popup, settings page, held-tab page and Loop pages are photographed at 2x. The
+// split-view pair is the README's capture (scripts/readme-media/capture.mjs): Chrome's split view cannot be driven from
+// Playwright, so two real container tabs are taken out of their groups (which is what Chrome does with a split pair,
+// and what puts the mark in their titles) and composed as a pair. scripts/store-assets/frames.mjs then composes
+// marketing frames (brand background, headline, a drawn browser window whose tab strip comes from the real group and
+// title data) and every PNG is flattened to 24-bit RGB (the Store refuses alpha). Everything is fixed (demo data,
+// ports, sizes, software rasterising), nothing leaves the machine, and only a temporary profile is touched.
 /* eslint-disable import/extensions -- local .mjs modules, run directly by node */
 /* global chrome -- the callbacks of worker.evaluate run inside the extension's service worker */
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
@@ -25,14 +28,17 @@ import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { chromium } from "@playwright/test";
 
+import { captureSplitView, RASTER } from "./readme-media/capture.mjs";
 import { startDemoSite } from "./store-assets/demo-site.mjs";
 import {
   marquee,
+  PAGE,
   promoTile,
+  shotGroups,
   shotPopup,
   shotRestart,
   shotSettings,
-  shotTwoAccounts,
+  shotSplit,
 } from "./store-assets/frames.mjs";
 import { flattenPng, pngInfo } from "./store-assets/png.mjs";
 
@@ -40,9 +46,11 @@ const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const out = resolve(process.argv[2] ?? resolve(root, "docs/release/assets"));
 const extension = resolve(root, ".output/lite/chrome-mv3");
 const PORT = 47401;
-const PANE = { width: 599, height: 526 };
 const SETTINGS = { width: 880, height: 520 };
 mkdirSync(out, { recursive: true });
+
+/** Demo accounts of Loop (loop-site.mjs), by the container they sign in to. */
+const HANDLE = { work: "northwind_studio", personal: "dana" };
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -87,11 +95,12 @@ async function capture() {
     channel: "chromium",
     headless: true,
     deviceScaleFactor: 2,
-    viewport: PANE,
+    viewport: { width: PAGE.w, height: PAGE.h },
     args: [
       `--disable-extensions-except=${extension}`,
       `--load-extension=${extension}`,
       `--host-resolver-rules=MAP *.example 127.0.0.1:${PORT}`,
+      ...RASTER,
     ],
   });
   try {
@@ -103,51 +112,39 @@ async function capture() {
       worker.evaluate(([m, a]) => globalThis.facet[m](...a), [method, args]);
     await api("listContainers");
 
-    const work = await api("createContainer", { name: "Work", color: "blue" });
     const personal = await api("createContainer", {
       name: "Personal",
       color: "green",
     });
-    const client = await api("createContainer", {
-      name: "Client A",
-      color: "orange",
-    });
-    const side = await api("createContainer", {
-      name: "Side project",
-      color: "purple",
-    });
-    /** A tab in a container at `url`; resolves once the site has loaded. */
-    const open = async (url, container, landed) => {
+    const work = await api("createContainer", { name: "Work", color: "blue" });
+    await api("createContainer", { name: "Side project", color: "purple" });
+    /** A Loop tab in a container, signed in as `user` by Loop's own sign-in; resolves once the feed has loaded. */
+    const open = async (user, container) => {
       const created = ctx.waitForEvent("page");
-      const tabId = await api("openInContainer", url, container.id);
+      const tabId = await api(
+        "openInContainer",
+        `http://loop.example/login?user=${HANDLE[user]}`,
+        container.id,
+      );
       const page = await created;
-      await page.waitForURL((u) => u.href === landed, { timeout: 15_000 });
+      await page.waitForURL((u) => u.href === "http://loop.example/", {
+        timeout: 15_000,
+      });
       await page.waitForLoadState("load");
       return { tabId, page };
     };
-    const workMail = await open(
-      "http://mail.example/login?user=work",
-      work,
-      "http://mail.example/",
-    );
-    await open("http://board.example/", work, "http://board.example/");
-    const personalMail = await open(
-      "http://mail.example/login?user=personal",
-      personal,
-      "http://mail.example/",
-    );
-    await open("http://invoices.example/", client, "http://invoices.example/");
-    await open("http://notes.example/", side, "http://notes.example/");
+    const personalTab = await open("personal", personal);
+    const workTab = await open("work", work);
     const groupsOut = await readGroups(worker);
 
     const raw = {};
-    for (const { page } of [workMail, personalMail])
+    for (const { page } of [personalTab, workTab])
       await page.evaluate(() => document.fonts.ready);
+    await personalTab.page.bringToFront();
     await sleep(500);
     // No animation may be caught half-way (the switches of the settings page glide), so every picture is the final state.
     const still = { animations: "disabled" };
-    raw.work = await workMail.page.screenshot(still);
-    raw.personal = await personalMail.page.screenshot(still);
+    raw.personal = await personalTab.page.screenshot(still);
 
     const popupFor = async (tabId, name) => {
       const p = await ctx.newPage();
@@ -160,46 +157,26 @@ async function capture() {
       raw[name] = await p.locator("main.popup").screenshot(still);
       await p.close();
     };
-    await popupFor(personalMail.tabId, "popupPersonal");
-    await popupFor(workMail.tabId, "popupWork");
+    await popupFor(personalTab.tabId, "popupPersonal");
+    await popupFor(workTab.tabId, "popupWork");
 
-    const settings = async (name, scheme, hash, fill) => {
-      const p = await ctx.newPage();
-      await p.setViewportSize(SETTINGS);
-      await p.emulateMedia({ colorScheme: scheme });
-      await p.goto(`chrome-extension://${extId}/options.html`);
-      await p.locator(".opt-page").waitFor();
-      await p.evaluate(() => document.fonts.ready);
-      await p.evaluate((h) => {
-        document.querySelector(h).scrollIntoView({ block: "start" });
-      }, hash);
-      if (fill) await fill(p);
-      await sleep(400);
-      raw[name] = await p.screenshot(still);
-      await p.close();
+    const p = await ctx.newPage();
+    await p.setViewportSize(SETTINGS);
+    await p.emulateMedia({ colorScheme: "light" });
+    await p.goto(`chrome-extension://${extId}/options.html`);
+    await p.locator(".opt-page").waitFor();
+    await p.evaluate(() => document.fonts.ready);
+    await p.evaluate(() => {
+      document.querySelector("#general").scrollIntoView({ block: "start" });
+    });
+    await sleep(400);
+    raw.settingsGeneral = await p.screenshot(still);
+    await p.close();
+    return {
+      raw,
+      groups: groupsOut,
+      personalId: personalTab.tabId,
     };
-    await settings("settingsGeneral", "light", "#general");
-    // Rules last: a rule for a site opens that site in its container, so they must not exist while tabs are opened.
-    await api("setDomainRule", {
-      domain: "board.example",
-      action: "always",
-      containerId: work.id,
-    });
-    await api("setDomainRule", {
-      domain: "invoices.example",
-      action: "always",
-      containerId: client.id,
-    });
-    await api("setDomainRule", { domain: "social.example", action: "ask" });
-    await sleep(500);
-    await settings("settingsRules", "dark", "#rules", async (p) => {
-      // A rule being written: the form is the real one, typed into like a user would.
-      await p.locator("#rule-site").fill("photos.example");
-      await p.getByRole("combobox", { name: "Container" }).click();
-      await p.getByRole("option", { name: "Personal" }).click();
-      await p.locator("#rule-site").blur();
-    });
-    return { raw, groups: groupsOut, workId: workMail.tabId };
   } finally {
     await ctx.close();
     server.close();
@@ -226,6 +203,7 @@ async function captureRestart() {
         `--load-extension=${extension}`,
         "--restore-last-session", // Chromium's "continue where you left off"
         `--host-resolver-rules=MAP *.example 127.0.0.1:${PORT}`,
+        ...RASTER,
       ],
     });
   let ctx = await launch();
@@ -248,23 +226,23 @@ async function captureRestart() {
         [tabId, part],
       );
     await api("listContainers");
-    const work = await api("createContainer", { name: "Work", color: "blue" });
     const personal = await api("createContainer", {
       name: "Personal",
       color: "green",
     });
+    const work = await api("createContainer", { name: "Work", color: "blue" });
     const login = async (user, container, extra = {}) => {
       const id = await api(
         "openInContainer",
-        `http://mail.example/login?user=${user}`,
+        `http://loop.example/login?user=${HANDLE[user]}`,
         container.id,
         extra,
       );
-      await loaded(id, "mail.example");
+      await loaded(id, "loop.example");
       return id;
     };
-    await login("work", work);
     await login("personal", personal);
+    await login("work", work);
     const padWindow = () =>
       worker.evaluate(async () => {
         const w = await chrome.windows.create({
@@ -278,7 +256,7 @@ async function captureRestart() {
       windowId: x.windowId,
     });
     await worker.evaluate(
-      (id) => chrome.tabs.update(id, { url: "http://mail.example/?w=x" }),
+      (id) => chrome.tabs.update(id, { url: "http://loop.example/?w=x" }),
       lookAlike,
     );
     await loaded(lookAlike, "w=x");
@@ -296,7 +274,7 @@ async function captureRestart() {
       async (windowId) =>
         (
           await chrome.tabs.create({
-            url: "http://mail.example/?w=x",
+            url: "http://loop.example/?w=x",
             active: false,
             windowId,
           })
@@ -334,7 +312,7 @@ async function captureRestart() {
     // The groups of the first window, as Chrome restored them.
     const groups = await worker.evaluate(async () => {
       const tabs = (await chrome.tabs.query({})).filter(
-        (t) => t.url.startsWith("http://mail.example/") && t.groupId >= 0,
+        (t) => t.url.startsWith("http://loop.example/") && t.groupId >= 0,
       );
       const all = await chrome.tabGroups.query({});
       return all
@@ -346,7 +324,7 @@ async function captureRestart() {
           ),
           tabs: tabs
             .filter((t) => t.groupId === g.id)
-            .map((t) => ({ title: t.title, host: "mail.example", id: t.id })),
+            .map((t) => ({ title: t.title, host: "loop.example", id: t.id })),
         }))
         .filter((g) => g.tabs.length > 0)
         .sort((a, b) => a.index - b.index);
@@ -379,12 +357,15 @@ const stripOf = (groups, active, plain = []) => [
   ...plain,
 ];
 
-const { raw, groups } = await capture();
+const { raw, groups, personalId } = await capture();
 const restart = await captureRestart();
-
-const mailTabs = groups
-  .flatMap((g) => g.tabs)
-  .filter((t) => t.host === "mail.example");
+// The split-view pair: the README's capture, at 2x and at the width of one half of the window of screenshot 3.
+const split = await captureSplitView(extension, {
+  scale: 2,
+  width: (PAGE.w - 2) / 2,
+  height: PAGE.h,
+  port: PORT,
+});
 const settingsTab = (title) => ({
   type: "tab",
   title,
@@ -399,7 +380,7 @@ const heldTab = () => ({
   active: true,
 });
 
-const browser = await chromium.launch({ channel: "chromium" });
+const browser = await chromium.launch({ channel: "chromium", args: RASTER });
 try {
   const render = async (name, html, width, height) => {
     const page = await browser.newPage({ viewport: { width, height } });
@@ -430,13 +411,9 @@ try {
   };
   await render(
     "screenshot-1-two-accounts.png",
-    shotTwoAccounts({
-      strip: stripOf(
-        groups.slice(0, 3),
-        mailTabs.map((t) => t.id),
-      ),
-      work: raw.work,
-      personal: raw.personal,
+    shotGroups({
+      strip: stripOf(groups, [personalId]),
+      page: raw.personal,
       popup: raw.popupPersonal,
     }),
     1280,
@@ -449,33 +426,31 @@ try {
     800,
   );
   await render(
-    "screenshot-3-settings.png",
-    shotSettings({
-      theme: "light",
-      headline: "Simple settings, sensible defaults.",
-      sub: "Tab groups, restore after restart, strict mode: one switch each.",
-      strip: stripOf(
-        groups.slice(0, 2),
-        [],
-        [settingsTab("SplitSession settings")],
-      ),
-      settings: raw.settingsGeneral,
+    "screenshot-3-split-view.png",
+    shotSplit({
+      strip: [
+        {
+          type: "split",
+          tabs: [split.personal, split.work].map((t) => ({
+            title: t.title,
+            host: "loop.example",
+          })),
+        },
+      ],
+      left: split.personal,
+      right: split.work,
     }),
     1280,
     800,
   );
   await render(
-    "screenshot-4-domain-rules.png",
+    "screenshot-4-settings.png",
     shotSettings({
-      theme: "dark",
-      headline: "Right site, right account.",
-      sub: "Open each site in the container you choose, or be asked every time.",
-      strip: stripOf(
-        groups.slice(0, 2),
-        [],
-        [settingsTab("SplitSession settings")],
-      ),
-      settings: raw.settingsRules,
+      theme: "light",
+      headline: "Simple settings, sensible defaults.",
+      sub: "Tab groups, restore after restart, strict mode: one switch each.",
+      strip: stripOf(groups, [], [settingsTab("SplitSession settings")]),
+      settings: raw.settingsGeneral,
     }),
     1280,
     800,
@@ -494,8 +469,8 @@ try {
   await render(
     "promo-marquee-1400x560.png",
     marquee({
-      work: raw.work,
-      personal: raw.personal,
+      work: split.work.png,
+      personal: split.personal.png,
       popup: raw.popupPersonal,
     }),
     1400,

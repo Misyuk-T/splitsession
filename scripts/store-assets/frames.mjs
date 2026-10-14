@@ -45,6 +45,7 @@ const SITE_HEX = {
   "board.example": "#0a7d6a",
   "invoices.example": "#5b3fd1",
   "notes.example": "#b5530b",
+  "loop.example": "#0b7a75",
 };
 
 const THEMES = {
@@ -75,6 +76,9 @@ body{font-family:"Frame Inter",system-ui,sans-serif;color:var(--ink);background:
 .tab{width:150px;height:36px;display:flex;align-items:center;gap:8px;padding:0 10px;border-radius:10px 10px 0 0;font-size:13px;color:var(--tabdim);white-space:nowrap}
 .tab span{overflow:hidden;text-overflow:ellipsis;flex:1}
 .tab.on{background:var(--bar);color:var(--tabtext);font-weight:500}
+.split{display:flex;align-items:flex-end;height:36px;margin:0 4px;background:var(--bar);border-radius:10px 10px 0 0;padding:0 2px}
+.split .tab.on{background:transparent}
+.split>i{width:1px;height:18px;margin-bottom:9px;background:var(--line);flex:none}
 .fav{width:15px;height:15px;border-radius:4px;flex:none}
 .bar{height:44px;background:var(--bar);display:flex;align-items:center;gap:6px;padding:0 12px;border-bottom:1px solid var(--line)}
 .bar svg{width:20px;height:20px;flex:none;stroke:var(--tabdim);fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;margin:0 5px}
@@ -85,7 +89,6 @@ body{font-family:"Frame Inter",system-ui,sans-serif;color:var(--ink);background:
 .panes{display:flex;gap:2px;background:var(--line)}
 .pane{position:relative;overflow:hidden;background:#fff}
 .pane img{display:block}
-.pane b{position:absolute;left:0;right:0;top:0;height:4px}
 .pop{position:absolute;border-radius:12px;box-shadow:0 14px 40px rgba(10,10,40,.38),0 2px 6px rgba(10,10,40,.25);border:1px solid var(--line);overflow:hidden;background:var(--card)}
 .pop img{display:block;width:100%}
 `;
@@ -98,9 +101,10 @@ const backSvg = `<svg viewBox="0 0 24 24"><path d="M19 12H5m6-6-6 6 6 6"/></svg>
 const fwdSvg = `<svg viewBox="0 0 24 24"><path d="M5 12h14m-6-6 6 6-6 6"/></svg>`;
 const reloadSvg = `<svg viewBox="0 0 24 24"><path d="M20 12a8 8 0 1 1-2.5-5.8M20 4v5h-5"/></svg>`;
 
-const caption = (headline, sub) => {
+/** Headline and sub-line; the last `accent` words of the headline are in the accent colour. */
+const caption = (headline, sub, accent = 2) => {
   const words = headline.split(" ");
-  const last = words.splice(-2).join(" ");
+  const last = words.splice(-accent).join(" ");
   return `<div class="cap"><h1>${esc(words.join(" "))} <em>${esc(last)}</em></h1><p>${esc(sub)}</p></div>
 <div class="brand"><img src="${ICON_48}" alt="">SplitSession</div>`;
 };
@@ -119,11 +123,13 @@ const visibleTitle = (title) => title.replace(INVISIBLE, "").trim();
 const tabHtml = (t) =>
   `<div class="tab${t.active ? " on" : ""}">${fav(t.host)}<span>${esc(t.title)}</span></div>`;
 
-/** The tab strip: groups (chip + tabs + a rule in the group colour) and ungrouped tabs, in order. */
+/** The tab strip: groups (chip + tabs + a rule in the group colour), a split-view pair and ungrouped tabs, in order. */
 function stripHtml(items) {
   return `<div class="strip"><div class="lights"><i></i><i></i><i></i></div>${items
     .map((it) => {
       if (it.type === "tab") return tabHtml(it);
+      if (it.type === "split")
+        return `<div class="split">${tabHtml({ ...it.tabs[0], active: true })}<i></i>${tabHtml({ ...it.tabs[1], active: true })}</div>`;
       const hex = GROUP_HEX[it.color] ?? GROUP_HEX.grey;
       return `<div class="grp"><div class="chip" style="background:${hex};${it.color === "yellow" ? "color:#241c00" : ""}">${esc(visibleTitle(it.title))}</div>${it.tabs.map(tabHtml).join("")}<i class="rule" style="background:${hex}"></i></div>`;
     })
@@ -144,28 +150,55 @@ export const cssSize = (png) => ({
 });
 const img = (png) => dataUri(png, "image/png");
 
-/** Screenshot 1: two accounts of one site side by side in one window, the popup open on the active one. */
-export function shotTwoAccounts({ strip, work, personal, popup }) {
-  const w = 1200;
-  const paneW = (w - 2) / 2;
+/** Size of the content area of the 1200-wide browser window of screenshots 1 and 3 (the window has a 1px border). */
+export const PAGE = { w: 1198, h: 522 };
+
+/** Screenshot 1: one window, a personal and a brand account in two tab groups, the popup open on the active tab. */
+export function shotGroups({ strip, page: pic, popup }) {
   const p = cssSize(popup);
-  const content = `<div class="panes" style="height:100%">
-<div class="pane" style="width:${paneW}px"><b style="background:${GROUP_HEX.blue}"></b><img src="${img(work)}" width="${paneW}" alt=""></div>
-<div class="pane" style="width:${paneW}px"><b style="background:${GROUP_HEX.green}"></b><img src="${img(personal)}" width="${paneW}" alt=""></div>
-<div class="pop" style="right:8px;top:6px;width:${p.w}px"><img src="${img(popup)}" alt=""></div></div>`;
+  const content = `<div class="pane" style="width:${PAGE.w}px;height:100%"><img src="${img(pic)}" width="${PAGE.w}" alt=""></div>
+<div class="pop" style="right:8px;top:6px;width:${p.w}px"><img src="${img(popup)}" alt=""></div>`;
   return page(
     "light",
     caption(
-      "Two accounts. One window.",
-      "Sign in twice, side by side, in one Chrome profile.",
+      "Personal and brand. One window.",
+      "Both signed in at once, in two tab groups of one Chrome profile.",
     ) +
       windowHtml({
         x: 40,
         y: 170,
-        w,
+        w: 1200,
         h: 612,
         strip,
-        address: "mail.example",
+        address: "loop.example",
+        content,
+      }),
+  );
+}
+
+/** Screenshot 3: two accounts as the two halves of Chrome's split view (the pair stands outside the groups). */
+export function shotSplit({ strip, left, right }) {
+  const half = (PAGE.w - 2) / 2;
+  const label = (who, hex, x) =>
+    `<div style="position:absolute;left:${x + 14}px;bottom:16px;background:${hex};color:#fff;font-size:15px;line-height:20px;font-weight:700;padding:6px 13px;border-radius:8px">&#x29C9; ${esc(who)}</div>`;
+  const content = `<div class="panes" style="height:100%">
+<div class="pane" style="width:${half}px"><img src="${img(left.png)}" width="${half}" alt=""></div>
+<div class="pane" style="width:${half}px"><img src="${img(right.png)}" width="${half}" alt=""></div></div>
+${label(left.name, GROUP_HEX[left.color], 0)}${label(right.name, GROUP_HEX[right.color], half + 2)}`;
+  return page(
+    "light",
+    caption(
+      "Two accounts, side by side.",
+      "Chrome's split view, a different account in each half.",
+      3,
+    ) +
+      windowHtml({
+        x: 40,
+        y: 170,
+        w: 1200,
+        h: 612,
+        strip,
+        address: "loop.example",
         content,
       }),
   );
@@ -179,7 +212,7 @@ export function shotPopup({ popup, groups }) {
   const rows = groups
     .map((g) => {
       const hex = GROUP_HEX[g.color] ?? GROUP_HEX.grey;
-      return `<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:12px 0;border-top:1px solid var(--line)">
+      return `<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:16px 0;border-top:1px solid var(--line)">
 <div class="chip" style="background:${hex};margin:0;height:28px;line-height:28px;font-size:15px;${g.color === "yellow" ? "color:#241c00" : ""}">${esc(visibleTitle(g.title))}</div>
 ${g.tabs.map((t) => `<div style="display:flex;align-items:center;gap:8px;background:var(--pill);border-radius:9px;padding:6px 12px;font-size:15px;color:var(--tabtext)">${fav(t.host)}${esc(t.title.replace(/ – .*/, ""))} <span style="color:var(--tabdim)">${esc(t.host)}</span></div>`).join("")}</div>`;
     })
@@ -191,8 +224,9 @@ ${g.tabs.map((t) => `<div style="display:flex;align-items:center;gap:8px;backgro
   return page(
     "light",
     `${cap}<div class="pop" style="left:90px;top:${top}px;width:${p.w * scale}px;border-radius:16px"><img src="${img(popup)}" alt=""></div>
-<div style="position:absolute;left:${90 + p.w * scale + 56}px;top:${top}px;height:${Math.round(p.h * scale)}px;right:64px;display:flex;flex-direction:column;background:var(--card);border-radius:16px;box-shadow:var(--shadow);border:1px solid var(--line);padding:22px 24px 8px">
-<div style="font-size:15px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--tabdim)">In your tab strip</div><div style="flex:1;display:flex;flex-direction:column;justify-content:space-evenly;margin-top:10px">${rows}</div></div>`,
+<div style="position:absolute;left:${90 + p.w * scale + 56}px;top:${top}px;height:${Math.round(p.h * scale)}px;right:64px;display:flex;align-items:center">
+<div style="flex:1;background:var(--card);border-radius:16px;box-shadow:var(--shadow);border:1px solid var(--line);padding:22px 24px 10px">
+<div style="font-size:15px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--tabdim);margin-bottom:12px">In your tab strip</div>${rows}</div></div>`,
   );
 }
 
