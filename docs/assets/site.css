@@ -68,7 +68,8 @@ body {
   color: var(--fg);
   font-family: var(--mono);
   font-size: 16px;
-  line-height: 1.6;
+  line-height: 1.45;
+  letter-spacing: -0.01em;
   font-variant-ligatures: none;
   overflow-wrap: break-word;
 }
@@ -133,19 +134,19 @@ code {
 
 h1, h2, h3 {
   font-family: var(--pixel);
-  font-weight: 700;
+  font-weight: 400;
   text-transform: uppercase;
   line-height: 1.2;
-  letter-spacing: 0;
+  letter-spacing: 0.04em;
   margin: 0;
 }
 h2 {
-  font-size: 22px;
+  font-size: 24px;
   margin: 0 0 20px;
   max-width: none;
 }
 @media (min-width: 720px) {
-  h2 { font-size: 26px; }
+  h2 { font-size: 28px; }
 }
 h2::before { content: "\2014\00a0"; }
 h3 { font-size: 16px; margin: 1.6em 0 0.6em; }
@@ -257,11 +258,13 @@ h3 { font-size: 16px; margin: 1.6em 0 0.6em; }
   line-height: 1;
   margin: 0 0 18px;
   white-space: nowrap;
+  font-weight: 700;
 }
 .hero .tagline {
   font-family: var(--pixel);
-  font-weight: 700;
-  font-size: 18px;
+  font-weight: 400;
+  letter-spacing: 0.04em;
+  font-size: 20px;
   text-transform: uppercase;
   line-height: 1.3;
   margin: 0 0 24px;
@@ -382,10 +385,10 @@ figcaption {
   content: counter(step, decimal-leading-zero);
   position: absolute;
   left: 0;
-  font-family: var(--pixel);
+  font-family: var(--mono);
   font-weight: 700;
   font-size: 0.95em;
-  line-height: 1.7;
+  line-height: 1.45;
 }
 
 /* ---------- panel ---------- */
@@ -432,7 +435,7 @@ figcaption {
 }
 .compare thead th, .prose thead th {
   font-family: var(--pixel);
-  font-weight: 700;
+  font-weight: 400;
   font-size: 16px;
   text-transform: uppercase;
   background: var(--fg);
