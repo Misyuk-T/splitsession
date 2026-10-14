@@ -48,7 +48,7 @@ Lite is the Chrome Web Store edition. Full adds the agent bridge; its code is no
 3. Choose *Load unpacked*.
 4. Select the unzipped folder.
 
-To build from source, see [Development](#development).
+To build from source, see *Development* below.
 
 ## Quick start
 
@@ -56,7 +56,12 @@ To build from source, see [Development](#development).
 2. Log in to a site there. Create a second container, open the same site, and log in as someone else. Both stay logged in.
 3. Use the popup's swap button to reopen any tab in another container, or add a **domain rule** in Settings so a site always opens in the right one.
 
-## AI agents (Full)
+## More
+
+<details>
+<summary><b>AI agents (Full edition)</b> — let Claude Code, Codex or Cursor see and use your tabs</summary>
+
+<br>
 
 The Full edition has an optional local MCP server that lets your own agent (Claude Code, Codex, Cursor and others) list your Chrome tabs with their containers and operate them: snapshots, trusted clicks and typing, screenshots, console and network, opening pages in a container. It is **off by default** and one all-or-nothing switch in Settings.
 
@@ -66,7 +71,12 @@ npx splitsession-bridge install   # then switch on "Agent bridge" in Settings > 
 
 Tools, security model and client options: [docs/agents.md](docs/agents.md).
 
-## Security and limits
+</details>
+
+<details>
+<summary><b>Security and limits</b> — what is and isn't isolated</summary>
+
+<br>
 
 SplitSession separates accounts on the same site; it is not a privacy tool and not a sandbox. It sends nothing anywhere ([privacy policy](docs/privacy.md)).
 
@@ -74,7 +84,12 @@ SplitSession separates accounts on the same site; it is not a privacy tool and n
 - One documented residual hole (same-origin frames and popups during navigation): [docs/commit-gap.md](docs/commit-gap.md).
 - Not verified on many real sites yet. Full list: [docs/limits.md](docs/limits.md). How it works: [docs/how-it-works.md](docs/how-it-works.md).
 
-## Development
+</details>
+
+<details>
+<summary><b>Development</b> — build, test, editions</summary>
+
+<br>
 
 Node 22+ and pnpm 10.
 
@@ -88,6 +103,8 @@ pnpm lint && pnpm format:check && pnpm typecheck
 ```
 
 Layout, editions, the end-to-end stand and releases: [docs/development.md](docs/development.md). All documents: [docs/README.md](docs/README.md).
+
+</details>
 
 ## License
 
