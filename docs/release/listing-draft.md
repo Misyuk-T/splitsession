@@ -177,7 +177,7 @@ For developers who use a local AI coding agent that speaks the Model Context Pro
 • Lets the agent list your tabs and their containers, open a page in a given container, read a page, take screenshots, click and type, upload a file, and run JavaScript in a page, so it can test and operate the web apps you work on with the accounts you choose.
 • Needs a separate companion program installed on your computer from the open-source repository (one command, macOS for now). Without it the bridge stays "not connected" and the extension works as a container extension only.
 • Talks only to that local program, through Chrome's native messaging. No network port, no server, no cloud. The extension itself never sends data anywhere.
-• One switch in Settings. While it is on, the toolbar badge turns amber and pages the agent touches show a visible marker; Chrome itself shows "SplitSession started debugging this browser" while the agent is clicking or typing. Turn it off and the connection closes immediately.
+• One switch in Settings. While it is on, a purple dot on the toolbar button blinks when the agent acts and pages the agent touches show a visible marker; Chrome itself shows "SplitSession started debugging this browser" while the agent is clicking or typing. Turn it off and the connection closes immediately.
 
 IMPORTANT: while the bridge is on, the agent can do in your tabs whatever you can do, including on sites where you are signed in. Turn it on only for an agent you trust, and turn it off when you are done.
 
