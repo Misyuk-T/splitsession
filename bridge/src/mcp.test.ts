@@ -25,7 +25,7 @@ describe("mcp side of the bridge", () => {
       unreachableMessage(env, (p) => p === "/b/com.splitsession.bridge.json"),
     ).toMatch(/is off — turn it on in SplitSession Settings/);
     expect(unreachableMessage(env, () => false)).toMatch(
-      /not installed — run `pnpm bridge:install`/,
+      /not installed — run `npx splitsession-bridge install`/,
     );
   });
 

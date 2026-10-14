@@ -13,3 +13,4 @@ pnpm-lock.yaml
 extension-key.pub
 *.md
 docs
+.pnpmfile.cjs

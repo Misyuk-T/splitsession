@@ -39,8 +39,16 @@ export async function runHost(args: string[]): Promise<void> {
     console.debug =
       (...parts: unknown[]) => process.stderr.write(`${parts.join(" ")}\n`);
 
+  // Chrome passes the caller's origin as an argument. The installer's launcher lists the origins its manifest allows
+  // (`--allow-origin=...`: the Full extension, plus an ID given to `install --extension-id`).
+  const allowed = new Set([
+    EXTENSION_ORIGIN,
+    ...args
+      .filter((a) => a.startsWith("--allow-origin=chrome-extension://"))
+      .map((a) => a.slice("--allow-origin=".length)),
+  ]);
   const origin = args.find((a) => a.startsWith("chrome-extension://"));
-  if (origin && origin !== EXTENSION_ORIGIN) {
+  if (origin && !allowed.has(origin)) {
     process.stderr.write(`refusing to run for ${origin}\n`);
     process.exit(2);
   }

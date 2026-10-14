@@ -104,7 +104,7 @@ test.describe("agent bridge", () => {
     const missing = await empty.call("list_tabs");
     expect(missing.isError).toBe(true);
     expect(missing.text).toMatch(
-      /host is not installed — run `pnpm bridge:install`/,
+      /host is not installed — run `npx splitsession-bridge install`/,
     );
     await empty.close();
 
@@ -762,14 +762,10 @@ test.describe("agent bridge", () => {
     await how.click();
     await expect(how).toHaveAttribute("aria-expanded", "true");
     await expect(options.getByTestId("bridge-install-command")).toContainText(
-      "pnpm bridge:install",
+      "npx splitsession-bridge install",
     );
-    await expect(options.getByText(/claude mcp add/).first()).toBeVisible();
-    await expect(
-      options.getByText(
-        /Requires the SplitSession source code; a one-command installer is coming/,
-      ),
-    ).toBeVisible();
+    await expect(options.getByText(/--client codex/).first()).toBeVisible();
+    await expect(options.getByText(/Needs Node\.js 20 or newer/)).toBeVisible();
     await expect(
       options.getByRole("link", { name: /full guide on GitHub/ }),
     ).toHaveAttribute(

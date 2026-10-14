@@ -1,59 +1,36 @@
-// Installs (or with --uninstall removes) the SplitSession agent bridge's Native Messaging host.
+// Developer wrapper around the bridge CLI (bridge/src/cli.ts): builds the bridge from this checkout, then runs the
+// same `install` / `uninstall` that `npx splitsession-bridge` runs.
 //
-//   pnpm bridge:install                      build the bridge, register the host with Google Chrome, print the `claude mcp add` command
-//   pnpm bridge:install --browser chromium   ... with Chromium instead (chrome | chromium | brave | edge | all)
-//   pnpm bridge:install --dir <path>         ... into an explicit NativeMessagingHosts directory (tests)
-//   --host-dir <path>                        where the host program is copied (default ~/Library/Application Support/SplitSession/host)
-//   pnpm bridge:uninstall                    remove the host registration (every browser unless --browser/--dir is given)
+//   pnpm bridge:install                       build, copy the host to the per-user folder, register it with Google Chrome
+//   pnpm bridge:install --browser chromium    ... another browser (chrome | chromium | brave | edge | arc | all)
+//   pnpm bridge:install --client claude       ... and register the MCP server with Claude Code (default here: print only)
+//   pnpm bridge:install --dir <path>          ... into an explicit NativeMessagingHosts directory (tests)
+//   --host-dir <path>                         where the host program is copied (tests)
+//   --no-build                                skip the build (the e2e suite builds once)
+//   pnpm bridge:uninstall                     remove the host registration (every browser unless --browser/--dir is given)
 //
-// It writes only: bridge/dist/ (build output), the host program + launcher in ~/Library/Application Support/SplitSession/host
-// (a copy, because a program Chrome starts must not live in ~/Documents: macOS privacy prompts), and
-// com.splitsession.bridge.json in the browser's NativeMessagingHosts directory. It does not touch Claude's configuration: it prints the command for you to run.
-//
-// Migration from the product's old name (Facet, renamed 2026-10-11): install AND uninstall also remove the old
-// com.facet.bridge.json manifest and the old host copy in ~/Library/Application Support/Facet/host, if present.
+// Unlike the published package, this wrapper does not touch your AI client's configuration unless you pass --client:
+// it defaults to `--client none`, which prints the snippets.
 import { spawnSync } from "node:child_process";
-import {
-  chmodSync,
-  copyFileSync,
-  existsSync,
-  mkdirSync,
-  rmdirSync,
-  rmSync,
-  writeFileSync,
-} from "node:fs";
+import { existsSync } from "node:fs";
 import path from "node:path";
-import { fileURLToPath, pathToFileURL } from "node:url";
+import { fileURLToPath } from "node:url";
 
 const root = fileURLToPath(new URL("..", import.meta.url));
-const dist = path.join(root, "bridge", "dist");
-const entry = path.join(dist, "splitsession-bridge.mjs");
-
-const HOST_NAME = "com.splitsession.bridge";
-const OLD_HOST_MANIFEST_FILE = "com.facet.bridge.json"; // before the rename to SplitSession
-const OLD_MCP_NAME = "facet";
-const EXTENSION_ID = "hapfikidacgfgnnajkgnaednpgnhmffk"; // fixed by the manifest key (docs/development.md)
+const entry = path.join(root, "bridge", "dist", "splitsession-bridge.mjs");
 
 const args = process.argv.slice(2);
-const flag = (name) => args.includes(name);
-const value = (name) => {
-  const at = args.indexOf(name);
-  return at === -1 ? undefined : args[at + 1];
-};
-const uninstall = flag("--uninstall");
-
-// Single-quote for sh.
-const sh = (s) =>
-  /^[A-Za-z0-9_/.:=@%+,-]+$/.test(s) ? s : `'${s.replaceAll("'", `'\\''`)}'`;
-
-if (flag("--help") || flag("-h")) {
+if (args.includes("--help") || args.includes("-h")) {
   console.log(
-    "usage: node scripts/bridge-install.mjs [--uninstall] [--browser chrome|chromium|brave|edge|all] [--dir <NativeMessagingHosts dir>] [--no-build]",
+    "usage: node scripts/bridge-install.mjs [--uninstall] [--browser chrome|chromium|brave|edge|arc|all] [--client claude|codex|cursor|none] [--dir <NativeMessagingHosts dir>] [--host-dir <dir>] [--no-build]",
   );
   process.exit(0);
 }
+const uninstall = args.includes("--uninstall");
+const noBuild = args.includes("--no-build");
+const rest = args.filter((a) => a !== "--uninstall" && a !== "--no-build");
 
-if (!flag("--no-build") && !uninstall) {
+if ((!noBuild && !uninstall) || !existsSync(entry)) {
   const built = spawnSync(
     process.execPath,
     [path.join(root, "bridge", "build.mjs")],
@@ -61,136 +38,15 @@ if (!flag("--no-build") && !uninstall) {
   );
   if (built.status !== 0) process.exit(built.status ?? 1);
 }
-if (!existsSync(path.join(dist, "paths.mjs"))) {
-  const built = spawnSync(
-    process.execPath,
-    [path.join(root, "bridge", "build.mjs")],
-    { stdio: "inherit" },
-  );
-  if (built.status !== 0) process.exit(built.status ?? 1);
-}
-const paths = await import(pathToFileURL(path.join(dist, "paths.mjs")).href);
+if (
+  !uninstall &&
+  !rest.some((a) => a === "--client" || a.startsWith("--client="))
+)
+  rest.push("--client", "none");
 
-// Which directories.
-let targets;
-if (value("--dir")) {
-  targets = [{ name: "custom", dir: path.resolve(value("--dir")) }];
-} else {
-  const wanted = (
-    value("--browser") ?? (uninstall ? "all" : "chrome")
-  ).toLowerCase();
-  const names = wanted === "all" ? paths.BROWSERS : [wanted];
-  for (const n of names) {
-    if (!paths.BROWSERS.includes(n)) {
-      console.error(
-        `unknown browser "${n}"; use ${paths.BROWSERS.join(", ")} or all`,
-      );
-      process.exit(2);
-    }
-  }
-  targets = names.map((n) => ({ name: n, dir: paths.manifestDir(n) }));
-}
-
-const hostDir = path.resolve(value("--host-dir") ?? paths.hostDir());
-const hostEntry = path.join(hostDir, "splitsession-bridge.mjs");
-const launcher = path.join(hostDir, "splitsession-bridge-host");
-
-const claudeAdd = `claude mcp add --scope user splitsession -- ${sh(process.execPath)} ${sh(entry)} mcp`;
-const claudeRemoveOld = `claude mcp remove --scope user ${OLD_MCP_NAME}`;
-
-// Old (Facet) leftovers. The old host copy lives next to the new one's parent: <Application Support>/Facet/host. With an
-// explicit --host-dir (tests) only that directory's old-named files are looked at, never the real user directory.
-const oldHostDir = value("--host-dir")
-  ? hostDir
-  : path.join(path.dirname(paths.socketDir()), "Facet", "host");
-function removeOld() {
-  for (const { dir } of targets) {
-    const file = path.join(dir, OLD_HOST_MANIFEST_FILE);
-    if (existsSync(file)) {
-      rmSync(file);
-      console.log(`removed old ${file}`);
-    }
-  }
-  const gone = [
-    path.join(oldHostDir, "facet-bridge-host"),
-    path.join(oldHostDir, "facet-bridge.mjs"),
-  ].filter((f) => existsSync(f));
-  for (const f of gone) rmSync(f, { force: true });
-  if (gone.length > 0) console.log(`removed old host copy in ${oldHostDir}`);
-  if (oldHostDir !== hostDir) {
-    rmSync(path.join(path.dirname(oldHostDir), "bridge.sock"), { force: true }); // a stale socket of the old host
-    for (const d of [oldHostDir, path.dirname(oldHostDir)]) {
-      try {
-        rmdirSync(d); // only when empty
-      } catch {
-        /* not empty, or already gone */
-      }
-    }
-  }
-}
-
-if (uninstall) {
-  for (const { name, dir } of targets) {
-    const file = path.join(dir, paths.HOST_MANIFEST_FILE);
-    if (existsSync(file)) {
-      rmSync(file);
-      console.log(`removed ${file}`);
-    } else {
-      console.log(`${name}: nothing to remove in ${dir}`);
-    }
-  }
-  rmSync(launcher, { force: true });
-  rmSync(hostEntry, { force: true });
-  try {
-    rmdirSync(hostDir); // only when empty
-  } catch {
-    /* not empty, or already gone */
-  }
-  removeOld();
-  console.log(
-    `\nTo forget the agent in Claude Code too, run:\n\n  claude mcp remove --scope user splitsession\n\nand, if you registered it under the old name:\n\n  ${claudeRemoveOld}\n`,
-  );
-  process.exit(0);
-}
-
-// The launcher pins the node that ran this script, so Chrome (which has a minimal PATH) needs no shell setup.
-mkdirSync(hostDir, { recursive: true, mode: 0o700 });
-copyFileSync(entry, hostEntry);
-writeFileSync(
-  launcher,
-  `#!/bin/sh\n# Generated by scripts/bridge-install.mjs. Chrome starts this; it starts the host with the node it was installed with.\nexec ${sh(process.execPath)} ${sh(hostEntry)} host "$@"\n`,
+const run = spawnSync(
+  process.execPath,
+  [entry, uninstall ? "uninstall" : "install", ...rest],
+  { stdio: "inherit" },
 );
-chmodSync(launcher, 0o755);
-console.log(`host: ${launcher}`);
-
-const manifest = {
-  name: HOST_NAME,
-  description:
-    "SplitSession agent bridge: lets your own AI agent see and operate your Chrome tabs (only while the switch in SplitSession is on).",
-  path: launcher,
-  type: "stdio",
-  allowed_origins: [`chrome-extension://${EXTENSION_ID}/`],
-};
-for (const { name, dir } of targets) {
-  mkdirSync(dir, { recursive: true });
-  const file = path.join(dir, paths.HOST_MANIFEST_FILE);
-  writeFileSync(file, `${JSON.stringify(manifest, null, 2)}\n`);
-  console.log(`${name}: wrote ${file}`);
-}
-
-removeOld();
-
-console.log(`
-Host installed. Next:
-
-  1. Register the MCP server with Claude Code (run this yourself):
-
-     ${claudeAdd}
-
-     (If you used this agent under its old name "Facet", also run: ${claudeRemoveOld})
-
-  2. In Chrome, open the SplitSession popup and turn on "Agent bridge" (Chrome picks the host up the moment you do).
-     Turning the switch off closes the connection; nothing is reachable while it is off.
-
-Remove everything later with: pnpm bridge:uninstall
-`);
+process.exit(run.status ?? 1);

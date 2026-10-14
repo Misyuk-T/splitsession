@@ -1,0 +1,46 @@
+{
+  "name": "splitsession-bridge",
+  "version": "0.1.0",
+  "description": "Companion program of the SplitSession (Full) Chrome extension: lets your own AI agent (Claude Code, Codex, Cursor) see and operate your Chrome tabs through a local MCP server.",
+  "keywords": [
+    "mcp",
+    "chrome",
+    "native-messaging",
+    "splitsession",
+    "containers"
+  ],
+  "license": "MIT",
+  "author": "Taras Misiuk",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Misyuk-T/splitsession.git",
+    "directory": "bridge"
+  },
+  "homepage": "https://github.com/Misyuk-T/splitsession/blob/main/docs/agents.md",
+  "bugs": {
+    "url": "https://github.com/Misyuk-T/splitsession/issues"
+  },
+  "type": "module",
+  "bin": {
+    "splitsession-bridge": "dist/splitsession-bridge.mjs"
+  },
+  "files": [
+    "dist/splitsession-bridge.mjs",
+    "README.md",
+    "LICENSE"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "os": [
+    "darwin",
+    "linux"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "scripts": {
+    "build": "node build.mjs",
+    "prepublishOnly": "node build.mjs"
+  }
+}

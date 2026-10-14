@@ -12,3 +12,8 @@ playwright-report/
 # Extension signing key: never commit the private half (see docs/development.md)
 keys/
 *.pem
+
+# Internal working files (kept locally, not published)
+CLAUDE.md
+docs/history/
+docs/PLAN.md

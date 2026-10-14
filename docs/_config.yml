@@ -1,0 +1,10 @@
+# GitHub Pages (Settings > Pages > Deploy from a branch > main, /docs). Only the privacy policy is meant as a web page:
+# https://misyuk-t.github.io/splitsession/privacy
+title: SplitSession
+description: Same site, separate logins. Containers for Chrome.
+theme: jekyll-theme-minimal
+exclude:
+  - history
+  - release
+  - screenshots
+  - "*.test.*"

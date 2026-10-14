@@ -211,6 +211,19 @@
         "no-restricted-globals": "off",
         "@typescript-eslint/no-shadow": "off"
       }
+    },
+    {
+      "files": ["bridge/**"],
+      "rules": {
+        "import/no-relative-packages": "off",
+        "import/no-extraneous-dependencies": [
+          "error",
+          {
+            "devDependencies": true,
+            "packageDir": ["./", "./bridge"]
+          }
+        ]
+      }
     }
   ]
 }

@@ -703,11 +703,11 @@ test.describe("agent bridge: full hands (CDP)", () => {
       await mcp.json("handle_dialog", {
         tabId,
         accept: true,
-        promptText: "Taras",
+        promptText: "Ada",
       });
       await expect
         .poll(() => textOf(mcp!, tabId, "dialog-out"))
-        .toContain("prompt=Taras");
+        .toContain("prompt=Ada");
       expect(
         (await mcp.call("handle_dialog", { tabId, accept: true })).text,
       ).toMatch(/no JavaScript dialog that SplitSession saw is open/);

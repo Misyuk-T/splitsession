@@ -43,7 +43,7 @@ export function unreachableMessage(
   );
   return installed
     ? 'SplitSession agent bridge is off — turn it on in SplitSession Settings → For AI agents (the "Agent bridge" switch).'
-    : 'SplitSession agent bridge host is not installed — run `pnpm bridge:install` in the SplitSession repository, then turn on the "Agent bridge" switch in SplitSession Settings → For AI agents.';
+    : 'SplitSession agent bridge host is not installed — run `npx splitsession-bridge install` (from a source checkout: `pnpm bridge:install`), then turn on the "Agent bridge" switch in SplitSession Settings → For AI agents.';
 }
 
 class Unreachable extends Error {}

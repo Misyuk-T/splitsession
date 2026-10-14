@@ -20,6 +20,7 @@
     "zip:full": "wxt zip",
     "zip:lite": "FACET_EDITION=lite wxt zip && node scripts/check-lite.mjs",
     "check:lite": "node scripts/check-lite.mjs",
+    "store:assets": "pnpm build:lite && node scripts/store-assets.mjs",
     "typecheck": "tsc --noEmit && tsc --noEmit -p e2e && tsc --noEmit -p bridge",
     "lint": "eslint . --ext .ts,.tsx,.mjs",
     "lint:fix": "eslint . --ext .ts,.tsx,.mjs --fix",

@@ -15,9 +15,7 @@ import { Switch } from "../components/Toggle";
 import { describeError } from "../format";
 import { useBridge } from "../useBridge";
 
-export const INSTALL_COMMAND = "pnpm bridge:install";
-const MCP_ADD_COMMAND =
-  "claude mcp add --scope user splitsession -- <node> <repo>/bridge/dist/splitsession-bridge.mjs mcp";
+export const INSTALL_COMMAND = "npx splitsession-bridge install";
 const DOCS_URL =
   "https://github.com/Misyuk-T/splitsession/blob/main/docs/agents.md";
 
@@ -197,20 +195,20 @@ const ConnectGuide = ({ bridge }: { bridge: ReturnType<typeof useBridge> }) => {
       testId="bridge-install"
     >
       <p class="fx-secondary">
-        Requires the SplitSession source code; a one-command installer is
-        coming.
+        Needs Node.js 20 or newer, on macOS or Linux. The program stays on this
+        computer; it is the only thing that talks to your agent.
       </p>
       <ol class="opt-steps">
         <li>
-          <p>In the SplitSession source folder, run:</p>
+          <p>Run this in a terminal:</p>
           <CopyBlock text={INSTALL_COMMAND} testId="bridge-install-command" />
         </li>
         <li>
           <p>
-            Run the command the installer prints. It looks like this, with your
-            real paths:
+            It finds your AI apps (Claude Code, Codex, Cursor, Claude Desktop,
+            Gemini CLI, VS Code) and asks once which ones to connect. To skip
+            the question, name them: <code>--client codex,cursor</code>.
           </p>
-          <CopyBlock text={MCP_ADD_COMMAND} copyable={false} />
         </li>
         <li>
           <p>Switch “Agent bridge” on above, then check the connection.</p>
