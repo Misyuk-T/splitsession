@@ -77,6 +77,17 @@ export const Options = () => {
           onChanged={() => void reload()}
         />
       </main>
+      <footer class="opt-foot fx-secondary">
+        SplitSession is free and open source.{" "}
+        <a
+          href="https://ko-fi.com/tomashdev/tip"
+          target="_blank"
+          rel="noopener noreferrer"
+          data-testid="support-link"
+        >
+          Support development ♡
+        </a>
+      </footer>
     </div>
   );
 };

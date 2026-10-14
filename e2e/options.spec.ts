@@ -36,6 +36,19 @@ const pick = async (page: Page, select: string, option: string | RegExp) => {
 };
 
 test.describe("options page", () => {
+  test("the footer has a quiet support link to the Ko-fi tip page", async ({
+    facet,
+  }) => {
+    const page = await openOptions(facet);
+    const link = page.getByTestId("support-link");
+    await expect(link).toHaveAttribute(
+      "href",
+      "https://ko-fi.com/tomashdev/tip",
+    );
+    await expect(link).toHaveAttribute("target", "_blank");
+    await expect(link).toHaveAttribute("rel", "noopener noreferrer");
+  });
+
   test('a link to #agent (or #agents) lands on "For AI agents" with the heading focused; the font is the bundled Inter', async ({
     facet,
   }) => {

@@ -100,6 +100,8 @@ PERMISSIONS, IN SHORT
 Chrome will say SplitSession can "read and change all your data on all websites". That is needed to give each tab its own cookies on whatever site you open in it. SplitSession reads cookie headers only of tabs you put in a container, keeps them on your device and never sends them anywhere.
 
 Source code, issues and documentation: https://github.com/Misyuk-T/splitsession
+
+SplitSession is free and open source. If it helps you, you can support development at ko-fi.com/tomashdev.
 ```
 
 ### Single purpose (dashboard, Privacy practices tab)
@@ -183,6 +185,8 @@ PRIVACY
 No account, no analytics, no servers. Container cookies stay in Chrome's local storage on your device. The agent bridge passes page data only to the program you installed on the same computer. Open source (MIT).
 
 Source code, set-up guide and the full list of limits: https://github.com/Misyuk-T/splitsession
+
+SplitSession is free and open source. If it helps you, you can support development at ko-fi.com/tomashdev.
 ```
 
 ### Single purpose (Full)

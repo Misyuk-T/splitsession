@@ -33,6 +33,15 @@
 .opt-nav a:hover {
   text-decoration: underline;
 }
+.opt-foot {
+  margin-top: 28px;
+  padding-top: 16px;
+  border-top: 1px solid var(--fx-border);
+}
+.opt-foot a {
+  color: inherit;
+  text-decoration: underline;
+}
 .opt-section {
   display: flex;
   flex-direction: column;

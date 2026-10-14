@@ -8,6 +8,7 @@
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![npm: splitsession-bridge](https://img.shields.io/npm/v/splitsession-bridge?label=npm%20bridge)](https://www.npmjs.com/package/splitsession-bridge)
 [![Website](https://img.shields.io/badge/site-misyuk--t.github.io-black)](https://misyuk-t.github.io/splitsession/)
+[![Ko-fi](https://img.shields.io/badge/support-Ko--fi-black)](https://ko-fi.com/tomashdev)
 
 SplitSession is an open-source Manifest V3 extension that brings Firefox-style containers to Chrome. Keep several accounts of the same site open **side by side, in different tabs of one Chrome profile**: two Reddit accounts, a work and a personal Supabase, all logged in at the same moment, with no second profile and no second browser. Each container has its own cookies and page storage; a tab belongs to one container, and everything that tab does happens inside it.
 
@@ -107,6 +108,10 @@ pnpm lint && pnpm format:check && pnpm typecheck
 Layout, editions, the end-to-end stand and releases: [docs/development.md](docs/development.md). All documents: [docs/README.md](docs/README.md).
 
 </details>
+
+## Support
+
+SplitSession is free and MIT-licensed. If it saves you a second browser profile, you can [buy me a coffee on Ko-fi](https://ko-fi.com/tomashdev).
 
 ## License
 
