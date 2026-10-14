@@ -347,6 +347,15 @@ groups. Groups SplitSession made are removed when the setting is switched off; g
 the user is dragging a tab, Chrome refuses group edits; SplitSession retries for about a second and then gives up on that one
 tab (it joins its group at the next trigger); a move after a drag waits for the drop (up to about twenty seconds).
 
+**Split view** (Chrome 140+). Chrome keeps the two tabs of a split view in one tab group, so a tab joined into a split view
+with a tab of a container's group lands in that group. SplitSession does not reopen it there: a split view whose tabs are not
+all in one container (two containers, or a container tab and an ordinary tab) is taken out of the group, both tabs keep their
+containers and logins, and a container tab among them gets the `⧉ ` title mark. A split view of two tabs of one container stays
+in that container's group; a split view of one container dropped into another container's group is taken out too, not
+reopened. When the split view is closed the tabs stay ungrouped until "Re-group tabs now". For a moment after the join (about
+a third of a second) the pair sits in the container's group. Chrome before 140 does not tell extensions about split views;
+there a joined tab is reopened in the group's container as before.
+
 **Title prefix.** Only while "Show the container name to pages" is on (off by default: a page can read its own title). `document.title` as the page's own scripts read it then includes `[name] `. Pages that keep rewriting their
 title in a loop are given up on after 25 rewrites in 3 seconds (the prefix stays off for that document). An empty title
 is left empty (Chrome then shows the address), so such a tab has no prefix until the page sets one. The prefix is applied

@@ -24,6 +24,9 @@ export function registerExtrasListeners(
       extras.handleGroupChanged(tabId, change.groupId);
       extras.handleGroupMembership(tabId);
     }
+    // Chrome 140+: the tab joined or left a split view; a pair of two containers must not stay in a container's group.
+    if ((change as { splitViewId?: number }).splitViewId !== undefined)
+      extras.handleGroupsChanged();
   });
   on(b.tabs.onActivated, (info) => extras.handleTabRefresh(info.tabId));
   on(b.tabs.onAttached, (tabId) => {

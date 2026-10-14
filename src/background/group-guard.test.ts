@@ -1,6 +1,11 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { GroupGuard, type GuardTab } from "./group-guard";
+import {
+  GroupGuard,
+  type GuardTab,
+  SETTLE_MS,
+  SPLIT_TICK_MS,
+} from "./group-guard";
 
 function setup() {
   const tabs = new Map<number, GuardTab>();
@@ -19,6 +24,10 @@ function setup() {
     clock: 100_000,
     nextTab: 500,
     periodic: [] as boolean[],
+    failSplits: 0,
+    delays: [] as number[],
+    /** Runs on every delay (a settle, a retry): lets a test change Chrome's state while the guard waits. */
+    onDelay: null as ((ms: number) => void) | null,
   };
   const guard = new GroupGuard({
     getTab: async (id) => tabs.get(id) ?? null,
@@ -48,6 +57,17 @@ function setup() {
       containers.set(fresh, target);
       return fresh;
     },
+    splitTabs: async (splitViewId) =>
+      [...tabs.values()].filter((t) => t.splitViewId === splitViewId),
+    ungroupSplit: async (ids) => {
+      if (state.failSplits > 0) {
+        state.failSplits--;
+        calls.push(`ungroup-split-refused ${ids.join(",")}`);
+        throw new Error(state.failError);
+      }
+      calls.push(`ungroup-split ${ids.join(",")}`);
+      for (const id of ids) tabs.get(id)!.groupId = -1;
+    },
     placeOwn: async (id, container) => {
       if (state.failPlaces > 0) {
         state.failPlaces--;
@@ -61,7 +81,10 @@ function setup() {
       void calls.push(`notice ${id} ${target} ${name}`),
     periodic: (on) => void state.periodic.push(on),
     log: (_level, message, data) => void logs.push({ message, data }),
-    delay: async () => {},
+    delay: async (ms) => {
+      state.delays.push(ms);
+      state.onDelay?.(ms);
+    },
     now: () => state.clock,
   });
   groups.set(10, "reddit");
@@ -276,7 +299,9 @@ describe("GroupGuard", () => {
     state.failPlaces = 3;
     let looks = 0;
     (guard as unknown as { delay: () => Promise<void> }).delay = async () => {
-      if (++looks === 1) state.own.delete(1); // the five seconds ran out while the user still held the drag
+      // The first delay is the split-view tick before the first look; the five seconds run out after that look, while
+      // the user still holds the drag.
+      if (++looks === 2) state.own.delete(1);
     };
     await guard.tabCreated({ id: 1, groupId: 10, url: "about:blank" });
     expect(calls).toEqual([
@@ -340,5 +365,130 @@ describe("GroupGuard", () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+
+  describe("split view: two accounts side by side", () => {
+    it("a plain tab joined into a split view with a container tab of the group: both leave the group, nothing reopened or assigned", async () => {
+      const { guard, tab, calls, logs, containers, tabs } = setup();
+      tab(1, 10, "reddit", { splitViewId: 7 });
+      tab(2, 10, null, { splitViewId: 7 }); // Chrome put the joined tab into the reddit group
+      await guard.groupChanged(2, 10);
+      expect(calls).toEqual(["ungroup-split 1,2"]);
+      expect(tabs.get(1)!.groupId).toBe(-1);
+      expect(tabs.get(2)!.groupId).toBe(-1);
+      expect(containers.get(1)).toBe("reddit");
+      expect(containers.has(2)).toBe(false);
+      expect(logs.at(-1)!.message).toContain(
+        "tab 2 no container -> reddit (moved into the group): in a split view not all of this container",
+      );
+      expect(logs.at(-1)!.data).toMatchObject({
+        action: "split view ungrouped",
+        splitViewId: 7,
+        tabs: [1, 2],
+        containers: ["reddit", null],
+      });
+    });
+
+    it("two containers in one split view: both leave the group and keep their containers", async () => {
+      const { guard, tab, calls, containers } = setup();
+      tab(1, 10, "reddit", { splitViewId: 7 });
+      tab(2, 10, "work", { splitViewId: 7 }); // the work tab joined, Chrome moved it into the reddit group
+      await guard.groupChanged(2, 10);
+      expect(calls).toEqual(["ungroup-split 1,2"]);
+      expect(containers.get(1)).toBe("reddit");
+      expect(containers.get(2)).toBe("work");
+    });
+
+    it("a split view all of the group's container stays in the group", async () => {
+      const { guard, tab, calls } = setup();
+      tab(1, 10, "reddit", { splitViewId: 7 });
+      tab(2, 10, "reddit", { splitViewId: 7 });
+      await guard.groupChanged(2, 10);
+      expect(await guard.sweep()).toBe(0);
+      expect(calls).toEqual([]);
+    });
+
+    it("a split view of one container dragged into another container's group is taken out, never reopened", async () => {
+      const { guard, tab, calls, containers } = setup();
+      tab(1, 11, "reddit", { splitViewId: 7 });
+      tab(2, 11, "reddit", { splitViewId: 7 });
+      await guard.groupChanged(1, 11);
+      await guard.groupChanged(2, 11);
+      expect(calls).toEqual(["ungroup-split 1,2"]);
+      expect(containers.get(1)).toBe("reddit");
+      expect(containers.get(2)).toBe("reddit");
+    });
+
+    it("Chrome reports the group before the split view: the decision waits for the settle and reads the tab again", async () => {
+      const { guard, tab, calls, state, tabs } = setup();
+      tab(1, 10, "reddit");
+      tab(2, 10, null); // groupId reported, splitViewId not yet
+      state.onDelay = () => {
+        tabs.get(1)!.splitViewId = 7;
+        tabs.get(2)!.splitViewId = 7;
+      };
+      await guard.groupChanged(2, 10);
+      expect(state.delays[0]).toBe(SETTLE_MS);
+      expect(calls).toEqual(["ungroup-split 1,2"]);
+    });
+
+    it("a new tab page Chrome creates inside the group as part of a split view is not assigned (the split view may be reported after it)", async () => {
+      const { guard, tab, calls, state, tabs, containers } = setup();
+      tab(1, 10, "reddit");
+      tab(2, 10, null, { url: "chrome://newtab/" });
+      state.onDelay = () => {
+        tabs.get(1)!.splitViewId = 7;
+        tabs.get(2)!.splitViewId = 7;
+      };
+      await guard.tabCreated({ id: 2, groupId: 10, url: "chrome://newtab/" });
+      expect(state.delays[0]).toBe(SPLIT_TICK_MS);
+      expect(calls).toEqual(["ungroup-split 1,2"]);
+      expect(containers.has(2)).toBe(false);
+    });
+
+    it("SPLIT_VIEW_ID_NONE (-1) or no splitViewId at all (Chrome before 140): the usual reopening", async () => {
+      const { guard, tab, calls } = setup();
+      tab(1, 10, null, { splitViewId: -1 });
+      tab(2, 10, null);
+      await guard.groupChanged(1, 10);
+      await guard.groupChanged(2, 10);
+      expect(calls.filter((c) => c.startsWith("move"))).toHaveLength(2);
+      expect(calls.some((c) => c.startsWith("ungroup-split"))).toBe(false);
+    });
+
+    it("waits while Chrome refuses the ungroup during a drag, then takes the pair out; the sweep finds a mixed pair too", async () => {
+      const { guard, tab, calls, state } = setup();
+      tab(1, 10, "reddit", { splitViewId: 7 });
+      tab(2, 10, "work", { splitViewId: 7 });
+      state.failSplits = 2;
+      await guard.groupChanged(2, 10);
+      expect(calls).toEqual([
+        "ungroup-split-refused 1,2",
+        "ungroup-split-refused 1,2",
+        "ungroup-split 1,2",
+      ]);
+
+      const other = setup();
+      other.tab(1, 10, "reddit", { splitViewId: 8 });
+      other.tab(2, 10, null, { splitViewId: 8 });
+      expect(await other.guard.sweep()).toBe(1);
+      expect(other.calls).toEqual(["ungroup-split 1,2"]);
+    });
+
+    it("waits while the partner is being assigned, then decides with its real container", async () => {
+      const { guard, tab, calls, state, containers } = setup();
+      tab(1, 10, "reddit", { splitViewId: 7 });
+      tab(2, 10, null, { splitViewId: 7 });
+      state.assigning.add(1);
+      let waits = 0;
+      state.onDelay = (ms) => {
+        if (ms !== SETTLE_MS && ++waits === 2) {
+          state.assigning.delete(1);
+          containers.set(2, "reddit"); // both ended up in reddit
+        }
+      };
+      await guard.groupChanged(2, 10);
+      expect(calls).toEqual([]);
+    });
   });
 });

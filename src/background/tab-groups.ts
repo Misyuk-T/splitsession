@@ -12,6 +12,7 @@ import {
   sleep,
 } from "../core";
 import type { StorageAreaLike } from "../engine/storage/storage-area";
+import { splitIsMixed, splitViewOf } from "./split-view";
 
 /** `chrome.storage.session` key: Chrome tab-group IDs this module created, with the container each one stands for. */
 export const OWNED_GROUPS_KEY = "ownedGroups";
@@ -21,6 +22,8 @@ export interface GroupTab {
   windowId: number;
   groupId: number;
   pinned?: boolean;
+  /** Chrome 140+: the split view the tab is in (-1 or absent: none). */
+  splitViewId?: number;
 }
 
 export interface TabsLike {
@@ -31,7 +34,10 @@ export interface TabsLike {
     createProperties?: { windowId: number };
   }): Promise<number>;
   ungroup(tabIds: number[]): Promise<void>;
-  query(queryInfo: { groupId?: number }): Promise<GroupTab[]>;
+  query(queryInfo: {
+    groupId?: number;
+    splitViewId?: number;
+  }): Promise<GroupTab[]>;
 }
 
 export interface TabGroupsLike {
@@ -99,6 +105,8 @@ const EXPECTED_TTL_MS = 10_000;
  * the group is SplitSession's, the marker identifies it. A group Chrome brings back (session restore, a saved group opened
  * again) is recognised by the marker as this container's and taken over instead of a second group being made, and the
  * restore matcher can tell SplitSession's groups from the user's (a user group titled "⧉ fake" has no marker: not ours).
+ * A split view whose tabs are not all in one container is never grouped (grouping one of its tabs groups both: Chrome),
+ * and leaves a group that carries a container's marker (`ungroupSplit`, `mixedSplit`).
  * Two ways: the user renaming or recolouring one of our groups in Chrome's group menu changes the container (`groupUpdated`,
  * after a short pause; SplitSession's own updates are told apart by an expected-updates list), and the container's other
  * groups follow. Collapsing a group is not an edit.
@@ -195,6 +203,19 @@ export class TabGroupProjection {
         ? this.ensureGrouped(tabId, containerId, false, true)
         : this.leaveForeignGroup(tabId, null, true),
     );
+    this.queue = done.catch(
+      (error) =>
+        void this.deps.log("warn", "tab group update failed", String(error)),
+    );
+    return done;
+  }
+
+  /**
+   * The tabs of a split view that is not all of one container: out of their group (both, Chrome moves them together), with
+   * their containers untouched. Reports failure like `placeOwn` (the group guard retries after a drag).
+   */
+  ungroupSplit(tabIds: number[]): Promise<void> {
+    const done = this.queue.then(() => this.ungroup(tabIds, true));
     this.queue = done.catch(
       (error) =>
         void this.deps.log("warn", "tab group update failed", String(error)),
@@ -325,6 +346,24 @@ export class TabGroupProjection {
       await this.ungroup([tabId], strict);
   }
 
+  /** The tab is in a split view whose tabs are not all in one container: the IDs of its tabs; otherwise null. */
+  private async mixedSplit(tabId: number): Promise<number[] | null> {
+    const tab = await this.deps.tabs.get(tabId).catch(() => null);
+    const splitViewId = tab ? splitViewOf(tab) : null;
+    if (splitViewId === null) return null;
+    const pair = await this.deps.tabs
+      .query({ splitViewId })
+      .catch(() => [] as GroupTab[]);
+    const ids = pair
+      .map((t) => t.id)
+      .filter((id): id is number => id !== undefined);
+    if (!ids.includes(tabId)) ids.unshift(tabId);
+    const of = new Map(
+      this.deps.containerTabs().map((e) => [e.tabId, e.containerId]),
+    );
+    return splitIsMixed(ids.map((id) => of.get(id) ?? null)) ? ids : null;
+  }
+
   private async markerOf(groupId: number): Promise<ContainerId | null> {
     const group = await this.deps.tabGroups.get(groupId).catch(() => null);
     return group ? decodeGroupMarker(group.title) : null;
@@ -336,6 +375,18 @@ export class TabGroupProjection {
     force = false,
     strict = false,
   ): Promise<void> {
+    const split = await this.mixedSplit(tabId);
+    if (split !== null) {
+      // Two accounts side by side: no container group may hold the pair (docs/decisions.md, "Split view").
+      const tab = await this.deps.tabs.get(tabId).catch(() => null);
+      if (
+        tab &&
+        tab.groupId >= 0 &&
+        (await this.markerOf(tab.groupId)) !== null
+      )
+        await this.ungroup(split, strict);
+      return;
+    }
     // Groups off: SplitSession makes none, but a tab may not stay in a group that names another container.
     if (!this.deps.settings().tabGroups)
       return this.leaveForeignGroup(tabId, containerId, strict);

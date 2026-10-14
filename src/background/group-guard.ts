@@ -1,4 +1,5 @@
 import { type ContainerId, isHttpUrl, sleep } from "../core";
+import { splitViewOf } from "./split-view";
 
 export interface GuardTab {
   id?: number;
@@ -8,6 +9,8 @@ export interface GuardTab {
   /** 'unloaded': Chrome has not loaded the tab (restored lazily). */
   status?: string;
   discarded?: boolean;
+  /** Chrome 140+: the split view the tab is in (`tabs.SPLIT_VIEW_ID_NONE`, -1, or absent: none). */
+  splitViewId?: number;
 }
 
 export interface GroupGuardDeps {
@@ -33,6 +36,10 @@ export interface GroupGuardDeps {
    * Throws when nothing was created. Resolves with the new tab's ID.
    */
   move(tabId: number, containerId: ContainerId, url: string): Promise<number>;
+  /** The tabs of a split view (`tabs.query({splitViewId})`). */
+  splitTabs(splitViewId: number): Promise<GuardTab[]>;
+  /** Takes the tabs of a split view out of their group, containers untouched (`TabGroupProjection.ungroupSplit`). */
+  ungroupSplit(tabIds: number[]): Promise<void>;
   /** A tab SplitSession created landed in this group: into its own container's group, or out of the group. */
   placeOwn(tabId: number, containerId: ContainerId | null): Promise<void>;
   moved(newTabId: number, containerId: ContainerId, name: string): void;
@@ -47,6 +54,11 @@ export interface GroupGuardDeps {
 export const SETTLE_MS = 300;
 /** A website tab Chrome created inside a group: a link's inheritance from its opener goes first. */
 export const CREATED_SETTLE_MS = 150;
+/**
+ * Any tab Chrome created inside a group waits at least this long: Chrome may report the tab's split view after its group
+ * (measured, Chromium 156: `tabs.create({splitWithTabId})` sends `groupId` first, then `splitViewId`).
+ */
+export const SPLIT_TICK_MS = 50;
 /** Tab and group events are followed by one sweep this long after the last of them. */
 export const SWEEP_DEBOUNCE_MS = 1_000;
 const RETRY_MS = 250;
@@ -58,7 +70,12 @@ const RATE_LIMIT = 10;
 const dragRefusal = (error: unknown): boolean =>
   /cannot be edited|dragging/i.test(String((error as Error)?.message ?? error));
 
-type Action = "reopened" | "assigned in place" | "regrouped" | "ungrouped";
+type Action =
+  | "reopened"
+  | "assigned in place"
+  | "regrouped"
+  | "ungrouped"
+  | "split view ungrouped";
 
 /**
  * "The group always tells the truth" (docs/decisions.md, "Tabs inside a SplitSession group"): every tab inside a tab group
@@ -83,6 +100,13 @@ type Action = "reopened" | "assigned in place" | "regrouped" | "ungrouped";
  * drop, and the tab stays "own" until fixed even when `ownTab` has forgotten it). Tabs SplitSession is assigning are waited for. A group without
  * the marker (the user's own, a retyped title, a deleted container) never decides anything; leaving a group keeps the
  * container. Every action is logged with the tab, the containers from and to, and the reason.
+ *
+ * Split view (docs/decisions.md, "Split view: two accounts side by side"): a tab in a split view is never reopened or
+ * assigned by the guard. Chrome keeps both tabs of a split view in one group, so joining a tab into a split view with a
+ * grouped tab puts it into that group. When the two tabs are all in the group's container the pair stays; otherwise (two
+ * containers, a container tab and an ordinary one, or a pair of another container) both leave the group and keep their
+ * containers. The split view is read after the settle, from the live tab, so the order in which Chrome reports the group
+ * and the split view does not matter.
  */
 export class GroupGuard {
   /** Per tab: the check running, and whether another was asked for meanwhile (it runs once more afterwards). */
@@ -115,7 +139,7 @@ export class GroupGuard {
     return this.check(
       tab.id,
       "created in the group",
-      isHttpUrl(tab.pendingUrl || tab.url) ? CREATED_SETTLE_MS : 0,
+      isHttpUrl(tab.pendingUrl || tab.url) ? CREATED_SETTLE_MS : SPLIT_TICK_MS,
     );
   }
 
@@ -253,6 +277,31 @@ export class GroupGuard {
     const own = asked ?? (this.pendingOwn.has(tabId) ? "own" : null);
     if (own === "busy" || this.deps.isAssigning(tabId)) return "wait";
     const from = this.deps.containerOf(tabId);
+    const split = await this.splitOf(tab);
+    if (split !== null) {
+      // A split view is never reopened nor assigned: it stays in the group only when it is all of the group's container.
+      if (split.ids.some((id) => this.deps.isAssigning(id))) return "wait";
+      const containers = split.ids.map((id) =>
+        id === tabId ? from : this.deps.containerOf(id),
+      );
+      if (containers.every((c) => c === target)) {
+        this.pendingOwn.delete(tabId);
+        return "done";
+      }
+      try {
+        await this.deps.ungroupSplit(split.ids);
+      } catch (error) {
+        if (dragRefusal(error)) return "wait";
+        throw error; // logged; the next sweep tries again
+      }
+      this.pendingOwn.delete(tabId);
+      this.record(tabId, from, target, reason, "split view ungrouped", {
+        splitViewId: split.id,
+        tabs: split.ids,
+        containers,
+      });
+      return "done";
+    }
     if (from === target) {
       this.pendingOwn.delete(tabId);
       return "done";
@@ -320,6 +369,20 @@ export class GroupGuard {
     }
   }
 
+  /** The tab's split view and the IDs of its tabs (the tab itself included), or null when it is in none. */
+  private async splitOf(
+    tab: GuardTab,
+  ): Promise<{ id: number; ids: number[] } | null> {
+    const id = splitViewOf(tab);
+    if (id === null || tab.id === undefined) return null;
+    const ids = (await this.deps.splitTabs(id))
+      .filter((t) => splitViewOf(t) === id)
+      .map((t) => t.id)
+      .filter((t): t is number => t !== undefined);
+    if (!ids.includes(tab.id)) ids.unshift(tab.id);
+    return { id, ids };
+  }
+
   /** The reopen limit was hit: one sweep right after the window has passed picks the rest up (not the 30 s alarm). */
   private sweepAfterWindow(): void {
     if (this.limitTimer) return;
@@ -338,16 +401,24 @@ export class GroupGuard {
     to: ContainerId,
     reason: string,
     action: Action,
-    fresh?: number,
+    fresh?:
+      | number
+      | {
+          splitViewId: number;
+          tabs: number[];
+          containers: Array<ContainerId | null>;
+        },
   ): void {
     const what =
       action === "reopened"
-        ? `reopened in it as tab ${fresh}`
+        ? `reopened in it as tab ${fresh as number}`
         : action === "assigned in place"
           ? "assigned to it in place"
           : action === "regrouped"
             ? `SplitSession's own tab, moved to the group of ${from}`
-            : "SplitSession's own plain tab, taken out of the group";
+            : action === "ungrouped"
+              ? "SplitSession's own plain tab, taken out of the group"
+              : "in a split view not all of this container: the split view taken out of the group, containers kept";
     this.deps.log(
       "info",
       `group guard: tab ${tabId} ${from ?? "no container"} -> ${to} (${reason}): ${what}`,
@@ -357,7 +428,11 @@ export class GroupGuard {
         to,
         reason,
         action,
-        ...(fresh !== undefined ? { newTabId: fresh } : {}),
+        ...(typeof fresh === "number"
+          ? { newTabId: fresh }
+          : fresh !== undefined
+            ? fresh
+            : {}),
       },
     );
   }

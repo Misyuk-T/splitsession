@@ -525,3 +525,124 @@ test.describe("every tab inside a SplitSession tab group is in its container", (
     facet.ctx.off("page", adopt);
   });
 });
+
+/**
+ * What Chrome does when the user joins a tab into a split view with a grouped tab: the joined tab goes next to it, into its
+ * group, and the two become a split view (`tabs.createSplit`, Chrome 155+, needs adjacent tabs in the same group). Chrome's
+ * own order of reports (group first, then split view) is what `tabs.create({splitWithTabId})` was measured to send.
+ */
+const joinSplit = (facet: Facet, grouped: number, joining: number) =>
+  facet.inWorker(
+    async ([anchor, other]: [number, number]) => {
+      const c = (globalThis as any).chrome;
+      const a = await c.tabs.get(anchor);
+      await c.tabs.move(other, { index: a.index + 1 });
+      await c.tabs.group({ tabIds: [other], groupId: a.groupId });
+      return c.tabs.createSplit([anchor, other]) as Promise<number>;
+    },
+    [grouped, joining] as [number, number],
+  );
+const splitOf = (facet: Facet, tabId: number) =>
+  facet.inWorker(
+    async (id: number) =>
+      (await (globalThis as any).chrome.tabs.get(id)).splitViewId as number,
+    tabId,
+  );
+const hasSplitApi = (facet: Facet) =>
+  facet.inWorker(
+    async () => typeof (globalThis as any).chrome.tabs.createSplit,
+    undefined,
+  );
+
+test.describe("split view: two accounts of one site side by side", () => {
+  test("an ordinary tab joined into a split view with a container tab of its group: both leave the group, neither is reopened, each keeps its login, the container tab is marked ⧉", async ({
+    facet,
+  }) => {
+    test.skip(
+      (await hasSplitApi(facet)) !== "function",
+      "tabs.createSplit needs Chrome 155+",
+    );
+    const R = await facet.container("Reddit");
+    const r = await containerTab(facet, R.name, "who=reddit");
+    const plain = await facet.plain(setCookie("a.localhost", "who=real"));
+    await go(plain, at("a.localhost", "/whoami?t=split"));
+    await expect(plain.locator("#cookies")).toHaveText("who=real");
+    const plainId = await facet.tabIdOf(plain);
+    await facet.clearLog();
+    let replaced = false;
+    const onPage = () => (replaced = true);
+    facet.ctx.on("page", onPage);
+    try {
+      const split = await joinSplit(facet, r.tabId, plainId);
+      expect(split).toBeGreaterThanOrEqual(0);
+      await expect
+        .poll(async () => (await facet.tabInfo(plainId)).groupId)
+        .toBe(-1);
+      expect((await facet.tabInfo(r.tabId)).groupId).toBe(-1);
+      expect(await splitOf(facet, r.tabId)).toBe(split);
+      expect(await splitOf(facet, plainId)).toBe(split);
+      // Neither was reopened nor assigned: same tabs, same containers, same logins.
+      await sleep(1_500); // past the settle and the sweep that follows the group change
+      expect(replaced).toBe(false);
+      expect(plain.isClosed()).toBe(false);
+      expect(r.page.isClosed()).toBe(false);
+      expect(await facet.api("getTabContainer", plainId)).toBeNull();
+      expect(await facet.api("getTabContainer", r.tabId)).toBe(R.id);
+      await plain.reload();
+      await expect(plain.locator("#cookies")).toHaveText("who=real");
+      await r.page.reload();
+      await expect(r.page.locator("#cookies")).toHaveText("who=reddit");
+      // The container tab outside its group carries the mark.
+      await expect
+        .poll(() => r.page.evaluate(() => document.title))
+        .toMatch(/^⧉ /);
+      // The extension's log spans the whole worker: only what was said about these two tabs.
+      const about = (await guardLog(facet)).filter((m) =>
+        [plainId, r.tabId].some((id) => m.includes(`tab ${id} `)),
+      );
+      expect(about.join("\n")).toContain("split view taken out of the group");
+      expect(about.join("\n")).not.toMatch(/reopened|assigned to it in place/);
+    } finally {
+      facet.ctx.off("page", onPage);
+    }
+  });
+
+  test("two containers in one split view stay out of groups, also after “Re-group”; a split view of one container stays in its group", async ({
+    facet,
+  }) => {
+    test.skip(
+      (await hasSplitApi(facet)) !== "function",
+      "tabs.createSplit needs Chrome 155+",
+    );
+    const A = await facet.container("Alpha");
+    const B = await facet.container("Beta");
+    const a = await containerTab(facet, A.name, "who=alice");
+    const b = await containerTab(facet, B.name, "who=bob");
+    await facet.clearLog();
+    await joinSplit(facet, a.tabId, b.tabId);
+    await expect
+      .poll(async () => (await facet.tabInfo(b.tabId)).groupId)
+      .toBe(-1);
+    expect((await facet.tabInfo(a.tabId)).groupId).toBe(-1);
+    await facet.api("regroupTabs");
+    await sleep(1_500);
+    expect((await facet.tabInfo(a.tabId)).groupId).toBe(-1);
+    expect((await facet.tabInfo(b.tabId)).groupId).toBe(-1);
+    expect(await facet.api("getTabContainer", a.tabId)).toBe(A.id);
+    expect(await facet.api("getTabContainer", b.tabId)).toBe(B.id);
+    await a.page.reload();
+    await expect(a.page.locator("#cookies")).toHaveText("who=alice");
+    await b.page.reload();
+    await expect(b.page.locator("#cookies")).toHaveText("who=bob");
+
+    // Two tabs of one container: the split view stays in the container's group.
+    const a2 = await containerTab(facet, A.name, "who=alice");
+    const a3 = await containerTab(facet, A.name, "who=alice");
+    expect(a3.groupId).toBe(a2.groupId);
+    await joinSplit(facet, a2.tabId, a3.tabId);
+    await sleep(1_500);
+    expect((await facet.tabInfo(a2.tabId)).groupId).toBe(a2.groupId);
+    expect((await facet.tabInfo(a3.tabId)).groupId).toBe(a2.groupId);
+    expect(a2.page.isClosed() || a3.page.isClosed()).toBe(false);
+  });
+});

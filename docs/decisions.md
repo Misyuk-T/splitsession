@@ -1357,3 +1357,44 @@ Goal: a container tab that is not in its container's tab group (dragged out, or 
   splitsession-bridge install` in the Settings text does not resolve.
 - **Privacy policy** in `docs/privacy.md` (both editions, effective 2026-10-14); `docs/_config.yml` and `docs/index.md` let GitHub Pages
   (from `/docs`) serve it at `/privacy` once the repository is public.
+
+## Split view: two accounts side by side (2026-10-14)
+
+- **Found on the real Chrome.** Joining a tab into a split view with a tab of a SplitSession group "reset" the joined tab
+  (logged out, or the wrong account). Chrome keeps both tabs of a split view in one group, so the joined tab lands in the
+  container's group, and the group guard reopened it in that container. The point of a split view here is the opposite: two
+  accounts of one site side by side.
+- **API (Chrome extension docs, `chrome.tabs`).** `Tab.splitViewId` (Chrome 140+, `tabs.SPLIT_VIEW_ID_NONE` = -1 for none),
+  `tabs.onUpdated` `changeInfo.splitViewId` (140+), `tabs.query({splitViewId})` (140+); `tabs.createSplit([a, b])`,
+  `tabs.unsplit(id)` and `tabs.create({splitWithTabId})` are 155+. `tabGroups` has nothing about split views. Chrome before
+  140 has no `splitViewId` and no split view for extensions to see: there the guard behaves as before. No heuristic.
+- **Measured (Chromium 156, Playwright).** Grouping or ungrouping one tab of a split view does it to both (each gets its own
+  `onUpdated` with `groupId`). `createSplit` needs adjacent tabs with the same `windowId`, `pinned` and `groupId`.
+  `tabs.create({splitWithTabId: grouped})` reports `onCreated` with `groupId: -1, splitViewId: -1`, then `onUpdated` with the
+  `groupId`, then `splitViewId` for both tabs: the group comes **before** the split view.
+- **Rule.** A split view whose tabs are not all in one container (two containers, or a container tab and an ordinary one) is
+  never in a SplitSession group: both tabs leave the group and keep their containers; a container tab among them carries the
+  "⧉ outside group" title mark (an ordinary tab has no mark, as everywhere). A split view of two tabs of one container stays
+  in that container's group. A split view of one container that ends up in **another** container's group also leaves it: the
+  guard never reopens or assigns a tab that is in a split view (reopening would also break the split view). When the split view
+  is dissolved the tabs stay where they are; "Re-group tabs now" puts each into its own container's group.
+- **Group guard** (`group-guard.ts`): after the settle (300 ms for a group change; a tab Chrome creates inside a group now
+  waits at least `SPLIT_TICK_MS` = 50 ms, as its split view may be reported after its group) the live tab is read; when it has
+  a `splitViewId`, the pair is read (`tabs.query({splitViewId})`) and, unless every tab of it is in the group's container,
+  `TabGroupProjection.ungroupSplit` takes both out (retried after a drag like `placeOwn`). This is decided before the
+  own-tab, assign-in-place and reopen branches; a partner still being assigned is waited for. Logged as `group guard: tab
+  <id> <from> -> <group's container> (<reason>): in a split view not all of this container: the split view taken out of the
+  group, containers kept`, with the split view, its tabs and their containers as data. `tabs.onUpdated` with a `splitViewId`
+  schedules a sweep, which picks up a mixed pair sitting in a group however it got there.
+- **Projection** (`tab-groups.ts`): `ensureGrouped` (assignment, window move, "Re-group", groups switched on, `placeOwn`)
+  skips a tab in a mixed split view and takes it out of a container group, since grouping one tab of the pair would pull the
+  other in and the guard would take them out again.
+- **Tests.** Unit: `group-guard.test.ts` ("split view": plain + container, two containers, same container stays, one
+  container in another's group, group reported before the split view, a new tab created into a split view, `-1` / no
+  `splitViewId`, drag refusal, sweep, partner being assigned), `tab-groups.test.ts` (never grouped, taken out, regrouped after
+  the split view is gone, one container grouped together, `ungroupSplit` refusal). e2e (`group-drag.spec.ts`, skipped where
+  `tabs.createSplit` is missing): an ordinary logged-in tab joined into a split view with a container tab: neither reopened,
+  both ungrouped, each keeps its login after a reload, the container tab gets `⧉ `; two containers stay out of groups also
+  after "Re-group"; a split view of one container stays in its group. Both fail on the previous code (the joined tab was
+  reopened). The e2e joins with `tabs.group` + `tabs.createSplit`, not Chrome's own UI (drag onto a tab, "Add tab to split
+  view"), whose event order is not measurable from tests: manual check in the release gate (`docs/development.md`).

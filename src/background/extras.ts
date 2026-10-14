@@ -131,6 +131,12 @@ export class Extras {
         await this.removeWithRetry(tabId);
         return fresh;
       },
+      splitTabs: (splitViewId) =>
+        b.tabs.query({ splitViewId } as never).then(
+          (tabs) => tabs as GuardTab[],
+          () => [],
+        ),
+      ungroupSplit: (tabIds) => this.groups.ungroupSplit(tabIds),
       placeOwn: (tabId, containerId) =>
         this.groups.placeOwn(tabId, containerId),
       moved: (newTabId, _containerId, name) =>

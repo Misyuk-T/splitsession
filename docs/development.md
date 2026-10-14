@@ -105,7 +105,13 @@ Before a public release, on the release commit:
 1. `pnpm lint`, `pnpm format:check`, `pnpm typecheck`, `pnpm test`.
 2. `pnpm build` and `pnpm build:lite` (the latter runs `scripts/check-lite.mjs`).
 3. The full `pnpm e2e` three times in a row (the isolation tests are timing sensitive; a single green run is not enough).
-4. An independent review of everything changed since the previous release, with extra attention to isolation (DNR rules,
+4. Manual, in a real Chrome (140+) with split view: (a) a tab of container A in A's group, an ordinary tab logged in to the
+   same site; join the ordinary tab into a split view with the A tab through Chrome's own UI (drag it onto the A tab, and
+   separately the tab menu's split view item). Both tabs leave the group, neither reloads, each keeps its login, the A tab's
+   title starts with `⧉ `. (b) The same with a tab of container B instead of the ordinary one. (c) Two tabs of A: the split
+   view stays in A's group. (d) Close the split view: tabs stay ungrouped; "Re-group tabs now" puts each into its group. The
+   e2e covers this through `tabs.createSplit`, not through Chrome's UI.
+5. An independent review of everything changed since the previous release, with extra attention to isolation (DNR rules,
    cookies, the beacon and shim, service workers, strict mode), the agent bridge and `debugger`, and manifest permissions.
 
 ## Extension ID and signing key

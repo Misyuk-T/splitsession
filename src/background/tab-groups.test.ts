@@ -18,10 +18,23 @@ class FakeChrome {
 
   nextGroup = 100;
   failNextGroupCalls = 0;
+  failNextUngroupCalls = 0;
   calls: string[] = [];
 
   addTab(id: number, windowId = 1, extra: Partial<GroupTab> = {}): void {
     this.tabs.set(id, { id, windowId, groupId: -1, pinned: false, ...extra });
+  }
+
+  /** Chrome moves the two tabs of a split view together: grouping or ungrouping one does it to both. */
+  private withSplit(ids: number[]): number[] {
+    const out = new Set(ids);
+    for (const id of ids) {
+      const split = this.tabs.get(id)?.splitViewId;
+      if (split === undefined || split === -1) continue;
+      for (const t of this.tabs.values())
+        if (t.splitViewId === split) out.add(t.id!);
+    }
+    return [...out];
   }
 
   private prune(): void {
@@ -63,18 +76,34 @@ class FakeChrome {
             color: "grey",
           });
         }
-        for (const t of tabIds) this.tabs.get(t)!.groupId = id;
+        for (const t of this.withSplit(tabIds)) this.tabs.get(t)!.groupId = id;
         this.prune();
         return id;
       },
       ungroup: async (ids: number[]) => {
         this.calls.push(`ungroup ${ids.join(",")}`);
-        for (const t of ids) this.tabs.get(t)!.groupId = -1;
+        if (this.failNextUngroupCalls > 0) {
+          this.failNextUngroupCalls--;
+          throw new Error(
+            "Tabs cannot be edited right now (user may be dragging a tab).",
+          );
+        }
+        for (const t of this.withSplit(ids)) this.tabs.get(t)!.groupId = -1;
         this.prune();
       },
-      query: async ({ groupId }: { groupId?: number }) =>
+      query: async ({
+        groupId,
+        splitViewId,
+      }: {
+        groupId?: number;
+        splitViewId?: number;
+      }) =>
         [...this.tabs.values()]
-          .filter((t) => t.groupId === groupId)
+          .filter((t) =>
+            splitViewId !== undefined
+              ? t.splitViewId === splitViewId
+              : t.groupId === groupId,
+          )
           .map((t) => ({ ...t })),
     },
     tabGroups: {
@@ -709,6 +738,86 @@ describe("TabGroupProjection", () => {
           .map(([id]) => id)
           .sort(),
       ).toEqual([50, 51]);
+    });
+  });
+
+  describe("split view", () => {
+    it("never groups a split view of two containers, or of a container tab and a plain one; takes it out of a container group", async () => {
+      const { chrome, assign, projection, assigned } = setup();
+      chrome.addTab(1, 1, { splitViewId: 7 });
+      chrome.addTab(2, 1, { splitViewId: 7 });
+      await assign(1, "work"); // partner plain: mixed
+      expect(chrome.tabs.get(1)!.groupId).toBe(-1);
+      expect(chrome.tabs.get(2)!.groupId).toBe(-1);
+      await assign(2, "home"); // two containers: mixed
+      expect(chrome.tabs.get(2)!.groupId).toBe(-1);
+      await projection.reconcileAll();
+      expect(chrome.tabs.get(1)!.groupId).toBe(-1);
+      expect(chrome.tabs.get(2)!.groupId).toBe(-1);
+      expect(chrome.calls.filter((c) => c.startsWith("group"))).toEqual([]);
+
+      // A mixed pair inside a container's group (Chrome put it there): out of it, containers kept.
+      chrome.groups.set(50, {
+        id: 50,
+        windowId: 1,
+        title: groupTitle("Work", "work"),
+        color: "blue",
+      });
+      chrome.tabs.get(1)!.groupId = 50;
+      chrome.tabs.get(2)!.groupId = 50;
+      await projection.tabAssigned(1, "work");
+      expect(chrome.tabs.get(1)!.groupId).toBe(-1);
+      expect(chrome.tabs.get(2)!.groupId).toBe(-1);
+      expect(assigned).toEqual([
+        { tabId: 1, containerId: "work" },
+        { tabId: 2, containerId: "home" },
+      ]);
+
+      // The split view dissolved: "Re-group" puts each tab into its own container's group.
+      chrome.tabs.get(1)!.splitViewId = -1;
+      chrome.tabs.get(2)!.splitViewId = -1;
+      await projection.reconcileAll();
+      const g1 = chrome.tabs.get(1)!.groupId;
+      const g2 = chrome.tabs.get(2)!.groupId;
+      expect(chrome.groups.get(g1)).toMatchObject({
+        title: groupTitle("Work", "work"),
+      });
+      expect(chrome.groups.get(g2)).toMatchObject({
+        title: groupTitle("Home", "home"),
+      });
+    });
+
+    it("groups a split view of one container like any of its tabs (both tabs join the group)", async () => {
+      const { chrome, assign } = setup();
+      chrome.addTab(1, 1, { splitViewId: 7 });
+      chrome.addTab(2, 1, { splitViewId: 7 });
+      await assign(1, "work");
+      await assign(2, "work");
+      const g = chrome.tabs.get(1)!.groupId;
+      expect(g).toBeGreaterThanOrEqual(0);
+      expect(chrome.tabs.get(2)!.groupId).toBe(g);
+      expect(chrome.groups.get(g)).toMatchObject({
+        title: groupTitle("Work", "work"),
+      });
+    });
+
+    it("ungroupSplit takes both tabs out and reports a refusal that outlasts the retries", async () => {
+      const { chrome, projection } = setup();
+      chrome.groups.set(50, {
+        id: 50,
+        windowId: 1,
+        title: groupTitle("Work", "work"),
+        color: "blue",
+      });
+      chrome.addTab(1, 1, { groupId: 50, splitViewId: 7 });
+      chrome.addTab(2, 1, { groupId: 50, splitViewId: 7 });
+      chrome.failNextUngroupCalls = 6; // every retry of one call
+      await expect(projection.ungroupSplit([1, 2])).rejects.toThrow(/dragging/);
+      expect(chrome.tabs.get(1)!.groupId).toBe(50);
+      await projection.idle(); // the queue keeps going
+      await projection.ungroupSplit([1, 2]);
+      expect(chrome.tabs.get(1)!.groupId).toBe(-1);
+      expect(chrome.tabs.get(2)!.groupId).toBe(-1);
     });
   });
 });
