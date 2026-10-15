@@ -22,6 +22,7 @@
     "check:lite": "node scripts/check-lite.mjs",
     "store:assets": "pnpm build:lite && node scripts/store-assets.mjs",
     "readme:media": "pnpm build:lite && node scripts/readme-media.mjs",
+    "agent:media": "pnpm build:full && node bridge/build.mjs && node scripts/agent-media.mjs",
     "typecheck": "tsc --noEmit && tsc --noEmit -p e2e && tsc --noEmit -p bridge",
     "lint": "eslint . --ext .ts,.tsx,.mjs",
     "lint:fix": "eslint . --ext .ts,.tsx,.mjs --fix",

@@ -9,7 +9,7 @@ import { resolve } from "node:path";
 const require = createRequire(import.meta.url);
 const root = resolve(import.meta.dirname, "../..");
 const dataUri = (buf, type) => `data:${type};base64,${buf.toString("base64")}`;
-const INTER = dataUri(
+export const INTER = dataUri(
   readFileSync(
     require.resolve("@fontsource-variable/inter/files/inter-latin-wght-normal.woff2"),
   ),
@@ -21,14 +21,14 @@ export const ICON_48 = dataUri(
 );
 const ICON_SVG = readFileSync(resolve(root, "assets/icon.svg"), "utf8");
 
-const esc = (s) =>
+export const esc = (s) =>
   String(s).replace(
     /[&<>"]/g,
     (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c],
   );
 
 /** Chrome's tab-group colours. */
-const GROUP_HEX = {
+export const GROUP_HEX = {
   grey: "#80868b",
   blue: "#1a73e8",
   red: "#d93025",
@@ -48,7 +48,7 @@ const SITE_HEX = {
   "loop.example": "#0b7a75",
 };
 
-const THEMES = {
+export const THEMES = {
   light: `--bg1:#eef0ff;--bg2:#def2ff;--ink:#14161b;--muted:#434a59;--accent:#3f3fd9;
 --strip:#d9dde6;--bar:#f7f8fa;--tabtext:#2a2f3a;--tabdim:#4a505e;--pill:#e9ebf0;--line:#c9cdd8;--shadow:0 24px 60px rgba(40,40,120,.22),0 3px 10px rgba(20,20,60,.14);--card:#ffffff`,
   dark: `--bg1:#0b1020;--bg2:#221a63;--ink:#f3f4fc;--muted:#b9bdd6;--accent:#a7a7ff;
@@ -86,6 +86,7 @@ body{font-family:"Frame Inter",system-ui,sans-serif;color:var(--ink);background:
 .url svg{width:14px;height:14px;margin:0}
 .ext{width:30px;height:30px;border-radius:8px;display:grid;place-items:center;background:var(--pill);margin-left:6px}
 .ext img{width:22px;height:22px}
+.ext{position:relative}.ext .badge{position:absolute;right:1px;bottom:1px;width:12px;height:12px;border-radius:4px;border:2px solid var(--bar)}
 .panes{display:flex;gap:2px;background:var(--line)}
 .pane{position:relative;overflow:hidden;background:#fff}
 .pane img{display:block}
@@ -93,7 +94,7 @@ body{font-family:"Frame Inter",system-ui,sans-serif;color:var(--ink);background:
 .pop img{display:block;width:100%}
 `;
 
-const page = (theme, inner) =>
+export const page = (theme, inner) =>
   `<!doctype html><html><head><meta charset="utf-8"><style>:root{${THEMES[theme]}}${CSS}</style></head><body>${inner}</body></html>`;
 
 const lockSvg = `<svg viewBox="0 0 24 24"><rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg>`;
@@ -117,11 +118,11 @@ const fav = (host) =>
 /** A group chip's title as Chrome shows it: the invisible marker characters SplitSession appends are dropped. */
 // eslint-disable-next-line prefer-regex-literals -- escapes, so no invisible character sits in this source
 const INVISIBLE = new RegExp("[\u200b-\u200f\u2060-\u2064\u2800\ufeff]", "g");
-const visibleTitle = (title) => title.replace(INVISIBLE, "").trim();
+export const visibleTitle = (title) => title.replace(INVISIBLE, "").trim();
 
 /** One tab-strip cell. */
 const tabHtml = (t) =>
-  `<div class="tab${t.active ? " on" : ""}">${fav(t.host)}<span>${esc(t.title)}</span></div>`;
+  `<div class="tab${t.active ? " on" : ""}">${t.icon ? `<img class="fav" src="${t.icon}" alt="">` : fav(t.host)}<span>${esc(t.title)}</span></div>`;
 
 /** The tab strip: groups (chip + tabs + a rule in the group colour), a split-view pair and ungrouped tabs, in order. */
 function stripHtml(items) {
@@ -136,12 +137,13 @@ function stripHtml(items) {
     .join("")}</div>`;
 }
 
-const toolbar = (address) =>
-  `<div class="bar">${backSvg}${fwdSvg}${reloadSvg}<div class="url">${lockSvg}${esc(address)}</div><div class="ext"><img src="${ICON_48}" alt=""></div></div>`;
+/** `badge`: the colour of the dot on the toolbar button (an agent is working with the tab), or none. */
+const toolbar = (address, badge) =>
+  `<div class="bar">${backSvg}${fwdSvg}${reloadSvg}<div class="url">${lockSvg}${esc(address)}</div><div class="ext"><img src="${ICON_48}" alt="">${badge ? `<i class="badge" style="background:${badge}"></i>` : ""}</div></div>`;
 
 /** A browser window mock: `content` is placed in the area below the toolbar (width x height `size`). */
-const windowHtml = ({ x, y, w, h, strip, address, content }) =>
-  `<div class="win" style="left:${x}px;top:${y}px;width:${w}px;height:${h}px">${stripHtml(strip)}${toolbar(address)}<div style="height:${h - 90}px;position:relative">${content}</div></div>`;
+export const windowHtml = ({ x, y, w, h, strip, address, content, badge }) =>
+  `<div class="win" style="left:${x}px;top:${y}px;width:${w}px;height:${h}px">${stripHtml(strip)}${toolbar(address, badge)}<div style="height:${h - 90}px;position:relative">${content}</div></div>`;
 
 /** Size of a captured PNG as CSS pixels (captured at 2x). */
 export const cssSize = (png) => ({

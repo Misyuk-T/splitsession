@@ -94,7 +94,7 @@ const AgentSwitches = () => {
       <div class="opt-row" data-testid="bridge-activity">
         <Switch
           label="Show agent activity"
-          description="Glow and an eye on tabs the agent is using."
+          description="A glow and a label on tabs the agent is using."
           checked={value.agentActivity}
           disabled={settings === null}
           onChange={(next) => void change({ agentActivity: next })}
@@ -102,9 +102,9 @@ const AgentSwitches = () => {
         <More id="more-activity" about="agent activity">
           <p>
             While the agent reads or works in a tab, that tab shows it: a
-            glowing frame and a small “Agent: reading” label on the page, an eye
-            in front of the tab title while it reads, and “AI” on the toolbar
-            button. It fades about 2.5 seconds after the last action and never
+            glowing frame and a small “Agent: reading” label on the page, a ring
+            of purple dots on the tab’s icon, and the dot on the toolbar button
+            blinks. It fades about 2.5 seconds after the last action and never
             takes focus or switches tabs. Pages cannot read or click it.
           </p>
           <p>Off: nothing is shown or changed on your tabs.</p>
