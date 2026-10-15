@@ -80,13 +80,13 @@ FEATURES
 • Separate cookies, localStorage, sessionStorage, IndexedDB and Cache Storage for each one.
 • Optional Chrome tab groups in matching colours; dragging a tab into a group moves it there.
 • Site rules: "always open this site in Work" or "ask me".
-• Tabs come back where they belong after a browser restart or Reopen closed tab.
+• Container tabs come back in their containers after a browser restart or Reopen closed tab. If SplitSession cannot tell a tab's container for sure, the tab waits in the popup instead of opening with the wrong login.
 • Export and import your setup as a JSON file (cookies are left out unless you tick a clearly marked box).
 • Light and dark themes, full keyboard support.
 
 PRIVACY
 • Everything stays on your device. SplitSession has no servers, no account, no analytics and sends nothing anywhere.
-• Cookies are kept in Chrome's local extension storage on your computer, like Chrome's own cookies.
+• Container cookies are stored locally in SplitSession's extension storage on your device. They are never sent to a SplitSession server, and there is none.
 • Open source (MIT): the full code is on GitHub.
 
 GOOD TO KNOW

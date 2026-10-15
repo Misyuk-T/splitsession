@@ -10,8 +10,8 @@ Effective date: 2026-10-14
 
 SplitSession is a free, open-source Chrome extension by Taras Misiuk that lets you keep several accounts of the same
 website signed in side by side ("containers"). This policy covers both editions: **Lite** (containers only) and **Full**
-(containers plus an optional local AI agent bridge). The source code is public:
-<https://github.com/Misyuk-T/splitsession>.
+(containers plus an optional local AI agent bridge). The Chrome Web Store has the Lite edition, which contains none of the
+Full edition's features or extra permissions. The source code is public: <https://github.com/Misyuk-T/splitsession>.
 
 ## In short
 
@@ -23,8 +23,9 @@ website signed in side by side ("containers"). This policy covers both editions:
 
 ## What data SplitSession handles
 
-All of it is stored locally by the extension in `chrome.storage` on your device, unencrypted, like Chrome's own cookies
-(full-disk encryption is what protects both). It is not synced and not backed up by the developer.
+All of it stays on your device: in the extension's own storage (`chrome.storage`) or, for page storage, in the site's own
+storage in your browser (see the table). SplitSession does not encrypt it; full-disk encryption is what protects it, as it
+protects Chrome's own cookies. It is not synced and not backed up by the developer.
 
 | Data | Why | Where |
 | --- | --- | --- |
@@ -34,8 +35,10 @@ All of it is stored locally by the extension in `chrome.storage` on your device,
 | **Settings and site rules** ("always open this site in container X") | to behave the way you set it up | `chrome.storage.local` |
 | **A short local log** of what the extension did (for example "tab moved to container X because of a rule") | to help you see why something happened, on the Diagnostics part of the options page | on your device |
 
-SplitSession does not read your browsing history, bookmarks, passwords, form data or the contents of pages (Lite never
-does; Full does so only for the agent bridge, below). Cookies are handled only to keep containers apart: a container's
+SplitSession does not access Chrome's browsing history, bookmarks, saved passwords, form data or the contents of pages
+(Lite never does; Full reads pages only for the agent bridge, below). It does read the address of a tab when the tab
+navigates, only to check your site rules, and it keeps the addresses and titles of container tabs (including recently
+closed ones) on your device, as listed above. Cookies are handled only to keep containers apart: a container's
 cookies are sent only to the site that set them, from tabs of that container, exactly as Chrome would send them.
 
 ## What leaves your device
