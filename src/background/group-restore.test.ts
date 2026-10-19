@@ -11,8 +11,17 @@ import {
 function setup(
   groups: GroupSnapshot[],
   tabs: Record<number, RestoreTab[]>,
-  opts: { containers?: number; failTab?: number } = {},
+  opts: {
+    containers?: number;
+    failTab?: number;
+    /** Runs when a tab is assigned in place, to change what the tab looks like next (a navigation that began meanwhile). */
+    onAssignInPlace?: (tab: number, live: Map<number, RestoreTab>) => void;
+  } = {},
 ) {
+  // What Chrome says about each tab now; `tabsOf` is the list taken earlier, and tests change this one behind its back.
+  const live = new Map<number, RestoreTab>();
+  for (const [groupId, list] of Object.entries(tabs))
+    for (const t of list) live.set(t.id!, { ...t, groupId: Number(groupId) });
   const area = new MemoryStorageArea();
   const made: Array<{ id: string; name: string; color: string }> = [];
   const assigned: Array<{
@@ -27,10 +36,12 @@ function setup(
     containerCount: () => (opts.containers ?? 0) + made.length,
     groups: async () => groups,
     tabsOf: async (id) => tabs[id] ?? [],
+    tab: async (id) => live.get(id) ?? null,
     createContainer: async (c) => void made.push(c),
     assignInPlace: async (tab, id) => {
       if (tab === opts.failTab) throw new Error("rules failed");
       assigned.push({ tab, id, how: "in place" });
+      opts.onAssignInPlace?.(tab, live);
     },
     reopen: async (tab, id, url) => {
       if (tab === opts.failTab) throw new Error("rules failed");
@@ -46,6 +57,7 @@ function setup(
     made,
     assigned,
     adopted: () => adopted,
+    live,
   };
 }
 
@@ -135,5 +147,90 @@ describe("GroupRestore", () => {
     const s = setup([g(1, "main", "aaa111")], {}, { containers: 1 });
     await expect(s.restore.restore()).rejects.toThrow(/no tab groups/);
     expect(s.made).toEqual([]);
+  });
+
+  describe("what happened to a tab after the list was taken", () => {
+    const one = (tab: RestoreTab, opts: Parameters<typeof setup>[2] = {}) =>
+      setup([g(1, "main", "aaa111")], { 1: [tab] }, opts);
+
+    it("a tab that loaded meanwhile is reopened, not assigned in place", async () => {
+      const s = one({ id: 11, url: "https://a.example/", status: "unloaded" });
+      s.live.set(11, {
+        id: 11,
+        groupId: 1,
+        url: "https://a.example/",
+        status: "complete",
+      });
+      expect(await s.restore.restore()).toMatchObject({ tabs: 1, failed: 0 });
+      expect(s.assigned).toEqual([
+        { tab: 11, id: "aaa111", how: "reopened", url: "https://a.example/" },
+      ]);
+    });
+
+    it("a discarded tab that was reloaded meanwhile (discarded flag gone) is reopened", async () => {
+      const s = one({ id: 11, url: "https://a.example/", discarded: true });
+      s.live.set(11, {
+        id: 11,
+        groupId: 1,
+        url: "https://a.example/",
+        status: "loading",
+        discarded: false,
+      });
+      await s.restore.restore();
+      expect(s.assigned.map((a) => a.how)).toEqual(["reopened"]);
+    });
+
+    it("a navigation that began while the tab was being assigned: assigned, then reopened", async () => {
+      const s = one(
+        { id: 11, url: "https://a.example/", discarded: true },
+        {
+          onAssignInPlace: (tab, live) =>
+            live.set(tab, {
+              id: tab,
+              groupId: 1,
+              url: "https://a.example/",
+              pendingUrl: "https://a.example/next",
+              status: "loading",
+              discarded: false,
+            }),
+        },
+      );
+      expect(await s.restore.restore()).toMatchObject({ tabs: 1, failed: 0 });
+      expect(s.assigned).toEqual([
+        { tab: 11, id: "aaa111", how: "in place" },
+        {
+          tab: 11,
+          id: "aaa111",
+          how: "reopened",
+          url: "https://a.example/next",
+        },
+      ]);
+    });
+
+    it("a tab that stayed unloaded is only assigned in place", async () => {
+      const s = one({ id: 11, url: "https://a.example/", status: "unloaded" });
+      await s.restore.restore();
+      expect(s.assigned.map((a) => a.how)).toEqual(["in place"]);
+    });
+
+    it("a tab the user moved to another group is left to the group guard", async () => {
+      const s = one({ id: 11, url: "https://a.example/" });
+      s.live.get(11)!.groupId = 7;
+      expect(await s.restore.restore()).toMatchObject({ tabs: 0, failed: 0 });
+      expect(s.assigned).toEqual([]);
+    });
+
+    it("a tab that was ungrouped or closed meanwhile is skipped", async () => {
+      const s = setup([g(1, "main", "aaa111")], {
+        1: [
+          { id: 11, url: "https://a.example/" },
+          { id: 12, url: "https://b.example/" },
+        ],
+      });
+      s.live.get(11)!.groupId = -1;
+      s.live.delete(12);
+      expect(await s.restore.restore()).toMatchObject({ tabs: 0, failed: 0 });
+      expect(s.assigned).toEqual([]);
+    });
   });
 });

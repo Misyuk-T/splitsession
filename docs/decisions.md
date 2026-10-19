@@ -1443,6 +1443,18 @@ Goal: a container tab that is not in its container's tab group (dragged out, or 
   stands (`Facet.assignInPlace`), keeps its ID and loads nothing: it has no live document for anything to hold a reference to,
   and what it loads later is already the container's. A tab that cannot be handled is counted ("N tabs could not be moved
   in") and the group guard fixes it at its next sweep.
+- **Races (second review).** (1) The restore awaits every tab in turn, so a tab list taken earlier goes stale. Each tab is read
+  again right before it is handled (`tabs.get`): gone, or no longer in that group (the user dragged it away) -> skipped and left
+  to the group guard; loaded or loading -> reopened. A tab that loaded nothing is assigned in place and then read once more: a
+  navigation that began before the container's rules were active shows as a tab that is no longer unloaded or discarded (or has a
+  pending website address), and such a tab holds a live plain document, so it is reopened too (`handleTab`). A navigation that
+  begins after the assignment is the container's own. In-place assignment of http(s) tabs was kept (no reopen of every unloaded
+  tab) because the check should close the window: a navigation's start (`pendingUrl`, `status`) is browser-side state set before its first
+  request, so a state change is not expected to hide from the second read (an assumption, not measured). Reopening a never-loaded tab would instead have to load it once
+  in the new tab (Chrome offers no create-discarded for a given URL), which sends requests the user never asked for.
+  (2) Two callers moving one original tab (the guard's sweep, the restore) each created a fresh tab and each closed the
+  original: two survivors. `TabReopener` (`tab-reopener.ts`, behind `Extras.reopenInContainer`) keeps one in-flight move per
+  original tab ID; a second caller gets the first one's result, and the entry is dropped when the move ends, failed or not.
 - **After.** One line in the popup: "Restored N containers. Sign in again: a reinstall removes saved logins." The dismissed flag
   is set on a successful restore too, so leftovers are not offered again.
 - **Warning before it happens.** Settings, Advanced, Export and import: "Removing SplitSession deletes its containers and their

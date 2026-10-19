@@ -14,6 +14,7 @@ import type { StorageAreaLike } from "../engine/storage/storage-area";
 /** A tab of a leftover group, as far as the restore needs to know it. */
 export interface RestoreTab {
   id?: number;
+  groupId?: number;
   url?: string;
   pendingUrl?: string;
   /** 'unloaded': Chrome has not loaded the tab (restored lazily). */
@@ -26,7 +27,10 @@ export interface GroupRestoreDeps {
   area: StorageAreaLike;
   containerCount(): number;
   groups(): Promise<GroupSnapshot[]>;
+  /** The tabs in the group now (the list the restore walks; each tab is read again before it is handled). */
   tabsOf(groupId: number): Promise<RestoreTab[]>;
+  /** The tab as it is now (`tabs.get`); null when it is gone. */
+  tab(tabId: number): Promise<RestoreTab | null>;
   createContainer(input: {
     id: ContainerId;
     name: string;
@@ -42,6 +46,18 @@ export interface GroupRestoreDeps {
   /** The groups take over the new containers: a tab put into the group then joins it instead of making a second group. */
   adopt(): Promise<void>;
   log(level: "info" | "warn" | "error", message: string, data?: unknown): void;
+}
+
+/** The address of a tab that has a website loaded (or loading) in it: http(s), loaded by Chrome, not discarded; else null. */
+function websiteOf(tab: RestoreTab): string | null {
+  const address = isHttpUrl(tab.pendingUrl)
+    ? tab.pendingUrl
+    : isHttpUrl(tab.url)
+      ? tab.url
+      : null;
+  return address !== null && tab.status !== "unloaded" && tab.discarded !== true
+    ? address
+    : null;
 }
 
 /**
@@ -99,6 +115,41 @@ export class GroupRestore {
     return this.running;
   }
 
+  /**
+   * One tab of a group, judged by its state NOW, not by the list taken earlier (the restore awaits every tab in turn, and a tab
+   * may have loaded, moved to another group or closed meanwhile). False: left alone (gone, or no longer in this group: the
+   * group guard decides about it).
+   * - A loaded website is reopened in a fresh tab (`reopen`).
+   * - A tab that loaded nothing is assigned where it stands, then read once more: a navigation that began before the
+   *   container's rules were active shows as a changed state (a website that is loading or loaded, no longer unloaded or
+   *   discarded), and such a tab holds a live plain document, so it is reopened as well. A navigation that begins after the
+   *   assignment is the container's own.
+   */
+  private async handleTab(
+    tabId: number,
+    groupId: number,
+    containerId: ContainerId,
+  ): Promise<boolean> {
+    const now = await this.deps.tab(tabId);
+    if (now === null || now.groupId !== groupId) return false;
+    const address = websiteOf(now);
+    if (address !== null) {
+      await this.deps.reopen(tabId, containerId, address);
+      return true;
+    }
+    await this.deps.assignInPlace(tabId, containerId);
+    const after = await this.deps.tab(tabId);
+    const loadedMeanwhile = after === null ? null : websiteOf(after);
+    if (loadedMeanwhile !== null) {
+      this.deps.log(
+        "info",
+        `restore from groups: tab ${tabId} started loading while it was assigned, reopened in the container`,
+      );
+      await this.deps.reopen(tabId, containerId, loadedMeanwhile);
+    }
+    return true;
+  }
+
   private async run(): Promise<GroupRestoreResult> {
     const plan = await this.plan();
     if (plan.length === 0)
@@ -124,26 +175,17 @@ export class GroupRestore {
       result.containers++;
       await this.deps.adopt();
       for (const groupId of entry.groupIds) {
-        for (const tab of await this.deps.tabsOf(groupId).catch(() => [])) {
-          if (tab.id === undefined) continue;
-          const address = isHttpUrl(tab.pendingUrl)
-            ? tab.pendingUrl
-            : isHttpUrl(tab.url)
-              ? tab.url
-              : null;
-          const loaded =
-            address !== null &&
-            tab.status !== "unloaded" &&
-            tab.discarded !== true;
+        for (const listed of await this.deps.tabsOf(groupId).catch(() => [])) {
+          if (listed.id === undefined) continue;
+          const tabId = listed.id;
           try {
-            if (loaded) await this.deps.reopen(tab.id, entry.id, address);
-            else await this.deps.assignInPlace(tab.id, entry.id);
-            result.tabs++;
+            const done = await this.handleTab(tabId, groupId, entry.id);
+            if (done) result.tabs++;
           } catch (error) {
             result.failed++;
             this.deps.log(
               "warn",
-              `restore from groups: tab ${tab.id} could not be put into “${entry.name}”`,
+              `restore from groups: tab ${tabId} could not be put into “${entry.name}”`,
               String(error),
             );
           }
