@@ -112,6 +112,7 @@ test.describe("Lite edition", () => {
     const settings = await api<Record<string, boolean>>("getSettings");
     expect(Object.keys(settings).sort()).toEqual([
       "markOutsideGroup",
+      "rememberTabs",
       "restoreTabs",
       "strictMode",
       "tabGroups",

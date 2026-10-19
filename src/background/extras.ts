@@ -10,6 +10,7 @@ import type { Facet } from "./facet";
 import { GroupGuard, type GuardTab } from "./group-guard";
 import { GroupMark, OUTSIDE_GROUP_MESSAGE } from "./group-mark";
 import { RuleStore } from "./rule-store";
+import { SavedTabsRecorder, type SeenTab } from "./saved-tabs-recorder";
 import { SettingsStore } from "./settings-store";
 import {
   TabGroupProjection,
@@ -39,6 +40,8 @@ export class Extras {
   readonly engine: DomainRuleEngine;
   readonly guard: GroupGuard;
   readonly mark: GroupMark;
+  /** Remembers a container's tabs when its last tab closes (`saved-tabs-recorder.ts`). */
+  readonly saved: SavedTabsRecorder;
   private readonly reopener: TabReopener;
   ready!: Promise<void>;
 
@@ -86,6 +89,7 @@ export class Extras {
           url,
           onCreated,
         );
+        this.saved.willMove(tabId);
         await b.tabs.remove(tabId).catch(() => {});
         return newTabId;
       },
@@ -97,6 +101,18 @@ export class Extras {
       },
       chooseUrl: (url, tabId) =>
         `${b.runtime.getURL("/choose.html" as never)}?url=${encodeURIComponent(url)}&tab=${tabId}`,
+      log: facet.log,
+    });
+
+    this.saved = new SavedTabsRecorder({
+      session,
+      queryTabs: () => b.tabs.query({}) as Promise<SeenTab[]>,
+      windowCount: async () => (await b.windows.getAll()).length,
+      containerOf: (tabId) => facet.tabs.containerOf(tabId),
+      tabsOf: (containerId) => facet.tabs.tabsOf(containerId),
+      containerName: (id) => facet.containers.get(id)?.name,
+      enabled: () => this.settings.get().rememberTabs,
+      save: (id, tabs) => facet.savedTabs.set(id, tabs),
       log: facet.log,
     });
 
@@ -194,6 +210,7 @@ export class Extras {
         this.groups.load(),
         this.rules.load(),
       ]);
+      await this.saved.start();
       void this.groups.adoptExisting(); // groups Chrome kept through a restart; titles of earlier versions get the glyph
       const tabIds = [
         ...this.facet.tabs.entries().map(([id]) => id),
@@ -257,6 +274,7 @@ export class Extras {
   private onFacetEvent(event: FacetEvent): void {
     switch (event.type) {
       case "tab-assigned":
+        void this.ready.then(() => this.saved.layoutChanged());
         // Synchronous: this placement exempts the tab's next navigation from domain rules, and that navigation may
         // follow immediately.
         this.exemptions.markPlacement(event.tabId, event.containerId);
@@ -268,6 +286,7 @@ export class Extras {
         break;
       case "tab-unassigned":
         void this.ready.then(() => {
+          this.saved.layoutChanged();
           void this.groups.tabUnassigned(event.tabId, event.containerId);
           void this.badges.apply(event.tabId);
           void this.mark.refresh(event.tabId, true);
@@ -275,6 +294,9 @@ export class Extras {
         break;
       case "tab-replaced":
         this.exemptions.move(event.removed, event.added);
+        void this.ready.then(() =>
+          this.saved.tabReplaced(event.added, event.removed),
+        );
         void this.ready.then(() => this.badges.apply(event.added));
         break;
       case "container-updated":
@@ -314,6 +336,7 @@ export class Extras {
 
   /** Closes a tab; while the user still holds a dragged tab Chrome refuses, so this waits for the drop (up to ~20 s). */
   private async removeWithRetry(tabId: number): Promise<void> {
+    this.saved.willMove(tabId);
     for (let attempt = 0; attempt < 80; attempt++) {
       try {
         await this.b.tabs.remove(tabId);
@@ -338,6 +361,20 @@ export class Extras {
     void this.facet.ready
       .then(() => this.ready)
       .then(() => this.guard.tabCreated(tab));
+  }
+
+  /** `tabs.onUpdated`: a container tab navigated or got a new title (the saved tabs need the address and title). */
+  handleTabUpdated(tab: SeenTab): void {
+    void this.facet.ready
+      .then(() => this.ready)
+      .then(() => this.saved.tabUpdated(tab));
+  }
+
+  /** A tab was created, moved, attached or detached: where container tabs stand changed. */
+  handleTabLayout(): void {
+    void this.facet.ready
+      .then(() => this.ready)
+      .then(() => this.saved.layoutChanged());
   }
 
   /** `tabs.onUpdated` with a `groupId`: the user may have dragged the tab into a group that stands for a container. */
@@ -426,7 +463,16 @@ export class Extras {
     });
   }
 
-  handleTabRemoved(tabId: number): void {
+  handleTabRemoved(
+    tabId: number,
+    info: { isWindowClosing?: boolean } = {},
+  ): void {
+    const at = Date.now();
+    void this.facet.ready
+      .then(() => this.ready)
+      .then(() =>
+        this.saved.tabRemoved(tabId, info.isWindowClosing === true, at),
+      );
     this.exemptions.forget(tabId);
     this.engine.forgetTab(tabId);
     this.mark.forget(tabId);

@@ -207,3 +207,115 @@ describe("planImport", () => {
     expect(plan.create).toHaveLength(2);
   });
 });
+
+describe("tabs in an export", () => {
+  const tab = (n: number) => ({
+    url: `https://example.com/${n}`,
+    title: `Page ${n}`,
+  });
+
+  it("an export without tabs has no tabs field, and one with tabs lists them per container", () => {
+    expect("tabs" in buildExport({ containers, rules, now: 1 })).toBe(false);
+    const file = buildExport({
+      containers,
+      rules,
+      tabs: { work1: [tab(1), tab(2)], home2: [] },
+      now: 1,
+    });
+    expect(file.tabs).toEqual({ work1: [tab(1), tab(2)] }); // a container with none has no entry
+    expect(file.version).toBe(1);
+  });
+
+  it("round-trips tabs with and without cookies, through text", () => {
+    for (const jars of [undefined, { work1: [cookie()] }]) {
+      const file = buildExport({
+        containers,
+        rules,
+        jars,
+        tabs: { work1: [tab(1)], home2: [tab(2), tab(3)] },
+        now: 5,
+      });
+      const parsed = parseExport(JSON.stringify(file));
+      expect(parsed).toEqual({ ok: true, file });
+    }
+  });
+
+  it("keeps at most 50 tabs per container and only web addresses when building", () => {
+    const many = Array.from({ length: 70 }, (_, i) => tab(i));
+    const file = buildExport({
+      containers,
+      rules,
+      tabs: {
+        work1: many,
+        home2: [{ url: "chrome://settings", title: "" }],
+      },
+    });
+    expect(file.tabs!.work1).toHaveLength(50);
+    expect(file.tabs!.home2).toBeUndefined();
+  });
+
+  it("a file written before tabs existed (no field) still imports", () => {
+    const old = {
+      format: "facet-export",
+      version: 1,
+      exportedAt: 3,
+      containers: [{ id: "work1", name: "Work", color: "blue" }],
+      rules: [],
+    };
+    const parsed = parseExport(old);
+    expect(parsed.ok).toBe(true);
+    if (parsed.ok) {
+      expect(parsed.file.tabs).toBeUndefined();
+      const plan = planImport(parsed.file, [], []);
+      expect(plan.tabs).toBe(0);
+      expect(plan.tabContainers).toBe(0);
+    }
+  });
+
+  it("plans the tabs it will save", () => {
+    const file = buildExport({
+      containers,
+      rules,
+      tabs: { work1: [tab(1), tab(2)], home2: [tab(3)] },
+    });
+    const plan = planImport(file, [], []);
+    expect(plan.tabs).toBe(3);
+    expect(plan.tabContainers).toBe(2);
+  });
+
+  const bad = (label: string, mutate: (f: any) => void, message: RegExp) =>
+    it(`rejects: ${label}`, () => {
+      const f = JSON.parse(
+        JSON.stringify(
+          buildExport({ containers, rules, tabs: { work1: [tab(1)] } }),
+        ),
+      );
+      mutate(f);
+      const r = parseExport(f);
+      expect(r.ok).toBe(false);
+      if (!r.ok) expect(r.error).toMatch(message);
+    });
+
+  bad("tabs not an object", (f) => (f.tabs = []), /"tabs" must be an object/);
+  bad(
+    "unknown container",
+    (f) => (f.tabs.nope = [tab(1)]),
+    /unknown container/,
+  );
+  bad("not a list", (f) => (f.tabs.work1 = "x"), /not a list/);
+  bad(
+    "too many",
+    (f) => (f.tabs.work1 = Array.from({ length: 51 }, (_, i) => tab(i))),
+    /Too many tabs/,
+  );
+  bad(
+    "an address that is not a web address",
+    (f) => (f.tabs.work1 = [{ url: "javascript:alert(1)", title: "" }]),
+    /not a web address/,
+  );
+  bad(
+    "a tab that is not an object",
+    (f) => (f.tabs.work1 = [7]),
+    /not a web address/,
+  );
+});

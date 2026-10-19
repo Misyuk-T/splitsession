@@ -2,7 +2,7 @@ import type { ContainerInfo } from "../../background/facet";
 import { CONTAINER_HEX, type ContainerColor } from "../../core";
 import { Button, Dot } from "../components/Button";
 import { ContainerForm } from "../components/ContainerForm";
-import { tabsLabel } from "../format";
+import { plural, tabsLabel } from "../format";
 import { IconMoveIn, IconPencil, IconPlus, IconTrash } from "../icons";
 import { rowId } from "./ids";
 
@@ -23,6 +23,7 @@ export const ContainerRow = ({
   onDelete,
   onCancelEdit,
   onSave,
+  onForgetSaved,
 }: {
   container: ContainerInfo;
   editing: boolean;
@@ -38,8 +39,12 @@ export const ContainerRow = ({
   onDelete(): void;
   onCancelEdit(): void;
   onSave(value: { name: string; color: ContainerColor }): Promise<void>;
-}) =>
-  editing ? (
+  /** Forget the saved tabs (offered in the edit form while the container has some). */
+  onForgetSaved(): void;
+}) => {
+  // No open tab and some saved: a click brings them back.
+  const reopening = c.tabCount === 0 && c.savedCount > 0;
+  return editing ? (
     <li class="popup__row popup__row--editing">
       <ContainerForm
         existingNames={names}
@@ -48,6 +53,21 @@ export const ContainerRow = ({
         onCancel={onCancelEdit}
         onSubmit={onSave}
       />
+      {c.savedCount > 0 && (
+        <div class="popup__forget">
+          <span class="fx-secondary">
+            {plural(c.savedCount, "saved tab")} for this container.
+          </span>
+          <Button
+            small
+            data-testid="forget-saved"
+            aria-label={`Forget saved tabs of ${c.name}`}
+            onClick={onForgetSaved}
+          >
+            Forget saved tabs
+          </Button>
+        </div>
+      )}
     </li>
   ) : (
     <li
@@ -59,11 +79,19 @@ export const ContainerRow = ({
         type="button"
         id={rowId(c.id)}
         class="popup__rowmain"
-        aria-label={c.tabCount > 0 ? `Go to ${c.name}` : `Open ${c.name}`}
+        aria-label={
+          c.tabCount > 0
+            ? `Go to ${c.name}`
+            : reopening
+              ? `Reopen ${plural(c.savedCount, "saved tab")} of ${c.name}`
+              : `Open ${c.name}`
+        }
         title={
           c.tabCount > 0
             ? `Go to ${c.name} (${tabsLabel(c.tabCount)} open)`
-            : `Open ${c.name} in a new tab`
+            : reopening
+              ? `Reopen ${plural(c.savedCount, "saved tab")}`
+              : `Open ${c.name} in a new tab`
         }
         onClick={onGo}
       >
@@ -75,6 +103,14 @@ export const ContainerRow = ({
             data-testid="container-tabs"
           >
             {tabsLabel(c.tabCount)}
+          </span>
+        )}
+        {reopening && (
+          <span
+            class="fx-secondary popup__rowtabs"
+            data-testid="container-saved"
+          >
+            {c.savedCount} saved
           </span>
         )}
       </button>
@@ -125,3 +161,4 @@ export const ContainerRow = ({
       </div>
     </li>
   );
+};

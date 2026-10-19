@@ -52,7 +52,7 @@ by the environment variable `FACET_EDITION` (`lite`; anything else or unset is F
   worker is `src/background/full-edition.ts` (called from `src/background/index.ts`), the interface pieces (`BridgeCard`,
   `BridgeSection`, the two page-name switches) sit behind `__FULL__` in the popup and options,
   the beacon starts `title-prefix.ts` only under it, and `src/core/settings.ts` gives Lite a smaller settings schema
-  (`tabGroups`, `strictMode`, `restoreTabs`, `markOutsideGroup`; an update naming any other key is an error). A stylesheet only the bridge card uses is resolved to an empty
+  (`tabGroups`, `strictMode`, `restoreTabs`, `markOutsideGroup`, `rememberTabs`; an update naming any other key is an error). A stylesheet only the bridge card uses is resolved to an empty
   module (a side-effect-only `import './x.css'` survives tree-shaking by itself).
 - **Adding code to the agent side**: put it behind `__FULL__`, then run `pnpm build:lite`. `scripts/check-lite.mjs` (run by
   `build:lite` and `zip:lite`, and by CI) scans every file of the Lite output for bridge / CDP / page-name markers and the

@@ -23,6 +23,7 @@ It also works with Chrome's split view: two accounts of one site, literally side
 - **Cookie and storage isolation** per tab: network cookies, `localStorage`, IndexedDB and more; popups stay in their container.
 - **Tab groups** named after containers, kept in sync both ways.
 - **Restore after restart**: container tabs come back in their containers.
+- **Saved tabs**: close a container's tab group and one click on the container brings all its tabs back.
 - **Domain rules** ("always open this site in X") and an optional **strict mode** against service workers.
 - **Export / import**, light and dark themes, keyboard-accessible UI.
 

@@ -20,6 +20,7 @@ interface Pending {
 /** The body of the "Export and import" disclosure under Advanced. */
 export const TransferBody = ({ onChanged }: { onChanged(): void }) => {
   const [includeJars, setIncludeJars] = useState(false);
+  const [includeTabs, setIncludeTabs] = useState(false);
   const [busy, setBusy] = useState(false);
   const [pending, setPending] = useState<Pending | null>(null);
   const [problem, setProblem] = useState<string | null>(null);
@@ -31,19 +32,23 @@ export const TransferBody = ({ onChanged }: { onChanged(): void }) => {
     setBusy(true);
     setProblem(null);
     try {
-      const file = await facetApi.exportData({ includeJars });
+      const file = await facetApi.exportData({ includeJars, includeTabs });
       const blob = new Blob([JSON.stringify(file, null, 2)], {
         type: "application/json",
       });
       const link = document.createElement("a");
       link.href = URL.createObjectURL(blob);
-      link.download = `splitsession-${includeJars ? "with-cookies-" : ""}${new Date().toISOString().slice(0, 10)}.json`;
+      link.download = `splitsession-${includeJars ? "with-cookies-" : ""}${includeTabs ? "with-tabs-" : ""}${new Date().toISOString().slice(0, 10)}.json`;
+      const tabCount = Object.values(file.tabs ?? {}).reduce(
+        (n, list) => n + list.length,
+        0,
+      );
       document.body.append(link);
       link.click();
       link.remove();
       setTimeout(() => URL.revokeObjectURL(link.href), 10_000);
       setNote(
-        `Exported ${plural(file.containers.length, "container")} and ${plural(file.rules.length, "rule")}${includeJars ? ", with cookies" : ""}.`,
+        `Exported ${plural(file.containers.length, "container")} and ${plural(file.rules.length, "rule")}${includeJars ? ", with cookies" : ""}${includeTabs ? `, with ${plural(tabCount, "tab")}` : ""}.`,
       );
     } catch (e) {
       setProblem(describeError(e));
@@ -89,8 +94,8 @@ export const TransferBody = ({ onChanged }: { onChanged(): void }) => {
       const summary = await facetApi.importData(pending.file);
       setNote(
         `Imported: ${plural(summary.createdContainers, "container")} created, ${plural(summary.matchedContainers, "container")} already existed, ${plural(summary.rules, "rule")}${
-          summary.cookies > 0 ? `, ${plural(summary.cookies, "cookie")}.` : "."
-        }`,
+          summary.cookies > 0 ? `, ${plural(summary.cookies, "cookie")}` : ""
+        }${summary.tabs > 0 ? `, ${plural(summary.tabs, "saved tab")}` : ""}.`,
       );
       setPending(null);
       onChanged();
@@ -104,7 +109,8 @@ export const TransferBody = ({ onChanged }: { onChanged(): void }) => {
   return (
     <>
       <p class="fx-secondary opt-lead">
-        Back up or move your containers and rules. No cookies unless you ask.
+        Back up or move your containers and rules. No cookies or tabs unless you
+        ask.
       </p>
 
       <div class="opt-sub opt-sub--rows">
@@ -130,6 +136,24 @@ export const TransferBody = ({ onChanged }: { onChanged(): void }) => {
             onChange={setIncludeJars}
             describedBy="jar-warning"
           />
+          <Checkbox
+            label="Also include tabs (open and saved)"
+            checked={includeTabs}
+            onChange={setIncludeTabs}
+            describedBy="tabs-note"
+          />
+          {includeTabs && (
+            <p
+              id="tabs-note"
+              class="opt-warn"
+              role="note"
+              data-testid="tabs-note"
+            >
+              The file will hold the addresses and titles of the tabs (up to 50
+              per container). Some addresses carry private tokens. After an
+              import the tabs are not opened: click the container in the popup.
+            </p>
+          )}
           {includeJars && (
             <p
               id="jar-warning"
@@ -203,6 +227,17 @@ export const TransferBody = ({ onChanged }: { onChanged(): void }) => {
                     </span>
                   )}
                 </li>
+                {pending.plan.tabs > 0 && (
+                  <li>
+                    save {plural(pending.plan.tabs, "tab")} for{" "}
+                    {plural(pending.plan.tabContainers, "container")}
+                    <span class="fx-secondary">
+                      {" "}
+                      (they replace saved tabs there; nothing is opened until
+                      you click the container)
+                    </span>
+                  </li>
+                )}
                 {pending.plan.cookies > 0 && (
                   <li>
                     <strong>

@@ -9,6 +9,7 @@ export * from "./jar/set-cookie-parser";
 export * from "./names";
 export * from "./page-key";
 export * from "./restore";
+export * from "./saved-tabs";
 export * from "./settings";
 export * from "./site";
 export * from "./transfer";

@@ -25,6 +25,8 @@ export const DeleteDialog = ({
       {container.tabCount > 0
         ? `${container.tabCount === 1 ? "Its open tab" : `Its ${container.tabCount} open tabs`} will be closed and its saved logins (cookies) forgotten.`
         : "Its saved logins (cookies) will be forgotten."}
+      {container.savedCount > 0 &&
+        ` The ${container.savedCount === 1 ? "tab" : `${container.savedCount} tabs`} saved for it will be forgotten too.`}
     </p>
     <p class="fx-secondary">This cannot be undone.</p>
   </ConfirmDialog>
