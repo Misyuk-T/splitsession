@@ -113,6 +113,7 @@ export class Extras {
       containerName: (id) => facet.containers.get(id)?.name,
       enabled: () => this.settings.get().rememberTabs,
       save: (id, tabs) => facet.savedTabs.set(id, tabs),
+      existing: (id) => facet.savedTabs.get(id),
       log: facet.log,
     });
 

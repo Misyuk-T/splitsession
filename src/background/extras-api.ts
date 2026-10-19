@@ -243,9 +243,15 @@ export function createExtrasApi(
           : undefined;
       // Durable progress (an entry goes from the stored set once its tab is open) and one reopening per container.
       return reopener.reopen(container.id, async (tab, first) => {
-        await facet.openInContainer(tab.url, container.id, {
+        const tabId = await facet.openInContainer(tab.url, container.id, {
           active: first,
           ...(windowId !== undefined ? { windowId } : {}),
+        });
+        // Until its navigation commits the tab shows about:blank: it stands for this entry, which leaves the stored set next.
+        const made = await b.tabs.get(tabId).catch(() => undefined);
+        extras.saved.seed(tabId, container.id, tab, {
+          windowId: made?.windowId ?? windowId ?? 0,
+          index: made?.index ?? Number.MAX_SAFE_INTEGER,
         });
       });
     },

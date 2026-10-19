@@ -1,12 +1,14 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { BATCH_GAP_MS, type SavedTab } from "../core";
+import { SavedTabsStore } from "../engine/storage/saved-tabs-store";
 import { MemoryStorageArea } from "../engine/storage/storage-area";
 import {
   SavedTabsRecorder,
   type SeenTab,
   WINDOW_CLOSE_GRACE_MS,
 } from "./saved-tabs-recorder";
+import { SavedTabsReopener } from "./saved-tabs-reopen";
 
 interface LiveTab extends SeenTab {
   id: number;
@@ -25,6 +27,8 @@ class World {
   ]);
 
   saves: Array<[string, SavedTab[]]> = [];
+  /** What the container still has saved (an unopened remainder). */
+  remainder: SavedTab[] = [];
   session = new MemoryStorageArea();
   recorder: SavedTabsRecorder;
 
@@ -43,6 +47,7 @@ class World {
       containerName: (c) => this.names.get(c),
       enabled: () => this.enabled,
       save: async (c, tabs) => void this.saves.push([c, tabs]),
+      existing: () => this.remainder,
       now: () => Date.now(),
     });
   }
@@ -255,6 +260,112 @@ describe("SavedTabsRecorder", () => {
     await world.recorder.flush();
     await world.close([14, 15]);
     expect(urls(world.last)).toEqual(["https://b.com/1", "https://b.com/2"]);
+  });
+
+  describe("tabs reopened from a saved set", () => {
+    it("closing them before their navigation commits still saves them (seeded, then blank / loading)", async () => {
+      const place = { windowId: 1, index: 0 };
+      for (const [i, id] of [30, 31].entries()) {
+        // The new tab shows about:blank (no pendingUrl yet) and is registered; the reopener seeds it from the entry.
+        world.live.set(id, {
+          id,
+          url: "about:blank",
+          title: "",
+          index: i,
+          windowId: 1,
+        });
+        world.registry.set(id, "c2");
+        world.recorder.seed(
+          id,
+          "c2",
+          { url: `https://b.com/${i}`, title: `S${i}` },
+          { ...place, index: i },
+        );
+      }
+      await world.recorder.flush(); // a refresh finds the blank tabs: it must not wipe the seeded addresses
+      await world.close([30, 31]);
+      expect(world.last).toEqual([
+        { url: "https://b.com/0", title: "S0" },
+        { url: "https://b.com/1", title: "S1" },
+      ]);
+    });
+
+    it("a tab still loading is saved with the address it is loading, not about:blank", async () => {
+      world.live.set(40, {
+        id: 40,
+        url: "about:blank",
+        pendingUrl: "https://b.com/loading",
+        title: "",
+        index: 5,
+        windowId: 1,
+      });
+      world.registry.set(40, "c2");
+      await world.recorder.flush();
+      await world.close([40]);
+      expect(urls(world.last)).toEqual(["https://b.com/loading"]);
+    });
+
+    it("works through the real reopener: closing the tabs right after the entries left the store loses nothing", async () => {
+      const area = new MemoryStorageArea();
+      const store = new SavedTabsStore(area);
+      await store.load(() => true);
+      const entries = [1, 2, 3].map((n) => ({
+        url: `https://b.com/${n}`,
+        title: `S${n}`,
+      }));
+      await store.set("c2", entries);
+      world.remainder = [];
+      const reopener = new SavedTabsReopener(store);
+      let next = 50;
+      const ids: number[] = [];
+      await reopener.reopen("c2", async (tab) => {
+        const id = next++;
+        ids.push(id);
+        world.live.set(id, {
+          id,
+          url: "about:blank",
+          title: "",
+          index: id,
+          windowId: 1,
+        });
+        world.registry.set(id, "c2");
+        world.recorder.seed(id, "c2", tab, { windowId: 1, index: id });
+      });
+      expect(store.count("c2")).toBe(0);
+      await world.close(ids);
+      expect(urls(world.last)).toEqual(entries.map((e) => e.url));
+    });
+  });
+
+  describe("a closing batch and what is still saved", () => {
+    it("keeps the unopened remainder: the batch first, then the rest, one entry per address", async () => {
+      world.open(60, "c2", "https://b.com/A");
+      await world.recorder.flush();
+      world.remainder = [
+        { url: "https://b.com/B", title: "B" },
+        { url: "https://b.com/C", title: "C" },
+        { url: "https://b.com/A", title: "old A" },
+      ];
+      await world.close([60]);
+      expect(world.last).toEqual([
+        { url: "https://b.com/A", title: "Title 60" },
+        { url: "https://b.com/B", title: "B" },
+        { url: "https://b.com/C", title: "C" },
+      ]);
+    });
+
+    it("keeps at most 50, the batch first", async () => {
+      world.open(61, "c2", "https://b.com/new");
+      await world.recorder.flush();
+      world.remainder = Array.from({ length: 50 }, (_, i) => ({
+        url: `https://b.com/old${i}`,
+        title: "",
+      }));
+      await world.close([61]);
+      expect(world.last).toHaveLength(50);
+      expect(world.last![0]!.url).toBe("https://b.com/new");
+      expect(world.last![49]!.url).toBe("https://b.com/old48");
+    });
   });
 
   describe("browser shutdown", () => {

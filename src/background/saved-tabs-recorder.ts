@@ -4,6 +4,7 @@ import {
   type ClosedTab,
   ClosureLog,
   type ContainerId,
+  mergeTabLists,
   type SavedTab,
   savedTabsOf,
 } from "../core";
@@ -52,6 +53,8 @@ export interface RecorderDeps {
   /** The "Remember tabs" setting. */
   enabled(): boolean;
   save(containerId: ContainerId, tabs: SavedTab[]): Promise<void>;
+  /** What the container has saved now (an unopened remainder of an earlier set). */
+  existing?(containerId: ContainerId): SavedTab[];
   log?(
     level: "info" | "warn" | "error",
     message: string,
@@ -146,6 +149,27 @@ export class SavedTabsRecorder {
     this.schedulePersist();
   }
 
+  /**
+   * A tab SplitSession opened for a saved entry: it stands for that address and title before its navigation commits, so
+   * closing it at once still saves it. Call it before the entry leaves the stored set.
+   */
+  seed(
+    tabId: number,
+    containerId: ContainerId,
+    tab: SavedTab,
+    place: { windowId: number; index: number },
+  ): void {
+    this.memory.set(tabId, {
+      containerId,
+      url: tab.url,
+      title: tab.title,
+      windowId: place.windowId,
+      index: place.index,
+      seen: this.now(),
+    });
+    this.schedulePersist();
+  }
+
   /** `tabs.onReplaced`: the browser swapped the tab for another one (prerender, instant). */
   tabReplaced(added: number, removed: number): void {
     const entry = this.memory.get(removed);
@@ -187,15 +211,19 @@ export class SavedTabsRecorder {
   // ---- internals ----
 
   private remember(id: number, containerId: ContainerId, tab: SeenTab): void {
-    const url = tab.url || tab.pendingUrl || "";
+    // The address it commits to, or the one it is loading (a blank page that is about to navigate shows about:blank as `url`).
+    const real = [tab.url, tab.pendingUrl].find(
+      (u) => u !== undefined && u !== "" && u !== "about:blank",
+    );
     const old = this.memory.get(id);
     // While tabs are closing the positions of the others shift: a closing batch is ordered by where its tabs stood before.
     const frozen = old !== undefined && this.now() < this.frozenUntil;
     this.memory.set(id, {
       containerId,
-      // A tab that has not committed its address yet (blank, loading) keeps what it showed.
-      url: url !== "" && url !== "about:blank" ? url : (old?.url ?? url),
-      title: tab.title ?? old?.title ?? "",
+      // A tab with no address yet (blank, nothing loading) keeps what it had: a seeded or earlier address and title.
+      url: real ?? old?.url ?? tab.url ?? "",
+      title:
+        real === undefined && old ? old.title : (tab.title ?? old?.title ?? ""),
       windowId: frozen ? old.windowId : tab.windowId,
       index: frozen ? old.index : tab.index,
       seen: this.now(),
@@ -291,8 +319,20 @@ export class SavedTabsRecorder {
       );
       return;
     }
-    await this.d.save(containerId, tabs);
-    this.d.log?.("info", `saved ${tabs.length} tabs of ${containerId}`);
+    await this.saveBatch(containerId, tabs);
+  }
+
+  /**
+   * The batch comes first, in its order; what the container still has saved (tabs of an earlier set that were not
+   * reopened) follows, so closing a partly reopened set does not delete the rest. One entry per address, at most 50.
+   */
+  private async saveBatch(
+    containerId: ContainerId,
+    batch: SavedTab[],
+  ): Promise<void> {
+    const merged = mergeTabLists(batch, this.d.existing?.(containerId) ?? []);
+    await this.d.save(containerId, merged);
+    this.d.log?.("info", `saved ${merged.length} tabs of ${containerId}`);
   }
 
   /** After the grace period of a window close: not the browser quitting (a window is left), and no tab came back. */
@@ -304,8 +344,7 @@ export class SavedTabsRecorder {
       return;
     if (this.d.tabsOf(containerId).some((id) => !this.closed.has(id))) return;
     if ((await this.d.windowCount().catch(() => 0)) === 0) return;
-    await this.d.save(containerId, tabs);
-    this.d.log?.("info", `saved ${tabs.length} tabs of ${containerId}`);
+    await this.saveBatch(containerId, tabs);
   }
 
   private schedulePersist(): void {
