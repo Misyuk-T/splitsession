@@ -81,6 +81,7 @@ FEATURES
 • Optional Chrome tab groups in matching colours; dragging a tab into a group moves it there.
 • Site rules: "always open this site in Work" or "ask me".
 • Container tabs come back in their containers after a browser restart or Reopen closed tab. If SplitSession cannot tell a tab's container for sure, the tab waits in the popup instead of opening with the wrong login.
+• Close a container's tab group to free up space: its tabs are remembered, and one click in the popup brings them all back.
 • Export and import your setup as a JSON file (cookies are left out unless you tick a clearly marked box).
 • Light and dark themes, full keyboard support.
 
