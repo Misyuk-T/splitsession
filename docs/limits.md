@@ -372,6 +372,16 @@ in as you. The options page says so; without the checkbox the file has container
 containers by name, keeps existing ones as they are (colour included), creates missing ones, replaces rules for the same
 site and merges cookies into the matching jar.
 
+**Reinstalling.** Removing the extension deletes everything in `chrome.storage`: containers, cookie jars (the logins), rules,
+settings. Chrome keeps the tab groups, and their titles keep SplitSession's invisible marker, so with no container left the
+popup offers "Found N tab groups from an earlier install. Restore them as containers?". Restore gives each marked group
+(never one of the user's own) back its container, with the group's name and colour and under the ID the marker names, and puts
+the group's tabs in it; the groups are kept, not recreated. **Logins are not recovered**: the jars are gone, every site has to
+be signed in again (a site that kept its session in `localStorage` or IndexedDB may still know the container, since that
+storage is prefixed with the container ID and stays in the profile). Domain rules, other settings and a container with no
+open tab in a group cannot be recovered either. Settings, Advanced, Export and import warns before a reinstall; an export
+(with the cookies box ticked) is the only backup of the logins.
+
 **"New tab" in a container** opens Chrome's new tab page assigned to the container; an address typed into its omnibox is
 requested as the container.
 

@@ -360,6 +360,16 @@ export class Facet {
     return this.containers.create(input);
   }
 
+  /** A container under a given ID (the restore from leftover tab groups, `group-restore.ts`). */
+  async restoreContainer(input: {
+    id: ContainerId;
+    name: string;
+    color: ContainerColor;
+  }): Promise<Container> {
+    await this.ready;
+    return this.containers.createWithId(input);
+  }
+
   /**
    * Engine settings, pushed by Extras whenever they change. A name shown to pages lives in the beacon rules, strict
    * mode in the no-tab rule and the global guard.

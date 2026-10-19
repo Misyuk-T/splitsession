@@ -9,16 +9,13 @@ import {
 import { facetApi } from "../../engine/api-client";
 import { Button } from "../components/Button";
 import { Checkbox } from "../components/Toggle";
-import { describeError } from "../format";
+import { describeError, plural } from "../format";
 
 interface Pending {
   fileName: string;
   file: ExportFile;
   plan: ImportPlan;
 }
-
-const plural = (n: number, one: string, many = `${one}s`) =>
-  `${n} ${n === 1 ? one : many}`;
 
 /** The body of the "Export and import" disclosure under Advanced. */
 export const TransferBody = ({ onChanged }: { onChanged(): void }) => {
@@ -117,6 +114,10 @@ export const TransferBody = ({ onChanged }: { onChanged(): void }) => {
               <h3>Export</h3>
               <span class="fx-secondary">
                 Containers and domain rules, as a JSON file.
+              </span>
+              <span class="fx-secondary" data-testid="uninstall-note">
+                Removing SplitSession deletes its containers and their sign-ins.
+                Export first if you plan to reinstall.
               </span>
             </div>
             <Button variant="primary" onClick={() => void doExport()}>

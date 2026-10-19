@@ -2,6 +2,7 @@ export * from "./async";
 export * from "./dnr/rule-compiler";
 export * from "./domain-rules";
 export * from "./exemptions";
+export * from "./group-restore";
 export * from "./indicators";
 export * from "./jar/cookie-jar";
 export * from "./jar/set-cookie-parser";

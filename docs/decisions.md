@@ -1414,3 +1414,40 @@ Goal: a container tab that is not in its container's tab group (dragged out, or 
   sleeping worker loses its timers, and the idle dot is what a restarted worker paints. Setting off: `touch` returns before the blink.
 - Tests: `badges.test.ts` (state machine, no leaked timers), `activity.test.ts` (start, re-arm, end, stop), `mixHex`; e2e samples the
   badge colour a dozen times during a tool call and checks the idle dot before and after (`agent-activity.spec.ts`).
+
+## Restoring containers from leftover tab groups after a reinstall (2026-10-19)
+
+- **Incident.** The user removed and reinstalled the extension. Chrome wiped `chrome.storage` (containers, cookie jars), the
+  popup said "No containers yet", and the tab groups "⧉ main", "⧉ secondline", ... stayed in the window with their tabs,
+  orphaned. Cookies are not recoverable (they lived only in the wiped storage). The structure is: every SplitSession group
+  title still carries the invisible marker naming its container.
+- **Offer, not automatic.** `getGroupRestoreOffer` returns the plan only when there is **no container at all**, the user has
+  not dismissed it (`groupRestoreDismissed` in `storage.local`, so a flag is per install and a reinstall starts clean), and a
+  group with a marker exists (`decodeGroupMarker`: the visible `⧉` is not evidence, a user group titled "⧉ fake" is never
+  offered). The popup shows one quiet row above the list ("Found N tab groups from an earlier install. Restore them as
+  containers?", Restore, x). Nothing is done without the click: creating containers also turns on isolation for those tabs.
+- **Same ID.** The container comes back under the ID the marker names (`ContainerStore.createWithId`, `Facet.restoreContainer`;
+  the public `createContainer` still cannot choose an ID). So (1) the group is already the container's group: no retitle, no
+  regroup, no second group, nothing for the group guard to "fix", `TabGroupProjection` adopts it by its marker as it does for
+  a group Chrome restored; (2) the page storage prefix `__facet:<id>:` of the old tabs matches again, so storage-based sessions
+  can survive. Groups with one marker in several windows are one container; the name is the title without glyph and marker
+  (cut to 32 characters, "Container" when empty, ` 2` for a clash); the colour is `containerColorOfGroup` (Chrome cyan is
+  turquoise; grey, which no container has, gets the first unused colour). Pure part: `src/core/group-restore.ts`.
+- **Tabs.** The tabs of each marked group are assigned to the container (`src/background/group-restore.ts`), the same
+  split the group guard makes: a loaded website (http(s), not discarded, not unloaded) is assigned **and reloaded** (the
+  popup's "Reopen in..." path: `assignTab` with `reload`, so no service worker answers it and the page starts from the
+  container's empty jar; its old document held a state of the dead session), while a tab that loaded nothing (discarded,
+  unloaded, `chrome://`) is assigned where it stands, with no reload and no page loaded just for this. The tab keeps its ID
+  (no `replaceTab`): the opener the guard is wary of belongs to the old session. A tab that cannot be assigned is counted
+  ("N tabs could not be moved in") and the group guard fixes it at its next sweep.
+- **After.** One line in the popup: "Restored N containers. Sign in again: a reinstall removes saved logins." The dismissed flag
+  is set on a successful restore too, so leftovers are not offered again.
+- **Warning before it happens.** Settings, Advanced, Export and import: "Removing SplitSession deletes its containers and their
+  sign-ins. Export first if you plan to reinstall." in the secondary text next to Export. `runtime.setUninstallURL` and any
+  popup or nag were considered and rejected.
+- **Tests.** Unit: `core/group-restore.test.ts` (title -> name, colour, ID, dedupe, only marked groups, only with zero
+  containers and no dismissal), `background/group-restore.test.ts` (offer, dismiss, reload split, failed tab, refusal),
+  `stores.test.ts` (`createWithId`). e2e: `restore-from-groups.spec.ts` (storage wiped and the worker stopped, as a reinstall
+  leaves it: the offer counts only the marked groups, Restore keeps the same group IDs, no group appears or empties, tabs keep
+  their IDs, loaded pages reload and the discarded one stays discarded, the user's plain and look-alike groups are untouched,
+  the guard logs nothing; dismiss is remembered).

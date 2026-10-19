@@ -35,6 +35,33 @@ describe("ContainerStore", () => {
     expect(store.resolve("work ACCOUNT")?.id).toBe(a.id);
   });
 
+  it("creates a container under a given ID (the restore from tab groups), with the same checks", async () => {
+    const area = new MemoryStorageArea();
+    const store = new ContainerStore(area, { now: () => 7 });
+    const made = await store.createWithId({
+      id: "abc123",
+      name: "main",
+      color: "turquoise",
+    });
+    expect(made).toEqual({
+      id: "abc123",
+      name: "main",
+      color: "turquoise",
+      createdAt: 7,
+    });
+    expect(area.data.has(jarKey("abc123"))).toBe(true);
+    for (const bad of [
+      { id: "abc123", name: "other", color: "red" }, // ID taken
+      { id: "def456", name: "MAIN", color: "red" }, // name taken
+      { id: "Bad ID", name: "x", color: "red" },
+      { id: "def456", name: "x", color: "beige" },
+    ])
+      await expect(store.createWithId(bad as never)).rejects.toThrow(
+        ContainerError,
+      );
+    expect(store.list()).toHaveLength(1);
+  });
+
   it("renames (refusing clashes) and deletes with the jar", async () => {
     const area = new MemoryStorageArea();
     const store = new ContainerStore(area);

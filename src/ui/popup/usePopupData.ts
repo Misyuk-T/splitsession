@@ -3,7 +3,7 @@ import { browser } from "wxt/browser";
 
 import type { ContainerInfo } from "../../background/facet";
 import type { RestoreStatus } from "../../background/restore";
-import type { Settings } from "../../core";
+import type { GroupRestoreOffer, Settings } from "../../core";
 import { facetApi } from "../../engine/api-client";
 import { describeError } from "../format";
 
@@ -31,16 +31,19 @@ export function usePopupData() {
   const [, setSettings] = useState<Settings | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [restore, setRestore] = useState<RestoreStatus | null>(null);
+  const [groupOffer, setGroupOffer] = useState<GroupRestoreOffer | null>(null);
 
   const refresh = useCallback(async () => {
     try {
-      const [list, active, prefs, restoreStatus] = await Promise.all([
+      const [list, active, prefs, restoreStatus, offer] = await Promise.all([
         facetApi.listContainers(),
         currentTab(),
         facetApi.getSettings(),
         facetApi.getRestoreStatus(),
+        facetApi.getGroupRestoreOffer(),
       ]);
       setContainers(list);
+      setGroupOffer(offer);
       setRestore(restoreStatus);
       setTab(active);
       setSettings(prefs);
@@ -57,5 +60,13 @@ export function usePopupData() {
     void refresh();
   }, [refresh]);
 
-  return { containers, tab, tabContainer, restore, loadError, refresh };
+  return {
+    containers,
+    tab,
+    tabContainer,
+    restore,
+    groupOffer,
+    loadError,
+    refresh,
+  };
 }

@@ -4,14 +4,18 @@ import {
   type ContainerId,
   type DomainRule,
   type ExportFile,
+  type GroupRestoreOffer,
+  type GroupRestoreResult,
   isHttpUrl,
   ruleKeyOf,
   type Settings,
 } from "../core";
 import { ContainerError } from "../engine/storage/container-store";
+import type { StorageAreaLike } from "../engine/storage/storage-area";
 import type { FacetApi } from "./api";
 import type { Extras } from "./extras";
 import type { Facet } from "./facet";
+import { GroupRestore, type RestoreTab } from "./group-restore";
 import { exportData, importData, type ImportSummary } from "./transfer-apply";
 
 /** The Stage C part of the API: settings, domain rules, export/import and the helpers of the choose page and popup. */
@@ -26,6 +30,15 @@ export interface ExtrasApi {
   importData(file: unknown): Promise<ImportSummary>;
   /** Puts every container tab into its tab group again (the "Re-group" action). */
   regroupTabs(): Promise<void>;
+  /**
+   * After a reinstall (no containers, storage wiped) the tab groups SplitSession left in the browser stand for containers:
+   * what the popup offers (null: nothing to offer, containers exist, or the user said no).
+   */
+  getGroupRestoreOffer(): Promise<GroupRestoreOffer | null>;
+  /** Creates a container for every leftover SplitSession group and puts the groups' tabs in it (the groups are kept). */
+  restoreFromGroups(): Promise<GroupRestoreResult>;
+  /** The offer is not made again in this install. */
+  dismissGroupRestoreOffer(): Promise<void>;
   /** A blank new tab in the container (type an address into the omnibox and it is already isolated). */
   newTabInContainer(containerId: ContainerId): Promise<number>;
   /**
@@ -51,6 +64,9 @@ export const EXTRAS_METHODS = [
   "exportData",
   "importData",
   "regroupTabs",
+  "getGroupRestoreOffer",
+  "restoreFromGroups",
+  "dismissGroupRestoreOffer",
   "newTabInContainer",
   "applyChoice",
 ] as const satisfies readonly (keyof ExtrasApi)[];
@@ -78,23 +94,49 @@ export function createExtrasApi(
     extras.exemptions.markPlacement(tabId, containerId);
   };
 
-  return {
-    assignTab: async (tabId, containerId, options) => {
-      // A tab waiting for its restore decision shows SplitSession's own page: "reload" sends it to the address it stands for.
-      const heldAddress = facet.restore.heldAddress(tabId);
-      await place(tabId, containerId);
-      if (options?.reload) {
-        // "Reopen in": the reload is SplitSession's navigation, so no service worker of the page's origin may answer it.
-        if (containerId !== null)
-          await facet.prepareNavigation(
-            heldAddress ??
-              (await b.tabs.get(tabId).catch(() => undefined))?.url,
-          );
-        if (heldAddress !== undefined)
-          await b.tabs.update(tabId, { url: heldAddress });
-        else await b.tabs.reload(tabId);
-      }
+  const assignTab: FacetApi["assignTab"] = async (
+    tabId,
+    containerId,
+    options,
+  ) => {
+    // A tab waiting for its restore decision shows SplitSession's own page: "reload" sends it to the address it stands for.
+    const heldAddress = facet.restore.heldAddress(tabId);
+    await place(tabId, containerId);
+    if (options?.reload) {
+      // "Reopen in": the reload is SplitSession's navigation, so no service worker of the page's origin may answer it.
+      if (containerId !== null)
+        await facet.prepareNavigation(
+          heldAddress ?? (await b.tabs.get(tabId).catch(() => undefined))?.url,
+        );
+      if (heldAddress !== undefined)
+        await b.tabs.update(tabId, { url: heldAddress });
+      else await b.tabs.reload(tabId);
+    }
+  };
+
+  const groupRestore = new GroupRestore({
+    area: b.storage.local as unknown as StorageAreaLike,
+    containerCount: () => facet.containers.list().length,
+    groups: async () =>
+      (await b.tabGroups.query({})).map((g) => ({
+        id: g.id,
+        windowId: g.windowId,
+        title: g.title,
+        color: g.color,
+      })),
+    tabsOf: async (groupId) =>
+      (await b.tabs.query({ groupId })) as RestoreTab[],
+    createContainer: (input) => facet.restoreContainer(input),
+    assign: (tabId, id, reload) => assignTab(tabId, id, { reload }),
+    adopt: async () => {
+      await extras.groups.adoptExisting();
+      await extras.groups.idle();
     },
+    log: facet.log,
+  });
+
+  return {
+    assignTab,
 
     getSettings: async () => (await ready(), extras.settings.get()),
     updateSettings: async (patch) => {
@@ -123,6 +165,13 @@ export function createExtrasApi(
     ),
 
     regroupTabs: async () => (await ready(), extras.groups.reconcileAll()),
+
+    getGroupRestoreOffer: async () => (await ready(), groupRestore.offer()),
+    restoreFromGroups: async () => (await ready(), groupRestore.restore()),
+    dismissGroupRestoreOffer: async () => (
+      await ready(),
+      groupRestore.dismiss()
+    ),
 
     newTabInContainer: async (containerId) => {
       await ready();
