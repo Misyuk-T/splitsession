@@ -1474,3 +1474,50 @@ Goal: a container tab that is not in its container's tab group (dragged out, or 
   loaded tabs are replaced (new ID, same window, index, group and address, no opener, old tab closed, a plain popup that had
   `window.opener` to it has none to the new tab), the discarded one keeps its ID, the user's plain and look-alike groups
   are untouched, the guard logs nothing; dismiss is remembered).
+
+## Saved tabs: an automatic snapshot of the last batch, not a "save tabs" button (2026-10-20)
+
+- **The user story.** "I delete a container's tab group so it does not take space on the bookmarks bar, but when I click the
+  container in the popup I want all its tabs back." A container is an account (cookies and storage), so deleting its group
+  closed the tabs and lost them.
+- **Why automatic, and why the last batch.** A manual "save these tabs" button asks the user to remember to press it before
+  deleting the group, which is exactly the step they want to skip; people forget it and find out when the tabs are gone.
+  So the extension snapshots by itself, but not on every change: when a container goes from open tabs to none, the set is the
+  tabs that closed in the last **batch** (closures within 1.5 s of each other, chained: one group delete, one window close or
+  Cmd+W on a group closes its tabs at once). If the user closed tabs one by one over time, the saved set is only the last
+  batch: those they closed deliberately earlier are not wanted back. Saving the whole history of a container or a continuously
+  updated "session" was rejected: it grows without bound, brings back tabs the user closed on purpose, and keeps more
+  addresses than the feature needs.
+- **What is kept.** Address and title, in order (window, then position), http(s) only, at most 50 per container, in
+  `chrome.storage.local` under `savedTabs` (`SavedTabsStore`); the container's record does not change. Pinned state is not
+  kept (tabs come back unpinned). Tabs the container still has open are not touched, and when the container has tabs again the
+  saved set stays until the next close-to-zero replaces it (a set whose batch would hold no web page is not written, the old one
+  stays). Deleting the container deletes its set.
+- **Where it is judged.** `SavedTabsRecorder` (`background/saved-tabs-recorder.ts`): the last known address, title and position
+  of every container tab (from `tabs.onUpdated` and a refresh after layout changes, also kept in `storage.session` so a tab that
+  closes while the worker sleeps is still known), and on each `tabs.onRemoved` of such a tab a closure goes into a per-container
+  log (`ClosureLog`, `core/saved-tabs.ts`). Whether the container has any tab left is decided from the engine's registry minus the
+  tabs closed lately, because the registry drops a closed tab asynchronously. Positions are frozen while a batch is closing,
+  so the order is the one before the closing started. Tabs SplitSession closes itself while moving a page to another container
+  (domain rule, group guard, the choose page) are not closures.
+- **Browser shutdown must not overwrite the set** (Chrome puts those tabs back itself, and the restore feature puts them in their
+  containers). `tabs.onRemoved` reports `isWindowClosing` for a window close as well as for the browser quitting, and the two
+  cannot be told apart at that moment. A batch that includes tabs closed with their window is therefore **not saved at once**:
+  it is saved 2.5 s later, and only if some browser window still exists then (and no tab came back). A worker that dies with
+  the browser never reaches that point. Closing the **last** window is treated like quitting (no window is left at that
+  moment), so on macOS, where Chrome stays running, closing the last window saves nothing; Chrome's own "Reopen closed window"
+  covers it. Closing one of several windows saves normally.
+- **Popup.** A container with no open tab and a saved set shows "N saved" (muted) in place of the tab count; its main button
+  says "Reopen N saved tabs". Clicking it calls `openSavedTabs` (`SavedTabsReopener`, `background/saved-tabs-reopen.ts`): each tab is opened with the same path as the "+" button and `open_in_container` (`Facet.openInContainer`: created at `about:blank`, assigned to the container, then navigated), one after the other so the order and the group follow, the first one active, in the window the popup belongs to. Progress is durable: an entry leaves the stored set only after its tab is open, so a worker or browser that dies half way leaves the rest saved (a first version cleared the whole set up front and lost up to 50 addresses). One reopening per container at a time; a second request (double click, two popups) gets the first one's result. A tab that fails to open stays saved. A tab assigned to the container begins a new open cycle and clears the closure log, so a set reopened and closed again within 1.5 s is not merged with the closures of the first cycle; a set lists an address once. A tab opened for a saved entry is seeded into the recorder with that entry's address and title before the entry leaves the store (until its navigation commits it shows `about:blank`), and the recorder prefers a loading address (`pendingUrl`) to `about:blank`, so closing tabs that are still loading loses nothing. When a batch is saved and the container still has an unopened remainder, the batch goes first and the remainder follows (one entry per address, at most 50): closing a partly reopened set does not delete the rest. With nothing saved the row
+  behaves as before. "Forget saved tabs" is in the edit form (the pencil); no `confirm()`.
+- **Setting.** Settings, General: "Remember tabs when a container's last tab closes" (`rememberTabs`, on by default, both
+  editions). Off forgets every saved set at once (the other choice, keeping the sets until forgotten, would leave addresses on
+  disk that the user just said not to keep).
+- **Export / import.** "Also include tabs (open and saved)" writes a `tabs` field (`{ containerId: [{url, title}] }`, like
+  `jars`): the container's open tabs in order, then its saved ones not already among them, at most 50. An import stores them as
+  the container's saved set (replacing what it has) and opens nothing. The format version stays 1: the field is optional, old
+  files import unchanged, and a SplitSession that does not know the field ignores it. An import into a profile with the setting
+  off stores the tabs anyway (the user asked for it in the file).
+- **Tests.** Unit: `core/saved-tabs.test.ts` (batching, ordering, cap, non-web skipped), `background/saved-tabs-recorder.test.ts`
+  (group close, one by one, gap, shutdown cases, a worker that slept, setting off, moved tabs), `engine/storage/saved-tabs-store.test.ts`,
+  `core/transfer.test.ts` (round trip, old file). e2e: `saved-tabs.spec.ts`.

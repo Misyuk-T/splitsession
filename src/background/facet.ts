@@ -25,6 +25,7 @@ import {
   ContainerError,
   ContainerStore,
 } from "../engine/storage/container-store";
+import { SavedTabsStore } from "../engine/storage/saved-tabs-store";
 import type { StorageAreaLike } from "../engine/storage/storage-area";
 import { TabRegistry } from "../engine/storage/tab-registry";
 import { migrateStrictMode, StrictMode } from "../engine/strict-mode";
@@ -70,6 +71,8 @@ type MessageSender = Browser.runtime.MessageSender;
 
 export interface ContainerInfo extends Container {
   tabCount: number;
+  /** Tabs kept for the container since its last tab closed (`savedTabs`): one click on it opens them again. */
+  savedCount: number;
 }
 
 /**
@@ -81,6 +84,8 @@ export interface ContainerInfo extends Container {
  */
 export class Facet {
   readonly containers: ContainerStore;
+  /** The addresses of each container's last batch of closed tabs (`background/saved-tabs-recorder.ts` fills it). */
+  readonly savedTabs: SavedTabsStore;
   readonly tabs: TabRegistry;
   readonly rules: SessionRuleManager;
   readonly swPolicy: ServiceWorkerPolicy;
@@ -128,6 +133,7 @@ export class Facet {
       typeof TabRegistry
     >[0];
     this.containers = new ContainerStore(local);
+    this.savedTabs = new SavedTabsStore(local);
     this.tabs = new TabRegistry(session, local);
     this.rules = new SessionRuleManager(
       b.declarativeNetRequest as unknown as DnrSessionApi,
@@ -287,6 +293,9 @@ export class Facet {
     this.settings = normalizeSettings(stored[SETTINGS_KEY]);
     this.pageKeyOf = await loadPageKeys(local, stored[PAGE_KEY_SECRET_KEY]);
     await Promise.all([this.containers.load(), this.tabs.load()]);
+    await this.savedTabs
+      .load((id) => this.containers.get(id) !== undefined)
+      .catch(logFailure(this.log, "saved tabs failed to load"));
     // What Chrome kept registered decides whether the global beacon answers belong in the dynamic rules.
     await this.scripts.readRegistered();
     // Managed sites and the strict state first: the no-tab rule compiled below depends on both.
@@ -347,9 +356,11 @@ export class Facet {
   // ---------------------------------------------------------------- containers
 
   listContainers(): ContainerInfo[] {
-    return this.containers
-      .list()
-      .map((c) => ({ ...c, tabCount: this.tabs.tabsOf(c.id).length }));
+    return this.containers.list().map((c) => ({
+      ...c,
+      tabCount: this.tabs.tabsOf(c.id).length,
+      savedCount: this.savedTabs.count(c.id),
+    }));
   }
 
   async createContainer(input: {
@@ -388,6 +399,9 @@ export class Facet {
       }
       if (previous.restoreTabs !== next.restoreTabs)
         await this.restore.setEnabled(next.restoreTabs);
+      // Off: nothing is saved from now on, and what was saved is forgotten.
+      if (previous.rememberTabs && !next.rememberTabs)
+        await this.savedTabs.clearAll();
     });
     this.settingsWork = work.catch(() => {}); // a failure reaches this caller only, not the next one
     return work;
@@ -428,6 +442,7 @@ export class Facet {
     const tabIds = this.tabs.tabsOf(id);
     for (const tabId of tabIds) void this.tabs.delete(tabId);
     await this.containers.delete(id);
+    await this.savedTabs.clear(id);
     await this.rules.invalidate(id);
     this.events.emit({ type: "container-deleted", id });
     if (tabIds.length > 0) await this.b.tabs.remove(tabIds).catch(() => {});

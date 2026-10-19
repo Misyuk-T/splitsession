@@ -329,6 +329,7 @@ export const test = base.extend<
       agentActivity: true,
       restoreTabs: true,
       markOutsideGroup: true,
+      rememberTabs: true,
     });
     // Container tabs closed by earlier tests are not reopened by this one.
     await api("forgetClosedTabs");

@@ -6,7 +6,7 @@ layout: page
 
 # SplitSession privacy policy
 
-Effective date: 2026-10-14
+Effective date: 2026-10-20
 
 SplitSession is a free, open-source Chrome extension by Taras Misiuk that lets you keep several accounts of the same
 website signed in side by side ("containers"). This policy covers both editions: **Lite** (containers only) and **Full**
@@ -32,6 +32,7 @@ protects Chrome's own cookies. It is not synced and not backed up by the develop
 | **Containers**: names, colours, and a cookie jar per container (the cookies that sites set in that container's tabs) | to keep each container signed in to its own account | `chrome.storage.local` |
 | **Page storage of container tabs**: `localStorage`, `sessionStorage`, IndexedDB, Cache Storage and `BroadcastChannel` data, which SplitSession keeps apart per container | to separate the accounts | in the site's own storage in your browser, under per-container prefixed names |
 | **Tab addresses and titles** of tabs in containers (and of recently closed ones) | to apply your site rules and to put container tabs back in their container after a restart or "Reopen closed tab" | `chrome.storage.local` and `chrome.storage.session` |
+| **Saved tabs**: the addresses and titles of the tabs a container had open when its last tab closed (up to 50 per container) | so one click on the container opens them again | `chrome.storage.local`; the last known address, title and position of container tabs is also kept in `chrome.storage.session` while the browser runs |
 | **Settings and site rules** ("always open this site in container X") | to behave the way you set it up | `chrome.storage.local` |
 | **A short local log** of what the extension did (for example "tab moved to container X because of a rule") | to help you see why something happened, on the Diagnostics part of the options page | on your device |
 
@@ -47,6 +48,8 @@ Nothing leaves your device by SplitSession's own action. The developer runs no s
 
 - **Export** creates a JSON file only when you click Export, and saves it where you choose. Cookies are included only if you
   tick the clearly marked box, and then the file contains live logins: keep it as safe as a password.
+  Tabs (addresses and titles) are included only if you tick the box "Also include tabs"; addresses can carry private tokens,
+  so treat that file with care too.
 - **Import** reads only a file you pick.
 - The extension does not load or run remote code.
 
@@ -92,8 +95,10 @@ The Lite edition has none of this: it does not contain the bridge code, and its 
 
 ## Keeping and deleting your data
 
-- Data stays until you remove it. Deleting a container deletes its cookie jar, its rules and closes its tabs. Site rules
-  and settings can be changed or removed on the options page.
+- Data stays until you remove it. Deleting a container deletes its cookie jar, its saved tabs, its rules and closes its tabs.
+  A container's saved tabs can also be removed on their own (the pencil in the popup, "Forget saved tabs"), and the switch
+  "Remember tabs when a container's last tab closes" in Settings turns the feature off and deletes every saved set. Site
+  rules and settings can be changed or removed on the options page.
 - **Uninstalling** the extension removes everything it keeps in `chrome.storage` (containers, cookie jars, rules, settings,
   tab records). The per-container page-storage entries that SplitSession wrote into sites' own storage are ordinary site
   data: clear them with Chrome's "Delete browsing data" (cookies and other site data) for the sites you used.

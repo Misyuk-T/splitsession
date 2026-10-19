@@ -16,8 +16,13 @@ export function registerExtrasListeners(
   on(nav.onCommitted, (d) => {
     if (d.frameId === 0) extras.handleTabRefresh(d.tabId);
   });
-  on(b.tabs.onCreated, (tab) => extras.handleTabCreated(tab));
-  on(b.tabs.onUpdated, (tabId, change) => {
+  on(b.tabs.onCreated, (tab) => {
+    extras.handleTabCreated(tab);
+    extras.handleTabLayout();
+  });
+  on(b.tabs.onUpdated, (tabId, change, tab) => {
+    if (change.url !== undefined || change.title !== undefined)
+      extras.handleTabUpdated(tab);
     if (change.status === "loading" || change.url !== undefined)
       extras.handleTabRefresh(tabId);
     if (change.groupId !== undefined) {
@@ -31,9 +36,12 @@ export function registerExtrasListeners(
   on(b.tabs.onActivated, (info) => extras.handleTabRefresh(info.tabId));
   on(b.tabs.onAttached, (tabId) => {
     extras.handleTabAttached(tabId);
+    extras.handleTabLayout();
     extras.handleGroupsChanged(); // dropped into a group of this window: no group change is reported for it
   });
-  on(b.tabs.onRemoved, (tabId) => extras.handleTabRemoved(tabId));
+  on(b.tabs.onRemoved, (tabId, info) => extras.handleTabRemoved(tabId, info));
+  on(b.tabs.onMoved, () => extras.handleTabLayout());
+  on(b.tabs.onDetached, () => extras.handleTabLayout());
   on(
     b.tabGroups.onRemoved,
     (group) =>

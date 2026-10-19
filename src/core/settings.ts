@@ -44,13 +44,19 @@ export interface Settings {
    * their title and so learn that this is a container tab. Both editions. Default on.
    */
   markOutsideGroup: boolean;
+  /**
+   * When a container's last tab closes, keep the addresses and titles of the tabs of its last batch of closures in
+   * `storage.local`; a click on the container in the popup opens them again. Off: nothing is saved, and the sets that
+   * exist are forgotten. Both editions. Default on.
+   */
+  rememberTabs: boolean;
 }
 
 /** `chrome.storage.local` key holding the settings object. */
 export const SETTINGS_KEY = "settings";
 
 /**
- * Lite has only `tabGroups`, `strictMode`, `restoreTabs` and `markOutsideGroup`: the agent bridge, agent activity and page-name settings are
+ * Lite has only `tabGroups`, `strictMode`, `restoreTabs`, `markOutsideGroup` and `rememberTabs`: the agent bridge, agent activity and page-name settings are
  * not part of its schema at all (no default, not a valid key: an update naming one is an error, nothing stored, no string
  * shipped). The `Settings` type stays the Full one; Lite code never reads the other keys (every use sits behind `__FULL__`).
  */
@@ -65,12 +71,14 @@ export const DEFAULT_SETTINGS: Readonly<Settings> = Object.freeze(
         agentActivity: true,
         restoreTabs: true,
         markOutsideGroup: true,
+        rememberTabs: true,
       }
     : ({
         tabGroups: true,
         strictMode: false,
         restoreTabs: true,
         markOutsideGroup: true,
+        rememberTabs: true,
       } as Settings),
 );
 

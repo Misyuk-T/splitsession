@@ -2,6 +2,12 @@ import { CookieJar } from "./jar/cookie-jar";
 import { type DomainRule, validateRule } from "./domain-rules";
 import { collapseName, MAX_STORED_NAME } from "./names";
 import {
+  isSavableUrl,
+  MAX_SAVED_TABS,
+  normalizeSavedTabs,
+  type SavedTab,
+} from "./saved-tabs";
+import {
   type Container,
   CONTAINER_COLORS,
   type ContainerColor,
@@ -41,12 +47,18 @@ export interface ExportFile {
   rules: ExportedRule[];
   /** Present only when exported with "include cookie jars". Keyed by container ID. */
   jars?: Record<ContainerId, Cookie[]>;
+  /**
+   * Present only when exported with "include tabs": per container the tabs it has open (in order) and its saved tabs.
+   * Importing stores them as the container's saved tabs; nothing is opened. Files without it are still version 1.
+   */
+  tabs?: Record<ContainerId, SavedTab[]>;
 }
 
 export function buildExport(input: {
   containers: readonly Container[];
   rules: readonly DomainRule[];
   jars?: Readonly<Record<ContainerId, readonly Cookie[]>>;
+  tabs?: Readonly<Record<ContainerId, readonly SavedTab[]>>;
   now?: number;
 }): ExportFile {
   const known = new Set(input.containers.map((c) => c.id));
@@ -77,6 +89,16 @@ export function buildExport(input: {
       file.jars[c.id] = (input.jars[c.id] ?? []).map((cookie) => ({
         ...cookie,
       }));
+  }
+  if (input.tabs) {
+    file.tabs = {};
+    for (const c of input.containers) {
+      const list = (input.tabs[c.id] ?? [])
+        .filter((t) => isSavableUrl(t.url))
+        .slice(0, MAX_SAVED_TABS);
+      if (list.length > 0)
+        file.tabs[c.id] = list.map((t) => ({ url: t.url, title: t.title }));
+    }
   }
   return file;
 }
@@ -196,6 +218,43 @@ export function parseExport(input: string | unknown): ParseOutcome {
     }
     file.jars = jars;
   }
+
+  if (d.tabs !== undefined) {
+    if (typeof d.tabs !== "object" || d.tabs === null || Array.isArray(d.tabs))
+      return fail('"tabs" must be an object keyed by container id.');
+    const tabs: Record<ContainerId, SavedTab[]> = {};
+    for (const [id, list] of Object.entries(
+      d.tabs as Record<string, unknown>,
+    )) {
+      if (!ids.has(id))
+        return fail(`Tabs are listed for an unknown container “${id}”.`);
+      if (!Array.isArray(list))
+        return fail(`The tabs of container “${id}” are not a list.`);
+      if (list.length > MAX_SAVED_TABS)
+        return fail(
+          `Too many tabs for container “${id}” (more than ${MAX_SAVED_TABS}).`,
+        );
+      const clean: SavedTab[] = [];
+      for (const raw of list) {
+        const t = raw as Record<string, unknown> | null;
+        if (
+          typeof t !== "object" ||
+          t === null ||
+          typeof t.url !== "string" ||
+          !isSavableUrl(t.url)
+        )
+          return fail(
+            `Container “${id}” has a tab whose address is not a web address.`,
+          );
+        clean.push({
+          url: t.url,
+          title: typeof t.title === "string" ? t.title : "",
+        });
+      }
+      if (clean.length > 0) tabs[id] = normalizeSavedTabs(clean);
+    }
+    file.tabs = tabs;
+  }
   return { ok: true, file };
 }
 
@@ -210,6 +269,9 @@ export interface ImportPlan {
   replacedRules: number;
   jarContainers: number;
   cookies: number;
+  /** Containers whose saved tabs the file sets (replacing what they have saved), and the tabs in all of them. */
+  tabContainers: number;
+  tabs: number;
 }
 
 export function planImport(
@@ -229,6 +291,7 @@ export function planImport(
   }
   const taken = new Set(existingRules.map((r) => r.domain));
   const jars = file.jars ?? {};
+  const tabs = file.tabs ?? {};
   return {
     create,
     match,
@@ -236,5 +299,7 @@ export function planImport(
     replacedRules: file.rules.filter((r) => taken.has(r.domain)).length,
     jarContainers: Object.keys(jars).length,
     cookies: Object.values(jars).reduce((n, list) => n + list.length, 0),
+    tabContainers: Object.keys(tabs).length,
+    tabs: Object.values(tabs).reduce((n, list) => n + list.length, 0),
   };
 }

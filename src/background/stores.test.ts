@@ -20,6 +20,7 @@ describe("SettingsStore", () => {
       agentActivity: true,
       restoreTabs: true,
       markOutsideGroup: true,
+      rememberTabs: true,
     });
     const seen: string[] = [];
     store.onChange((next, prev) =>
@@ -34,6 +35,7 @@ describe("SettingsStore", () => {
       agentActivity: true,
       restoreTabs: true,
       markOutsideGroup: true,
+      rememberTabs: true,
     });
     expect(seen).toEqual(["true->false"]);
     expect(area.data.get("settings")).toEqual({
@@ -45,6 +47,7 @@ describe("SettingsStore", () => {
       agentActivity: true,
       restoreTabs: true,
       markOutsideGroup: true,
+      rememberTabs: true,
       explicit: ["tabGroups"],
     });
     await expect(store.update({ tabGroups: "no" })).rejects.toThrow();
@@ -60,6 +63,7 @@ describe("SettingsStore", () => {
       agentActivity: true,
       restoreTabs: true,
       markOutsideGroup: true,
+      rememberTabs: true,
     });
   });
 
@@ -84,6 +88,7 @@ describe("SettingsStore", () => {
       agentActivity: true,
       restoreTabs: true,
       markOutsideGroup: true,
+      rememberTabs: true,
     });
     expect(area.data.get("settings")).toEqual({
       tabGroups: false,
@@ -94,6 +99,7 @@ describe("SettingsStore", () => {
       agentActivity: true,
       restoreTabs: true,
       markOutsideGroup: true,
+      rememberTabs: true,
       explicit: ["tabGroups"],
     });
 

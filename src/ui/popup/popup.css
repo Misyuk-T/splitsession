@@ -154,6 +154,15 @@ body:has(.fx-backdrop) {
   outline: 2px solid var(--fx-focus);
   outline-offset: -2px;
 }
+.popup__forget {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid var(--fx-border);
+}
 .popup__rowname {
   flex: 1;
   min-width: 0;

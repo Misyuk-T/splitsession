@@ -20,6 +20,7 @@ describe("settings defaults", () => {
       agentActivity: true,
       restoreTabs: true,
       markOutsideGroup: true,
+      rememberTabs: true,
     });
   });
 

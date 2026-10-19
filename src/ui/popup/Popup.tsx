@@ -99,7 +99,8 @@ export const Popup = () => {
 
   /**
    * The row's main action. With open tabs: show the container's first tab (lowest index in this window, else the first
-   * in any window): open its group if it is collapsed, make the tab active, focus its window. No tabs: open a new one.
+   * in any window): open its group if it is collapsed, make the tab active, focus its window. No tabs: open the saved
+   * ones (all of them), or a new blank one when nothing is saved.
    */
   const goTo = (c: ContainerInfo) =>
     run(async () => {
@@ -113,7 +114,14 @@ export const Popup = () => {
           [...ids].map((id) => browser.tabs.get(id).catch(() => undefined)),
         )
       ).filter((t): t is Browser.tabs.Tab => t?.id !== undefined);
-      if (tabs.length === 0) {
+      if (tabs.length === 0 && c.savedCount > 0) {
+        // The container's last tabs were saved when they closed: all of them come back, in this window.
+        const here = (await browser.windows.getCurrent()).id;
+        await facetApi.openSavedTabs(
+          c.id,
+          here === undefined ? {} : { windowId: here },
+        );
+      } else if (tabs.length === 0) {
         await facetApi.newTabInContainer(c.id);
       } else {
         const here = (await browser.windows.getCurrent()).id;
@@ -215,6 +223,21 @@ export const Popup = () => {
       await refresh();
       say("Saved.");
     };
+
+  const forgetSaved = (c: ContainerInfo) =>
+    run(async () => {
+      const count = await facetApi.forgetSavedTabs(c.id);
+      await refresh();
+      say(`Forgot ${plural(count, "saved tab")} of “${c.name}”.`);
+      // The button that was pressed is gone: focus stays in the edit form.
+      setTimeout(
+        () =>
+          document
+            .querySelector<HTMLElement>(".popup__row--editing input")
+            ?.focus(),
+        0,
+      );
+    }, "Could not forget the saved tabs");
 
   const confirmDelete = () =>
     void run(async () => {
@@ -328,6 +351,7 @@ export const Popup = () => {
               onDelete={() => setDeleting(c)}
               onCancelEdit={() => setMode({ kind: "idle" })}
               onSave={save(c)}
+              onForgetSaved={() => void forgetSaved(c)}
             />
           ))}
         </ul>

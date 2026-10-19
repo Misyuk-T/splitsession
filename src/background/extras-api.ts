@@ -1,13 +1,16 @@
-import { browser } from "wxt/browser";
+import { type Browser, browser } from "wxt/browser";
 
 import {
+  cleanTabTitle,
   type ContainerId,
   type DomainRule,
   type ExportFile,
   type GroupRestoreOffer,
   type GroupRestoreResult,
   isHttpUrl,
+  isSavableUrl,
   ruleKeyOf,
+  type SavedTab,
   type Settings,
 } from "../core";
 import { ContainerError } from "../engine/storage/container-store";
@@ -16,6 +19,7 @@ import type { FacetApi } from "./api";
 import type { Extras } from "./extras";
 import type { Facet } from "./facet";
 import { GroupRestore, type RestoreTab } from "./group-restore";
+import { SavedTabsReopener } from "./saved-tabs-reopen";
 import { exportData, importData, type ImportSummary } from "./transfer-apply";
 
 /** The Stage C part of the API: settings, domain rules, export/import and the helpers of the choose page and popup. */
@@ -26,7 +30,11 @@ export interface ExtrasApi {
   /** Insert or replace the rule for the rule's registrable domain. */
   setDomainRule(rule: DomainRule): Promise<DomainRule>;
   removeDomainRule(domain: string): Promise<boolean>;
-  exportData(options?: { includeJars?: boolean }): Promise<ExportFile>;
+  exportData(options?: {
+    includeJars?: boolean;
+    /** The tabs each container has open (in order) plus its saved tabs, up to 50 per container. */
+    includeTabs?: boolean;
+  }): Promise<ExportFile>;
   importData(file: unknown): Promise<ImportSummary>;
   /** Puts every container tab into its tab group again (the "Re-group" action). */
   regroupTabs(): Promise<void>;
@@ -39,6 +47,21 @@ export interface ExtrasApi {
   restoreFromGroups(): Promise<GroupRestoreResult>;
   /** The offer is not made again in this install. */
   dismissGroupRestoreOffer(): Promise<void>;
+  /**
+   * Opens the container's saved tabs in order, in the window (default: the current one), the first one active, each
+   * assigned to the container before its first request, grouped as any container tab is. The saved set is cleared (the
+   * tabs are open again); tabs that could not be opened stay saved.
+   */
+  openSavedTabs(
+    containerId: ContainerId,
+    options?: { windowId?: number },
+  ): Promise<{ opened: number; failed: number }>;
+  /** Forgets the container's saved tabs; returns how many there were. */
+  forgetSavedTabs(containerId: ContainerId): Promise<number>;
+  /** Diagnostics and tests: the container's saved tabs. */
+  getSavedTabs(containerId: ContainerId): Promise<SavedTab[]>;
+  /** Tests: looks at the tabs now and finishes the saves under way. */
+  flushSavedTabs(): Promise<void>;
   /** A blank new tab in the container (type an address into the omnibox and it is already isolated). */
   newTabInContainer(containerId: ContainerId): Promise<number>;
   /**
@@ -67,6 +90,10 @@ export const EXTRAS_METHODS = [
   "getGroupRestoreOffer",
   "restoreFromGroups",
   "dismissGroupRestoreOffer",
+  "openSavedTabs",
+  "forgetSavedTabs",
+  "getSavedTabs",
+  "flushSavedTabs",
   "newTabInContainer",
   "applyChoice",
 ] as const satisfies readonly (keyof ExtrasApi)[];
@@ -141,6 +168,27 @@ export function createExtrasApi(
     log: facet.log,
   });
 
+  /** The container's open tabs in the order they stand (window, position); savable addresses, the page's own titles. */
+  const openTabsOf = async (
+    containerId: ContainerId,
+    name: string,
+  ): Promise<SavedTab[]> => {
+    const tabs = (
+      await Promise.all(
+        facet.tabs
+          .tabsOf(containerId)
+          .map((id) => b.tabs.get(id).catch(() => undefined)),
+      )
+    ).filter((t): t is Browser.tabs.Tab => t !== undefined);
+    tabs.sort((x, y) => x.windowId - y.windowId || x.index - y.index);
+    return tabs
+      .map((t) => ({ url: t.url ?? t.pendingUrl ?? "", title: t.title }))
+      .filter((t) => isSavableUrl(t.url))
+      .map((t) => ({ url: t.url, title: cleanTabTitle(t.title, name) }));
+  };
+
+  const reopener = new SavedTabsReopener(facet.savedTabs);
+
   return {
     assignTab,
 
@@ -163,7 +211,12 @@ export function createExtrasApi(
 
     exportData: async (options) => (
       await ready(),
-      exportData(facet, extras.rules, options?.includeJars === true)
+      exportData(facet, extras.rules, {
+        includeJars: options?.includeJars === true,
+        ...(options?.includeTabs === true
+          ? { openTabs: (id, name) => openTabsOf(id, name) }
+          : {}),
+      })
     ),
     importData: async (file) => (
       await ready(),
@@ -178,6 +231,42 @@ export function createExtrasApi(
       await ready(),
       groupRestore.dismiss()
     ),
+
+    openSavedTabs: async (containerId, options) => {
+      await ready();
+      const container = facet.containers.resolve(containerId);
+      if (!container) throw new ContainerError(`no container "${containerId}"`);
+      const windowId =
+        typeof options?.windowId === "number" &&
+        Number.isInteger(options.windowId)
+          ? options.windowId
+          : undefined;
+      // Durable progress (an entry goes from the stored set once its tab is open) and one reopening per container.
+      return reopener.reopen(container.id, async (tab, first) => {
+        const tabId = await facet.openInContainer(tab.url, container.id, {
+          active: first,
+          ...(windowId !== undefined ? { windowId } : {}),
+        });
+        // Until its navigation commits the tab shows about:blank: it stands for this entry, which leaves the stored set next.
+        const made = await b.tabs.get(tabId).catch(() => undefined);
+        extras.saved.seed(tabId, container.id, tab, {
+          windowId: made?.windowId ?? windowId ?? 0,
+          index: made?.index ?? Number.MAX_SAFE_INTEGER,
+        });
+      });
+    },
+    forgetSavedTabs: async (containerId) => {
+      await ready();
+      const container = facet.containers.resolve(containerId);
+      if (!container) throw new ContainerError(`no container "${containerId}"`);
+      return facet.savedTabs.clear(container.id);
+    },
+    getSavedTabs: async (containerId) => {
+      await ready();
+      const container = facet.containers.resolve(containerId);
+      return container ? facet.savedTabs.get(container.id) : [];
+    },
+    flushSavedTabs: async () => (await ready(), extras.saved.flush()),
 
     newTabInContainer: async (containerId) => {
       await ready();
@@ -230,6 +319,7 @@ export function createExtrasApi(
         await facet.replaceTab(tabId, containerId, String(url), (newTabId) =>
           extras.exemptions.markSite(newTabId, containerId, key),
         );
+        extras.saved.willMove(tabId);
         setTimeout(() => void b.tabs.remove(tabId).catch(() => {}), 150);
         return { replaced: true };
       }

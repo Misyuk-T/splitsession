@@ -137,6 +137,31 @@ export const GeneralSection = () => {
         </div>
         <div class="opt-row">
           <Switch
+            label="Remember tabs when a container’s last tab closes"
+            description="Click the container in the popup to open them again. Off forgets saved tabs."
+            checked={value.rememberTabs}
+            disabled={settings === null}
+            onChange={(next) => void change({ rememberTabs: next })}
+          />
+          <More id="more-remember" about="remembering tabs">
+            <p>
+              When the last tab of a container closes (you deleted its tab
+              group, closed a window, or closed the tabs one by one),
+              SplitSession keeps the addresses and titles of the tabs that
+              closed together, up to 50, on this computer. A container with no
+              open tab and saved tabs shows “N saved” in the popup, and one
+              click opens them all.
+            </p>
+            <p>
+              Closing the browser does not change them: Chrome and “Restore
+              container tabs after restart” bring those tabs back. Turning this
+              off forgets every saved set. You can also forget one container’s
+              tabs from its edit form in the popup.
+            </p>
+          </More>
+        </div>
+        <div class="opt-row">
+          <Switch
             label="Strict mode"
             description="Sites can’t send push notifications while it’s on."
             checked={value.strictMode}

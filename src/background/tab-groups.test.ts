@@ -141,6 +141,7 @@ function setup(settings: Partial<Settings> = {}) {
     agentActivity: true,
     restoreTabs: true,
     markOutsideGroup: true,
+    rememberTabs: true,
     ...settings,
   };
   const projection = new TabGroupProjection({
@@ -347,6 +348,7 @@ describe("TabGroupProjection", () => {
         agentActivity: true,
         restoreTabs: true,
         markOutsideGroup: true,
+        rememberTabs: true,
       }),
       container: (id) => containers.get(id),
       containers: () => [...containers.values()],
@@ -712,6 +714,7 @@ describe("TabGroupProjection", () => {
           agentActivity: true,
           restoreTabs: true,
           markOutsideGroup: true,
+          rememberTabs: true,
         }),
         container: (id) => containers.get(id),
         containers: () => [...containers.values()],
