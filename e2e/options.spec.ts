@@ -325,6 +325,9 @@ test.describe("options page", () => {
     await expect(login.locator("#user")).toHaveText("exported");
     const page = await openOptions(facet);
     await openTransfer(page);
+    await expect(page.getByTestId("uninstall-note")).toHaveText(
+      "Removing SplitSession deletes its containers and their sign-ins. Export first if you plan to reinstall.",
+    );
 
     const plainDownload = page.waitForEvent("download");
     await page.getByRole("button", { name: "Export", exact: true }).click();

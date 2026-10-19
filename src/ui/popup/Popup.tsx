@@ -7,7 +7,7 @@ import { facetApi } from "../../engine/api-client";
 import { BridgeRow } from "../components/BridgeCard";
 import { Button } from "../components/Button";
 import { ContainerForm } from "../components/ContainerForm";
-import { describeError, tabsLabel } from "../format";
+import { describeError, plural, tabsLabel } from "../format";
 import { IconPlus } from "../icons";
 import { useBridge } from "../useBridge";
 import { ContainerRow } from "./ContainerRow";
@@ -15,6 +15,7 @@ import { DeleteDialog } from "./DeleteDialog";
 import { Header } from "./Header";
 import { HeldBanner } from "./HeldBanner";
 import { NONE, rowId } from "./ids";
+import { RestoreOffer } from "./RestoreOffer";
 import { ThisTabRow } from "./ThisTabRow";
 import { usePopupData } from "./usePopupData";
 import { useStatus } from "./useStatus";
@@ -27,12 +28,20 @@ export const Popup = () => {
   // Full only (a compile-time constant, so the hook order never changes): one poll of the bridge for the MCP pill and the agent row.
   // eslint-disable-next-line react-hooks/rules-of-hooks -- __FULL__ is a build-time constant, so the hook is either always or never called
   const bridge = __FULL__ ? useBridge() : null;
-  const { containers, tab, tabContainer, restore, loadError, refresh } =
-    usePopupData();
+  const {
+    containers,
+    tab,
+    tabContainer,
+    restore,
+    groupOffer,
+    loadError,
+    refresh,
+  } = usePopupData();
   const { busy, status, say, run } = useStatus();
   const [mode, setMode] = useState<Mode>({ kind: "idle" });
   const [deleting, setDeleting] = useState<ContainerInfo | null>(null);
   const [heldOpen, setHeldOpen] = useState(false);
+  const [restoredNote, setRestoredNote] = useState<string | null>(null);
 
   if (loadError) {
     return (
@@ -146,6 +155,39 @@ export const Popup = () => {
       );
     }, "Could not open the tab");
 
+  const restoreGroups = () =>
+    run(async () => {
+      const done = await facetApi.restoreFromGroups();
+      await refresh();
+      const failed =
+        done.failed > 0
+          ? ` ${plural(done.failed, "tab")} could not be moved in.`
+          : "";
+      setRestoredNote(
+        `Restored ${plural(done.containers, "container")}. Sign in again: a reinstall removes saved logins.${failed}`,
+      );
+      setTimeout(
+        () =>
+          document
+            .querySelector<HTMLElement>('[data-testid="container-list"] button')
+            ?.focus(),
+        0,
+      );
+    }, "Could not restore the containers");
+
+  const dismissGroupOffer = () =>
+    run(async () => {
+      await facetApi.dismissGroupRestoreOffer();
+      await refresh();
+      setTimeout(
+        () =>
+          document
+            .querySelector<HTMLElement>('button[aria-label="New container"]')
+            ?.focus(),
+        0,
+      );
+    }, "Could not dismiss");
+
   const create = async (value: { name: string; color: ContainerColor }) => {
     const made = await facetApi.createContainer(value);
     setMode({ kind: "idle" });
@@ -233,6 +275,25 @@ export const Popup = () => {
           )}
         </div>
 
+        {groupOffer && containers.length === 0 && (
+          <RestoreOffer
+            offer={groupOffer}
+            busy={busy}
+            onRestore={() => void restoreGroups()}
+            onDismiss={() => void dismissGroupOffer()}
+          />
+        )}
+
+        {restoredNote && (
+          <p
+            class="popup__note fx-secondary"
+            role="status"
+            data-testid="group-restore-note"
+          >
+            {restoredNote}
+          </p>
+        )}
+
         {mode.kind === "create" && (
           <div class="popup__form">
             <ContainerForm
@@ -245,7 +306,7 @@ export const Popup = () => {
           </div>
         )}
 
-        {containers.length === 0 && mode.kind !== "create" && (
+        {containers.length === 0 && mode.kind !== "create" && !groupOffer && (
           <p class="popup__empty fx-secondary">
             No containers yet. Add one with +.
           </p>

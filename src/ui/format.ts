@@ -17,3 +17,7 @@ export function hostOf(url: string | undefined): string {
     return "";
   }
 }
+
+/** "1 container", "3 containers". */
+export const plural = (n: number, one: string, many = `${one}s`): string =>
+  `${n} ${n === 1 ? one : many}`;

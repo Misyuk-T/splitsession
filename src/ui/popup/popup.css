@@ -215,6 +215,26 @@ body:has(.fx-backdrop) {
   background: var(--fx-danger-soft);
 }
 
+/* Tab groups left by an earlier install: one quiet row with a text, "Restore" and a dismiss. */
+.popup__offer {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 4px 6px 12px;
+  border-radius: var(--fx-radius);
+  background: var(--fx-surface);
+}
+.popup__offertext {
+  flex: 1;
+  min-width: 0;
+  margin: 0 6px 0 0;
+  line-height: 1.35;
+}
+.popup__note {
+  margin: 0;
+  padding: 2px 10px 6px;
+}
+
 /* Tabs from before a restart that SplitSession could not match with certainty: one line, details unfold. */
 .popup__held {
   border-radius: var(--fx-radius);

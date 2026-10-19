@@ -100,6 +100,8 @@ The Lite edition has none of this: it does not contain the bridge code, and its 
 - Full: to remove the helper program, run `npx splitsession-bridge uninstall` and remove the MCP server entry from your AI
   client.
 - You can **export** your containers and rules at any time, and **import** them again.
+- After a reinstall, the tab groups Chrome kept can be turned back into containers (names, colours and tabs, no logins); the one
+  setting this uses, "the offer was dismissed", is kept in `chrome.storage.local` like the rest.
 
 ## Limited Use
 

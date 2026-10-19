@@ -1414,3 +1414,63 @@ Goal: a container tab that is not in its container's tab group (dragged out, or 
   sleeping worker loses its timers, and the idle dot is what a restarted worker paints. Setting off: `touch` returns before the blink.
 - Tests: `badges.test.ts` (state machine, no leaked timers), `activity.test.ts` (start, re-arm, end, stop), `mixHex`; e2e samples the
   badge colour a dozen times during a tool call and checks the idle dot before and after (`agent-activity.spec.ts`).
+
+## Restoring containers from leftover tab groups after a reinstall (2026-10-19)
+
+- **Incident.** The user removed and reinstalled the extension. Chrome wiped `chrome.storage` (containers, cookie jars), the
+  popup said "No containers yet", and the tab groups "⧉ main", "⧉ secondline", ... stayed in the window with their tabs,
+  orphaned. Cookies are not recoverable (they lived only in the wiped storage). The structure is: every SplitSession group
+  title still carries the invisible marker naming its container.
+- **Offer, not automatic.** `getGroupRestoreOffer` returns the plan only when there is **no container at all**, the user has
+  not dismissed it (`groupRestoreDismissed` in `storage.local`, so a flag is per install and a reinstall starts clean), and a
+  group with a marker exists (`decodeGroupMarker`: the visible `⧉` is not evidence, a user group titled "⧉ fake" is never
+  offered). The popup shows one quiet row above the list ("Found N tab groups from an earlier install. Restore them as
+  containers?", Restore, x). Nothing is done without the click: creating containers also turns on isolation for those tabs.
+- **Same ID.** The container comes back under the ID the marker names (`ContainerStore.createWithId`, `Facet.restoreContainer`;
+  the public `createContainer` still cannot choose an ID). So (1) the group is already the container's group: no retitle, no
+  regroup, no second group, nothing for the group guard to "fix", `TabGroupProjection` adopts it by its marker as it does for
+  a group Chrome restored; (2) the page storage prefix `__facet:<id>:` of the old tabs matches again, so storage-based sessions
+  can survive. Groups with one marker in several windows are one container; the name is the title without glyph and marker
+  (cut to 32 characters, "Container" when empty, ` 2` for a clash); the colour is `containerColorOfGroup` (Chrome cyan is
+  turquoise; grey, which no container has, gets the first unused colour). Pure part: `src/core/group-restore.ts`.
+- **Tabs.** The tabs of each marked group are handled as the group guard does (`src/background/group-restore.ts`). A loaded
+  website (http(s), loaded by Chrome, not discarded) is **reopened in a fresh tab** of the container (`Extras.reopenInContainer`,
+  the guard's `move`: `Facet.replaceTab` -> `TabOpener.replaceTab`, same window and index, no opener; it joins the group, then
+  the old tab is closed). A first version reloaded the old tab, which keeps its browsing context: a window that held a
+  reference to it (`window.opener` of a popup the tab had opened) could still script the container's page and storage after
+  the restore (found in review). The groups are adopted right after each container is created, so the new tab joins the old
+  group and no second group is made. A tab that has loaded nothing (discarded, unloaded, `chrome://`) is assigned where it
+  stands (`Facet.assignInPlace`), keeps its ID and loads nothing: it has no live document for anything to hold a reference to,
+  and what it loads later is already the container's. A tab that cannot be handled is counted ("N tabs could not be moved
+  in") and the group guard fixes it at its next sweep.
+- **Races (second review).** (1) The restore awaits every tab in turn, so a tab list taken earlier goes stale. Each tab is read
+  again right before it is handled (`tabs.get`): gone, or no longer in that group (the user dragged it away) -> skipped and left
+  to the group guard; loaded or loading -> reopened. A tab that loaded nothing is assigned in place and then read once more: a
+  navigation that began before the container's rules were active shows as a tab that is no longer unloaded or discarded (or has a
+  pending website address), and such a tab holds a live plain document, so it is reopened too (`handleTab`). A navigation that
+  begins after the assignment is the container's own. In-place assignment of http(s) tabs was kept (no reopen of every unloaded
+  tab) because the check should close the window: a navigation's start (`pendingUrl`, `status`) is browser-side state set before its first
+  request, so a state change is not expected to hide from the second read (an assumption, not measured). Reopening a never-loaded tab would instead have to load it once
+  in the new tab (Chrome offers no create-discarded for a given URL), which sends requests the user never asked for.
+  (2) Two callers moving one original tab (the guard's sweep, the restore) each created a fresh tab and each closed the
+  original: two survivors. `TabReopener` (`tab-reopener.ts`, behind `Extras.reopenInContainer`) keeps one in-flight move per
+  original tab ID; a second caller gets the first one's result, and the entry is dropped when the move ends, failed or not.
+- **Accepted residual risk (third review).** Between the in-place assignment of an unloaded or discarded tab and its re-read,
+  Chrome may resume the tab's plain document; in that instant the document can send requests under the just-created
+  container's rules before `handleTab` replaces it. Accepted: restore runs only with zero containers (the guard in
+  `src/core/group-restore.ts`) and each container starts with an empty cookie jar (`ContainerStore.createWithId`), so the
+  worst case is a few requests without cookies, or a cookie set by them landing in a jar that tabs restored earlier in the
+  same run may have started filling. Closing it would mean reopening every unloaded tab, which loads pages the user never
+  asked for (see Races above).
+- **After.** One line in the popup: "Restored N containers. Sign in again: a reinstall removes saved logins." The dismissed flag
+  is set on a successful restore too, so leftovers are not offered again.
+- **Warning before it happens.** Settings, Advanced, Export and import: "Removing SplitSession deletes its containers and their
+  sign-ins. Export first if you plan to reinstall." in the secondary text next to Export. `runtime.setUninstallURL` and any
+  popup or nag were considered and rejected.
+- **Tests.** Unit: `core/group-restore.test.ts` (title -> name, colour, ID, dedupe, only marked groups, only with zero
+  containers and no dismissal), `background/group-restore.test.ts` (offer, dismiss, reopen / assign-in-place split, failed tab, refusal),
+  `stores.test.ts` (`createWithId`). e2e: `restore-from-groups.spec.ts` (storage wiped and the worker stopped, as a reinstall
+  leaves it: the offer counts only the marked groups, Restore keeps the same group IDs, no group appears or empties,
+  loaded tabs are replaced (new ID, same window, index, group and address, no opener, old tab closed, a plain popup that had
+  `window.opener` to it has none to the new tab), the discarded one keeps its ID, the user's plain and look-alike groups
+  are untouched, the guard logs nothing; dismiss is remembered).

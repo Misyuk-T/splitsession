@@ -130,12 +130,41 @@ export class ContainerStore {
     const color =
       input.color ??
       CONTAINER_COLORS[this.containers.length % CONTAINER_COLORS.length]!;
-    const container: Container = { id, name, color, createdAt: this.now() };
+    return this.insert({ id, name, color, createdAt: this.now() });
+  }
+
+  /**
+   * Creates a container under a given ID: the restore from leftover tab groups, whose title marker names the old ID (page
+   * storage the container's tabs left behind is prefixed with it). Same checks as `create`, and the ID must be free.
+   */
+  async createWithId(input: {
+    id: ContainerId;
+    name: string;
+    color: ContainerColor;
+  }): Promise<Container> {
+    if (!/^[a-z0-9]{1,32}$/.test(input.id))
+      throw new ContainerError(`invalid container ID "${input.id}"`);
+    if (this.get(input.id))
+      throw new ContainerError(`a container "${input.id}" already exists`);
+    const name = normalizeName(input.name);
+    if (this.findByName(name))
+      throw new ContainerError(`a container named "${name}" already exists`);
+    if (!(CONTAINER_COLORS as readonly string[]).includes(input.color))
+      throw new ContainerError(`unknown color "${String(input.color)}"`);
+    return this.insert({
+      id: input.id,
+      name,
+      color: input.color,
+      createdAt: this.now(),
+    });
+  }
+
+  private async insert(container: Container): Promise<Container> {
     this.containers.push(container);
-    this.jars.set(id, new CookieJar());
+    this.jars.set(container.id, new CookieJar());
     await this.area.set({
       [CONTAINERS_KEY]: this.containers,
-      [jarKey(id)]: this.jars.get(id)!.toJSON(),
+      [jarKey(container.id)]: this.jars.get(container.id)!.toJSON(),
     });
     return { ...container };
   }

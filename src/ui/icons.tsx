@@ -87,3 +87,9 @@ export const IconMoveIn = () => (
     <path d="M5 14.5v3A2.5 2.5 0 0 0 7.5 20h9a2.5 2.5 0 0 0 2.5-2.5v-3" />
   </Icon>
 );
+
+export const IconClose = () => (
+  <Icon size={16}>
+    <path d="M6.5 6.5l11 11M17.5 6.5l-11 11" />
+  </Icon>
+);
