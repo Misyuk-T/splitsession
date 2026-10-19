@@ -382,6 +382,12 @@ storage is prefixed with the container ID and stays in the profile). Domain rule
 open tab in a group cannot be recovered either. Settings, Advanced, Export and import warns before a reinstall; an export
 (with the cookies box ticked) is the only backup of the logins.
 
+One gap is accepted in a restore: a tab Chrome has not loaded (unloaded or discarded) is assigned in place and read again
+right after. If Chrome resumes its plain document in that instant, the document can send a few requests under the new
+container's rules before it is replaced. Restore runs only with no container at all and each container starts with an empty
+cookie jar, so the worst case is a few requests without cookies, or a cookie set by them landing in a jar that tabs restored
+just before may have started filling.
+
 **"New tab" in a container** opens Chrome's new tab page assigned to the container; an address typed into its omnibox is
 requested as the container.
 

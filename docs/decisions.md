@@ -1455,6 +1455,13 @@ Goal: a container tab that is not in its container's tab group (dragged out, or 
   (2) Two callers moving one original tab (the guard's sweep, the restore) each created a fresh tab and each closed the
   original: two survivors. `TabReopener` (`tab-reopener.ts`, behind `Extras.reopenInContainer`) keeps one in-flight move per
   original tab ID; a second caller gets the first one's result, and the entry is dropped when the move ends, failed or not.
+- **Accepted residual risk (third review).** Between the in-place assignment of an unloaded or discarded tab and its re-read,
+  Chrome may resume the tab's plain document; in that instant the document can send requests under the just-created
+  container's rules before `handleTab` replaces it. Accepted: restore runs only with zero containers (the guard in
+  `src/core/group-restore.ts`) and each container starts with an empty cookie jar (`ContainerStore.createWithId`), so the
+  worst case is a few requests without cookies, or a cookie set by them landing in a jar that tabs restored earlier in the
+  same run may have started filling. Closing it would mean reopening every unloaded tab, which loads pages the user never
+  asked for (see Races above).
 - **After.** One line in the popup: "Restored N containers. Sign in again: a reinstall removes saved logins." The dismissed flag
   is set on a successful restore too, so leftovers are not offered again.
 - **Warning before it happens.** Settings, Advanced, Export and import: "Removing SplitSession deletes its containers and their
