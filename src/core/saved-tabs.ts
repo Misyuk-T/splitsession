@@ -116,9 +116,16 @@ export function savedTabsOf(batch: readonly Closure[]): SavedTab[] {
     .map((c) => c.tab)
     .filter((t): t is ClosedTab => t !== null && isSavableUrl(t.url))
     .sort((a, b) => a.windowId - b.windowId || a.index - b.index);
-  return tabs
-    .slice(0, MAX_SAVED_TABS)
-    .map((t) => ({ url: t.url, title: t.title }));
+  // One entry per address, the first in order (a tab closed and reopened must not show up twice).
+  const seen = new Set<string>();
+  const out: SavedTab[] = [];
+  for (const t of tabs) {
+    if (seen.has(t.url)) continue;
+    seen.add(t.url);
+    out.push({ url: t.url, title: t.title });
+    if (out.length >= MAX_SAVED_TABS) break;
+  }
+  return out;
 }
 
 /** Open tabs first (in order), then saved ones whose address is not among them; at most `MAX_SAVED_TABS`. */

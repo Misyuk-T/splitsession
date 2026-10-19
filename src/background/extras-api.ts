@@ -19,6 +19,7 @@ import type { FacetApi } from "./api";
 import type { Extras } from "./extras";
 import type { Facet } from "./facet";
 import { GroupRestore, type RestoreTab } from "./group-restore";
+import { SavedTabsReopener } from "./saved-tabs-reopen";
 import { exportData, importData, type ImportSummary } from "./transfer-apply";
 
 /** The Stage C part of the API: settings, domain rules, export/import and the helpers of the choose page and popup. */
@@ -186,6 +187,8 @@ export function createExtrasApi(
       .map((t) => ({ url: t.url, title: cleanTabTitle(t.title, name) }));
   };
 
+  const reopener = new SavedTabsReopener(facet.savedTabs);
+
   return {
     assignTab,
 
@@ -233,36 +236,18 @@ export function createExtrasApi(
       await ready();
       const container = facet.containers.resolve(containerId);
       if (!container) throw new ContainerError(`no container "${containerId}"`);
-      const saved = facet.savedTabs.get(container.id);
-      if (saved.length === 0) return { opened: 0, failed: 0 };
-      // Cleared first: a second click while the tabs open must not open them twice. What fails to open is put back.
-      await facet.savedTabs.clear(container.id);
       const windowId =
         typeof options?.windowId === "number" &&
         Number.isInteger(options.windowId)
           ? options.windowId
           : undefined;
-      const failed: SavedTab[] = [];
-      let opened = 0;
-      let lastError: unknown;
-      for (const tab of saved) {
-        try {
-          await facet.openInContainer(tab.url, container.id, {
-            active: opened === 0,
-            ...(windowId !== undefined ? { windowId } : {}),
-          });
-          opened++;
-        } catch (error) {
-          lastError = error;
-          failed.push(tab);
-        }
-      }
-      if (failed.length > 0) await facet.savedTabs.set(container.id, failed);
-      if (opened === 0 && lastError !== undefined)
-        throw lastError instanceof Error
-          ? lastError
-          : new ContainerError(String(lastError));
-      return { opened, failed: failed.length };
+      // Durable progress (an entry goes from the stored set once its tab is open) and one reopening per container.
+      return reopener.reopen(container.id, async (tab, first) => {
+        await facet.openInContainer(tab.url, container.id, {
+          active: first,
+          ...(windowId !== undefined ? { windowId } : {}),
+        });
+      });
     },
     forgetSavedTabs: async (containerId) => {
       await ready();

@@ -274,7 +274,10 @@ export class Extras {
   private onFacetEvent(event: FacetEvent): void {
     switch (event.type) {
       case "tab-assigned":
-        void this.ready.then(() => this.saved.layoutChanged());
+        void this.ready.then(() => {
+          this.saved.tabAssigned(event.containerId);
+          this.saved.layoutChanged();
+        });
         // Synchronous: this placement exempts the tab's next navigation from domain rules, and that navigation may
         // follow immediately.
         this.exemptions.markPlacement(event.tabId, event.containerId);

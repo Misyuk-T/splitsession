@@ -49,6 +49,18 @@ export class SavedTabsStore {
     return this.persist();
   }
 
+  /** Removes the first entry equal to `tab` (a reopening's progress); an emptied set is removed. */
+  remove(id: ContainerId, tab: SavedTab): Promise<void> {
+    const list = this.sets.get(id);
+    const at = list?.findIndex(
+      (t) => t.url === tab.url && t.title === tab.title,
+    );
+    if (!list || at === undefined || at < 0) return this.writing;
+    list.splice(at, 1);
+    if (list.length === 0) this.sets.delete(id);
+    return this.persist();
+  }
+
   /** Forgets the set; returns how many tabs it held. */
   async clear(id: ContainerId): Promise<number> {
     const had = this.count(id);

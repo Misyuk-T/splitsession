@@ -1508,10 +1508,7 @@ Goal: a container tab that is not in its container's tab group (dragged out, or 
   moment), so on macOS, where Chrome stays running, closing the last window saves nothing; Chrome's own "Reopen closed window"
   covers it. Closing one of several windows saves normally.
 - **Popup.** A container with no open tab and a saved set shows "N saved" (muted) in place of the tab count; its main button
-  says "Reopen N saved tabs". Clicking it calls `openSavedTabs`: the set is cleared first (a second click cannot open the tabs
-  twice), then each tab is opened with the same path as the "+" button and `open_in_container` (`Facet.openInContainer`:
-  created at `about:blank`, assigned to the container, then navigated), one after the other so the order and the group follow,
-  the first one active, in the window the popup belongs to. A tab that fails to open stays saved. With nothing saved the row
+  says "Reopen N saved tabs". Clicking it calls `openSavedTabs` (`SavedTabsReopener`, `background/saved-tabs-reopen.ts`): each tab is opened with the same path as the "+" button and `open_in_container` (`Facet.openInContainer`: created at `about:blank`, assigned to the container, then navigated), one after the other so the order and the group follow, the first one active, in the window the popup belongs to. Progress is durable: an entry leaves the stored set only after its tab is open, so a worker or browser that dies half way leaves the rest saved (a first version cleared the whole set up front and lost up to 50 addresses). One reopening per container at a time; a second request (double click, two popups) gets the first one's result. A tab that fails to open stays saved. A tab assigned to the container begins a new open cycle and clears the closure log, so a set reopened and closed again within 1.5 s is not merged with the closures of the first cycle; a set lists an address once. With nothing saved the row
   behaves as before. "Forget saved tabs" is in the edit form (the pencil); no `confirm()`.
 - **Setting.** Settings, General: "Remember tabs when a container's last tab closes" (`rememberTabs`, on by default, both
   editions). Off forgets every saved set at once (the other choice, keeping the sets until forgotten, would leave addresses on

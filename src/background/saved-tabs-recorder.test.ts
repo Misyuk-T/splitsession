@@ -228,6 +228,35 @@ describe("SavedTabsRecorder", () => {
     ]);
   });
 
+  it("a set reopened and closed again within the gap is saved once, not twice", async () => {
+    world.open(4, "c2", "https://b.com/1");
+    world.open(5, "c2", "https://b.com/2");
+    await world.recorder.flush();
+    await world.close([4, 5]);
+    expect(urls(world.last)).toEqual(["https://b.com/1", "https://b.com/2"]);
+    // Reopened (new tab ids, same addresses; each assignment begins a new cycle), closed again 0.4 s after the first closing.
+    world.open(14, "c2", "https://b.com/1");
+    world.recorder.tabAssigned("c2");
+    world.open(15, "c2", "https://b.com/2");
+    world.recorder.tabAssigned("c2");
+    await vi.advanceTimersByTimeAsync(100);
+    await world.recorder.flush();
+    await world.close([14, 15]);
+    expect(urls(world.last)).toEqual(["https://b.com/1", "https://b.com/2"]);
+  });
+
+  it("without the cycle reset, the same addresses are still saved once", async () => {
+    world.open(4, "c2", "https://b.com/1");
+    world.open(5, "c2", "https://b.com/2");
+    await world.recorder.flush();
+    await world.close([4, 5]);
+    world.open(14, "c2", "https://b.com/1");
+    world.open(15, "c2", "https://b.com/2");
+    await world.recorder.flush();
+    await world.close([14, 15]);
+    expect(urls(world.last)).toEqual(["https://b.com/1", "https://b.com/2"]);
+  });
+
   describe("browser shutdown", () => {
     it("a window close is saved after the grace period, when a window is left", async () => {
       world.windows = 1;

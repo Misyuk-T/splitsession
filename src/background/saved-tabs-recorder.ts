@@ -155,6 +155,17 @@ export class SavedTabsRecorder {
     this.schedulePersist();
   }
 
+  /**
+   * A tab was assigned to the container: a new open cycle begins, so the closures of the last one (tabs that were just
+   * reopened and closed again within the gap) must not join the next batch.
+   */
+  tabAssigned(containerId: ContainerId): void {
+    this.working = this.working
+      .then(() => this.loaded)
+      .then(() => this.log.forget(containerId))
+      .catch(() => {});
+  }
+
   /** SplitSession is about to close this tab itself because it moves the page elsewhere (a rule, the group guard). */
   willMove(tabId: number): void {
     this.moved.add(tabId);

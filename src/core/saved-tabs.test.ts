@@ -114,6 +114,18 @@ describe("savedTabsOf", () => {
     ]);
   });
 
+  it("lists an address once, at its first place", () => {
+    const batch = [
+      closed(1, 1, { index: 1, url: "https://a.com/x" }),
+      closed(2, 2, { index: 2, url: "https://a.com/y" }),
+      closed(3, 3, { index: 3, url: "https://a.com/x" }),
+    ];
+    expect(savedTabsOf(batch).map((t) => t.url)).toEqual([
+      "https://a.com/x",
+      "https://a.com/y",
+    ]);
+  });
+
   it("keeps at most 50 tabs, the first ones in order", () => {
     const batch = Array.from({ length: 80 }, (_, i) => closed(i, i));
     const tabs = savedTabsOf(batch);
