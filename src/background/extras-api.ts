@@ -127,7 +127,8 @@ export function createExtrasApi(
     tabsOf: async (groupId) =>
       (await b.tabs.query({ groupId })) as RestoreTab[],
     createContainer: (input) => facet.restoreContainer(input),
-    assign: (tabId, id, reload) => assignTab(tabId, id, { reload }),
+    assignInPlace: (tabId, id) => facet.assignInPlace(tabId, id),
+    reopen: (tabId, id, url) => extras.reopenInContainer(tabId, id, url),
     adopt: async () => {
       await extras.groups.adoptExisting();
       await extras.groups.idle();

@@ -15,7 +15,12 @@ function setup(
 ) {
   const area = new MemoryStorageArea();
   const made: Array<{ id: string; name: string; color: string }> = [];
-  const assigned: Array<{ tab: number; id: string; reload: boolean }> = [];
+  const assigned: Array<{
+    tab: number;
+    id: string;
+    how: "in place" | "reopened";
+    url?: string;
+  }> = [];
   let adopted = 0;
   const deps: GroupRestoreDeps = {
     area,
@@ -23,9 +28,14 @@ function setup(
     groups: async () => groups,
     tabsOf: async (id) => tabs[id] ?? [],
     createContainer: async (c) => void made.push(c),
-    assign: async (tab, id, reload) => {
+    assignInPlace: async (tab, id) => {
       if (tab === opts.failTab) throw new Error("rules failed");
-      assigned.push({ tab, id, reload });
+      assigned.push({ tab, id, how: "in place" });
+    },
+    reopen: async (tab, id, url) => {
+      if (tab === opts.failTab) throw new Error("rules failed");
+      assigned.push({ tab, id, how: "reopened", url });
+      return tab + 1000;
     },
     adopt: async () => void adopted++,
     log: () => {},
@@ -70,7 +80,7 @@ describe("GroupRestore", () => {
     await expect(s.restore.restore()).rejects.toThrow();
   });
 
-  it("creates the containers under the marker IDs and assigns the tabs: loaded websites reload, the rest stay as they are", async () => {
+  it("creates the containers under the marker IDs and assigns the tabs: loaded websites are reopened in a fresh tab, the rest are assigned in place", async () => {
     const s = setup(
       [g(1, "main", "aaa111"), g(2, "secondline", "bbb222", "cyan")],
       {
@@ -93,13 +103,13 @@ describe("GroupRestore", () => {
       { id: "bbb222", name: "secondline", color: "turquoise" },
     ]);
     expect(s.assigned).toEqual([
-      { tab: 11, id: "aaa111", reload: true },
-      { tab: 12, id: "aaa111", reload: false },
-      { tab: 13, id: "aaa111", reload: false },
-      { tab: 14, id: "aaa111", reload: false },
-      { tab: 21, id: "bbb222", reload: true },
+      { tab: 11, id: "aaa111", how: "reopened", url: "https://a.example/" },
+      { tab: 12, id: "aaa111", how: "in place" },
+      { tab: 13, id: "aaa111", how: "in place" },
+      { tab: 14, id: "aaa111", how: "in place" },
+      { tab: 21, id: "bbb222", how: "reopened", url: "https://d.example/" },
     ]);
-    expect(s.adopted()).toBe(1);
+    expect(s.adopted()).toBe(2); // after each container, before its tabs move
     expect(await s.restore.offer()).toBeNull();
   });
 

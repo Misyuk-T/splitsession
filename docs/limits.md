@@ -376,7 +376,7 @@ site and merges cookies into the matching jar.
 settings. Chrome keeps the tab groups, and their titles keep SplitSession's invisible marker, so with no container left the
 popup offers "Found N tab groups from an earlier install. Restore them as containers?". Restore gives each marked group
 (never one of the user's own) back its container, with the group's name and colour and under the ID the marker names, and puts
-the group's tabs in it; the groups are kept, not recreated. **Logins are not recovered**: the jars are gone, every site has to
+the group's tabs in it (a loaded page is reopened in a fresh tab, like a tab dragged into a group; one Chrome has not loaded is assigned as it is); the groups are kept, not recreated. **Logins are not recovered**: the jars are gone, every site has to
 be signed in again (a site that kept its session in `localStorage` or IndexedDB may still know the container, since that
 storage is prefixed with the container ID and stays in the profile). Domain rules, other settings and a container with no
 open tab in a group cannot be recovered either. Settings, Advanced, Export and import warns before a reinstall; an export

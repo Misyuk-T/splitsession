@@ -58,6 +58,30 @@ async function reinstall(facet: Facet, via: Page): Promise<void> {
   await facet.stopServiceWorker(via);
 }
 
+/** Where a tab is and what it shows (the address, window, position and group). */
+const tabState = (facet: Facet, tabId: number) =>
+  facet.inWorker(async (id: number) => {
+    const t = await (globalThis as any).chrome.tabs.get(id);
+    return {
+      id: t.id as number,
+      url: t.url as string,
+      windowId: t.windowId as number,
+      index: t.index as number,
+      groupId: t.groupId as number,
+      discarded: t.discarded as boolean,
+      openerTabId: t.openerTabId as number | undefined,
+    };
+  }, tabId);
+
+/** The tab that shows the address with this query now (a tab that was reopened has a new ID), or null. */
+const tabShowing = (facet: Facet, query: string) =>
+  facet.inWorker(async (q: string) => {
+    const tabs: Array<{ id: number; url?: string }> = await (
+      globalThis as any
+    ).chrome.tabs.query({});
+    return tabs.find((t) => (t.url ?? "").endsWith(q))?.id ?? null;
+  }, query);
+
 /** A group of the user's own, around a plain tab. */
 async function userGroup(facet: Facet, tabId: number, title: string) {
   return facet.inWorker(
@@ -107,8 +131,11 @@ test.describe("restore containers from leftover tab groups", () => {
         (await (globalThis as any).chrome.tabs.discard(id)).id as number,
       m2.tabId,
     );
-    await m1.page.evaluate(() => ((window as any).loadedBefore = true));
-    await s1.page.evaluate(() => ((window as any).loadedBefore = true));
+    const before = {
+      m1: await tabState(facet, m1.tabId),
+      discarded: await tabState(facet, discardedId),
+      s1: await tabState(facet, s1.tabId),
+    };
 
     // The user's own groups: one plain, one that only looks like ours.
     const plain = await facet.plain(at("b.localhost", "/whoami?restore=user"));
@@ -123,6 +150,24 @@ test.describe("restore containers from leftover tab groups", () => {
     await popupBefore.close();
 
     await reinstall(facet, plain);
+    // While no container exists, the page of m1 opens a plain popup window: that popup holds `window.opener` to m1's document.
+    const [ref] = await Promise.all([
+      m1.page.waitForEvent("popup"),
+      m1.page.evaluate(() => {
+        window.open(
+          `${location.origin}/whoami?restore=ref`,
+          "ref",
+          "popup,width=320,height=240",
+        );
+      }),
+    ]);
+    facet.adopt(ref);
+    await ref.waitForLoadState("domcontentloaded");
+    expect(
+      await ref.evaluate(() => window.opener !== null && !window.opener.closed),
+    ).toBe(true);
+    const refId = await facet.tabIdOf(ref);
+
     const popup = await openPopup(facet); // wakes the new worker
     const groupsBefore = await allGroups(facet);
     expect(groupsBefore.map((g) => g.id).sort()).toEqual(
@@ -153,26 +198,52 @@ test.describe("restore containers from leftover tab groups", () => {
     const idOf = (name: string) => containers.find((c) => c.name === name)!.id;
     expect(idOf("main")).toBe(main.id);
 
-    // The tabs are the same tabs, in their containers; the page that was loaded was loaded again, the discarded one was not.
-    for (const [tabId, container] of [
-      [m1.tabId, "main"],
-      [discardedId, "main"],
-      [s1.tabId, "secondline"],
-    ] as const)
-      expect(await facet.api("getTabContainer", tabId)).toBe(idOf(container));
+    // A loaded page is reopened in a fresh tab (new ID, same window and group, same address, no opener) and the old tab is
+    // closed, so nothing that held a reference to the old document reaches the container's page. The discarded tab keeps its ID.
     await expect
-      .poll(() => m1.page.evaluate(() => (window as any).loadedBefore === true))
-      .toBe(false);
-    await expect
-      .poll(() => s1.page.evaluate(() => (window as any).loadedBefore === true))
-      .toBe(false);
+      .poll(() => facet.api("getTabContainer", discardedId))
+      .toBe(idOf("main"));
+    const newM1 = await tabShowing(facet, "/whoami?restore=m1");
+    const newS1 = await tabShowing(facet, "/whoami?restore=s1");
+    expect(newM1).not.toBeNull();
+    expect(newS1).not.toBeNull();
+    expect(newM1).not.toBe(m1.tabId);
+    expect(newS1).not.toBe(s1.tabId);
+    expect(await facet.api("getTabContainer", newM1)).toBe(idOf("main"));
+    expect(await facet.api("getTabContainer", newS1)).toBe(idOf("secondline"));
+    expect(m1.page.isClosed()).toBe(true);
+    expect(s1.page.isClosed()).toBe(true);
+    expect(await facet.api("getTabContainer", m1.tabId)).toBeNull();
+    const afterM1 = await tabState(facet, newM1!);
+    const afterS1 = await tabState(facet, newS1!);
+    const afterDiscarded = await tabState(facet, discardedId);
+    expect(afterM1).toMatchObject({
+      url: before.m1.url,
+      windowId: before.m1.windowId,
+      groupId: m1.groupId,
+      openerTabId: undefined,
+    });
+    expect(afterS1).toMatchObject({
+      url: before.s1.url,
+      windowId: before.s1.windowId,
+      groupId: s1.groupId,
+      openerTabId: undefined,
+    });
+    expect(afterDiscarded).toMatchObject({
+      id: discardedId,
+      groupId: m1.groupId,
+      discarded: true,
+    });
+    // Same place in the strip: m1 before its discarded neighbour, as it was.
+    expect(afterM1.index).toBe(before.m1.index);
+    expect(afterDiscarded.index).toBe(before.discarded.index);
+    expect(afterS1.index).toBe(before.s1.index);
+    // The popup that held a reference to the old document has none to the new one.
     expect(
-      await facet.inWorker(
-        async (id: number) =>
-          (await (globalThis as any).chrome.tabs.get(id)).discarded as boolean,
-        discardedId,
-      ),
+      await ref.evaluate(() => window.opener === null || window.opener.closed),
     ).toBe(true);
+    expect(await facet.api("getTabContainer", refId)).toBeNull();
+    expect((await facet.tabInfo(refId)).groupId).toBe(-1);
 
     // The group guard sweeps after group changes (1 s): it has nothing to fix, no tab is reopened.
     await new Promise((resolve) => setTimeout(resolve, 2_000));
@@ -181,16 +252,16 @@ test.describe("restore containers from leftover tab groups", () => {
         e.message.startsWith("group guard:"),
       ),
     ).toEqual([]);
-    for (const tabId of [m1.tabId, discardedId, s1.tabId])
-      expect((await facet.tabInfo(tabId)).id).toBe(tabId);
 
     // The very same groups now stand for the containers: nothing new, nothing emptied.
-    expect((await allGroups(facet)).map((g) => g.id).sort()).toEqual(
+    const groupsAfter = await allGroups(facet);
+    expect(groupsAfter.map((g) => g.id).sort()).toEqual(
       groupsBefore.map((g) => g.id).sort(),
     );
-    expect((await facet.tabInfo(m1.tabId)).groupId).toBe(m1.groupId);
-    expect((await facet.tabInfo(discardedId)).groupId).toBe(m1.groupId);
-    expect((await facet.tabInfo(s1.tabId)).groupId).toBe(s1.groupId);
+    expect(groupsAfter.find((g) => g.id === m1.groupId)!.tabs.sort()).toEqual(
+      [newM1!, discardedId].sort(),
+    );
+    expect(groupsAfter.find((g) => g.id === s1.groupId)!.tabs).toEqual([newS1]);
     expect(await facet.groupInfo(m1.groupId)).toMatchObject({
       title: "⧉ main",
       color: "cyan",

@@ -32,9 +32,14 @@ export interface GroupRestoreDeps {
     name: string;
     color: ContainerColor;
   }): Promise<unknown>;
-  /** Puts the tab into the container; `reload`: and loads it again (the container's isolation then applies to the page). */
-  assign(tabId: number, id: ContainerId, reload: boolean): Promise<void>;
-  /** The groups take over the new containers (their titles are put in the containers' form). */
+  /** Puts a tab that has loaded nothing into the container where it stands (`Facet.assignInPlace`). */
+  assignInPlace(tabId: number, id: ContainerId): Promise<void>;
+  /**
+   * Moves a loaded website into the container in a fresh tab at its place and closes the old one (`Extras.reopenInContainer`).
+   * Resolves with the new tab's ID.
+   */
+  reopen(tabId: number, id: ContainerId, url: string): Promise<number>;
+  /** The groups take over the new containers: a tab put into the group then joins it instead of making a second group. */
   adopt(): Promise<void>;
   log(level: "info" | "warn" | "error", message: string, data?: unknown): void;
 }
@@ -46,9 +51,12 @@ export interface GroupRestoreDeps {
  * group is already the container's group and nothing is retitled or regrouped), the name and colour of the group, and the
  * group's tabs assigned to it. Cookies are gone for good, so the logins have to be done again.
  *
- * A tab that has loaded nothing (not a website, not loaded by Chrome, discarded) is assigned where it stands, as the group
- * guard does; a loaded website is assigned and reloaded: its page holds a state of the old session and its next request
- * must go through the container's (empty) jar, which is what "Reopen in…" in the popup does too.
+ * What happens to a tab follows the group guard: a loaded website (http(s), Chrome has loaded it, not discarded) is reopened in a
+ * fresh tab of the container at its place and the old tab closed (`reopen`). Reloading the old one would keep its browsing
+ * context, so a window that holds a reference to it (`window.opener` of a popup it opened) could still reach the container's
+ * page and storage. The new tab joins the group that is already there (the groups are adopted first), so no group is created.
+ * A tab that has loaded nothing (not a website, not loaded by Chrome, discarded) has no live document that anything can hold
+ * a reference to: it is assigned where it stands and keeps its ID, and what it loads later is already the container's.
  */
 export class GroupRestore {
   private running: Promise<GroupRestoreResult> | null = null;
@@ -114,15 +122,22 @@ export class GroupRestore {
         continue;
       }
       result.containers++;
+      await this.deps.adopt();
       for (const groupId of entry.groupIds) {
         for (const tab of await this.deps.tabsOf(groupId).catch(() => [])) {
           if (tab.id === undefined) continue;
+          const address = isHttpUrl(tab.pendingUrl)
+            ? tab.pendingUrl
+            : isHttpUrl(tab.url)
+              ? tab.url
+              : null;
           const loaded =
-            isHttpUrl(tab.pendingUrl || tab.url) &&
+            address !== null &&
             tab.status !== "unloaded" &&
             tab.discarded !== true;
           try {
-            await this.deps.assign(tab.id, entry.id, loaded);
+            if (loaded) await this.deps.reopen(tab.id, entry.id, address);
+            else await this.deps.assignInPlace(tab.id, entry.id);
             result.tabs++;
           } catch (error) {
             result.failed++;
@@ -136,7 +151,6 @@ export class GroupRestore {
       }
     }
     if (result.containers === 0) throw failure;
-    await this.deps.adopt();
     await this.dismiss(); // the groups are the containers' now: nothing is left to offer
     this.deps.log("info", "containers restored from tab groups", {
       ...result,

@@ -1433,21 +1433,25 @@ Goal: a container tab that is not in its container's tab group (dragged out, or 
   can survive. Groups with one marker in several windows are one container; the name is the title without glyph and marker
   (cut to 32 characters, "Container" when empty, ` 2` for a clash); the colour is `containerColorOfGroup` (Chrome cyan is
   turquoise; grey, which no container has, gets the first unused colour). Pure part: `src/core/group-restore.ts`.
-- **Tabs.** The tabs of each marked group are assigned to the container (`src/background/group-restore.ts`), the same
-  split the group guard makes: a loaded website (http(s), not discarded, not unloaded) is assigned **and reloaded** (the
-  popup's "Reopen in..." path: `assignTab` with `reload`, so no service worker answers it and the page starts from the
-  container's empty jar; its old document held a state of the dead session), while a tab that loaded nothing (discarded,
-  unloaded, `chrome://`) is assigned where it stands, with no reload and no page loaded just for this. The tab keeps its ID
-  (no `replaceTab`): the opener the guard is wary of belongs to the old session. A tab that cannot be assigned is counted
-  ("N tabs could not be moved in") and the group guard fixes it at its next sweep.
+- **Tabs.** The tabs of each marked group are handled as the group guard does (`src/background/group-restore.ts`). A loaded
+  website (http(s), loaded by Chrome, not discarded) is **reopened in a fresh tab** of the container (`Extras.reopenInContainer`,
+  the guard's `move`: `Facet.replaceTab` -> `TabOpener.replaceTab`, same window and index, no opener; it joins the group, then
+  the old tab is closed). A first version reloaded the old tab, which keeps its browsing context: a window that held a
+  reference to it (`window.opener` of a popup the tab had opened) could still script the container's page and storage after
+  the restore (found in review). The groups are adopted right after each container is created, so the new tab joins the old
+  group and no second group is made. A tab that has loaded nothing (discarded, unloaded, `chrome://`) is assigned where it
+  stands (`Facet.assignInPlace`), keeps its ID and loads nothing: it has no live document for anything to hold a reference to,
+  and what it loads later is already the container's. A tab that cannot be handled is counted ("N tabs could not be moved
+  in") and the group guard fixes it at its next sweep.
 - **After.** One line in the popup: "Restored N containers. Sign in again: a reinstall removes saved logins." The dismissed flag
   is set on a successful restore too, so leftovers are not offered again.
 - **Warning before it happens.** Settings, Advanced, Export and import: "Removing SplitSession deletes its containers and their
   sign-ins. Export first if you plan to reinstall." in the secondary text next to Export. `runtime.setUninstallURL` and any
   popup or nag were considered and rejected.
 - **Tests.** Unit: `core/group-restore.test.ts` (title -> name, colour, ID, dedupe, only marked groups, only with zero
-  containers and no dismissal), `background/group-restore.test.ts` (offer, dismiss, reload split, failed tab, refusal),
+  containers and no dismissal), `background/group-restore.test.ts` (offer, dismiss, reopen / assign-in-place split, failed tab, refusal),
   `stores.test.ts` (`createWithId`). e2e: `restore-from-groups.spec.ts` (storage wiped and the worker stopped, as a reinstall
-  leaves it: the offer counts only the marked groups, Restore keeps the same group IDs, no group appears or empties, tabs keep
-  their IDs, loaded pages reload and the discarded one stays discarded, the user's plain and look-alike groups are untouched,
-  the guard logs nothing; dismiss is remembered).
+  leaves it: the offer counts only the marked groups, Restore keeps the same group IDs, no group appears or empties,
+  loaded tabs are replaced (new ID, same window, index, group and address, no opener, old tab closed, a plain popup that had
+  `window.opener` to it has none to the new tab), the discarded one keeps its ID, the user's plain and look-alike groups
+  are untouched, the guard logs nothing; dismiss is remembered).

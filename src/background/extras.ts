@@ -115,22 +115,8 @@ export class Extras {
       containerName: (id) => facet.containers.get(id)?.name,
       assignInPlace: (tabId, containerId) =>
         facet.assignInPlace(tabId, containerId),
-      move: async (tabId, containerId, url) => {
-        const key = ruleKeyOf(url);
-        // The group chose this container (the user dropped the tab there): the repeated navigation is not judged by domain rules.
-        const fresh = await facet.replaceTab(
-          tabId,
-          containerId,
-          url,
-          (newTabId) => {
-            if (key !== null)
-              this.exemptions.markSite(newTabId, containerId, key);
-          },
-        );
-        await this.groups.idle(); // the new tab joins the group before the old one leaves it
-        await this.removeWithRetry(tabId);
-        return fresh;
-      },
+      move: (tabId, containerId, url) =>
+        this.reopenInContainer(tabId, containerId, url),
       splitTabs: (splitViewId) =>
         b.tabs.query({ splitViewId } as never).then(
           (tabs) => tabs as GuardTab[],
@@ -212,6 +198,32 @@ export class Extras {
         .then(() => this.guard.sweep("worker started"));
     });
     return this.ready;
+  }
+
+  /**
+   * Moves a loaded website into a container the only safe way: `Facet.replaceTab` opens `url` in a FRESH tab of the container at
+   * the old tab's place (no opener, a new browsing context, so no other window keeps a reference to the document), the new tab
+   * joins the container's group, then the old tab is closed. Resolves with the new tab's ID. Used by the group guard and by the
+   * restore from leftover groups.
+   */
+  async reopenInContainer(
+    tabId: number,
+    containerId: ContainerId,
+    url: string,
+  ): Promise<number> {
+    const key = ruleKeyOf(url);
+    // The container was chosen for this tab (a group, the user's restore): the repeated navigation is not judged by domain rules.
+    const fresh = await this.facet.replaceTab(
+      tabId,
+      containerId,
+      url,
+      (newTabId) => {
+        if (key !== null) this.exemptions.markSite(newTabId, containerId, key);
+      },
+    );
+    await this.groups.idle(); // the new tab joins the group before the old one leaves it
+    await this.removeWithRetry(tabId);
+    return fresh;
   }
 
   /** The periodic sweep's alarm, created only when missing (creating it again would restart its period). */
