@@ -309,14 +309,7 @@ h3 { font-size: 16px; margin: 1.6em 0 0.6em; }
 .btn svg { width: 18px; height: 18px; flex: none; fill: currentColor; }
 .btn.alt { background: transparent; color: var(--fg); border-color: var(--fg); }
 .btn.alt:hover { background: var(--fg); color: var(--bg); }
-.btn.off {
-  background: transparent;
-  color: var(--mid);
-  border: 1px dashed var(--mid);
-  cursor: default;
-  font-weight: 400;
-}
-.btn.off svg { fill: none; stroke: currentColor; stroke-width: 1.6; }
+.btn svg.line { fill: none; stroke: currentColor; stroke-width: 1.6; }
 
 /* ---------- figures ---------- */
 

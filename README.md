@@ -7,6 +7,7 @@
 [![CI](https://github.com/Misyuk-T/splitsession/actions/workflows/ci.yml/badge.svg)](https://github.com/Misyuk-T/splitsession/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![npm: splitsession-bridge](https://img.shields.io/npm/v/splitsession-bridge?label=npm%20bridge)](https://www.npmjs.com/package/splitsession-bridge)
+[![Chrome Web Store](https://img.shields.io/chrome-web-store/v/hhodioekcdmhpocjbkjnblmbmchddphf?label=chrome%20web%20store)](https://chromewebstore.google.com/detail/splitsession-multiple-log/hhodioekcdmhpocjbkjnblmbmchddphf)
 [![Website](https://img.shields.io/badge/site-misyuk--t.github.io-black)](https://misyuk-t.github.io/splitsession/)
 [![Ko-fi](https://img.shields.io/badge/support-Ko--fi-black)](https://ko-fi.com/tomashdev)
 
@@ -40,9 +41,9 @@ Lite is the Chrome Web Store edition. Full adds the agent bridge; its code is no
 
 ## Install
 
-**Chrome Web Store:** coming soon.
+**Chrome Web Store (Lite), the easy way:** [SplitSession: Multiple Logins per Site](https://chromewebstore.google.com/detail/splitsession-multiple-log/hhodioekcdmhpocjbkjnblmbmchddphf). One click, updates automatically.
 
-**From GitHub Releases** (Lite or Full):
+**From GitHub Releases** (Full, or Lite if you prefer a manual install):
 
 ![Install from a GitHub Release: download the zip, unzip it, open chrome://extensions, turn on Developer mode, Load unpacked, pin the toolbar button](docs/media/install.gif)
 

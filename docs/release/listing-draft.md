@@ -1,7 +1,7 @@
 # Chrome Web Store listing drafts (v0.1.0)
 
 Draft texts for the two store items. Research, policy reasoning and sources: [chrome-web-store.md](chrome-web-store.md).
-Everything here is a draft for the maintainer to edit; nothing has been submitted.
+Everything here is a draft for the maintainer to edit; the Lite item is now published ([listing](https://chromewebstore.google.com/detail/splitsession-multiple-log/hhodioekcdmhpocjbkjnblmbmchddphf)), so these texts are history plus the base for updates.
 
 Rules these texts follow (sources in chrome-web-store.md, sections 1 and 2):
 

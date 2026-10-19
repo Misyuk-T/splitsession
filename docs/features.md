@@ -52,4 +52,4 @@ SplitSession requests access to all sites, because rewriting request headers per
 
 ## Project status
 
-Beta, version 0.1. It is not in the Chrome Web Store yet; the Lite edition is being prepared for it. The interface and the isolation engine are stable enough for daily use by the author, and the open items are real-site verification and the limits in [limits.md](limits.md).
+Beta, version 0.1. The Lite edition is on the [Chrome Web Store](https://chromewebstore.google.com/detail/splitsession-multiple-log/hhodioekcdmhpocjbkjnblmbmchddphf). The interface and the isolation engine are stable enough for daily use by the author, and the open items are real-site verification and the limits in [limits.md](limits.md).
