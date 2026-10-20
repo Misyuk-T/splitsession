@@ -47,6 +47,9 @@ export interface CookieChange {
    * legitimately goes without them (the rules split cookies by SameSite).
    */
   sameSite?: "strict" | "lax" | "none" | "unspecified";
+  /** Jar identity, for matching a later Set-Cookie of the same cookie (`stale-response.ts`). */
+  path?: string;
+  partitionKey?: string | null;
 }
 
 export interface ChangeWindow {
@@ -105,33 +108,37 @@ export function violates(
   send: Pick<MainFrameSend, "url" | "cookie">,
   changes: readonly CookieChange[],
 ): boolean {
+  return changes.some((change) => missesChange(send, change));
+}
+
+/**
+ * True when a request to `send.url` that carried `send.cookie` should have reflected `change` (carried its new value,
+ * or no longer carried a deleted cookie) and did not. Path is not checked here (see `stale-response.ts`).
+ */
+export function missesChange(
+  send: Pick<MainFrameSend, "url" | "cookie">,
+  change: CookieChange,
+): boolean {
   let host: string;
   try {
     host = hostnameOf(new URL(send.url).hostname);
   } catch {
     return false;
   }
-  const secureRequest = isSecureUrl(send.url);
+  const applies = change.hostOnly
+    ? host === change.domain
+    : domainMatches(host, change.domain);
+  if (
+    !applies ||
+    change.partitioned ||
+    change.sameSite === "strict" ||
+    (change.secure && !isSecureUrl(send.url))
+  )
+    return false;
   const pairs = parseCookieHeader(send.cookie);
-  for (const change of changes) {
-    const applies = change.hostOnly
-      ? host === change.domain
-      : domainMatches(host, change.domain);
-    if (
-      !applies ||
-      change.partitioned ||
-      change.sameSite === "strict" ||
-      (change.secure && !secureRequest)
-    )
-      continue;
-    if (change.value !== null) {
-      if (!pairs.some(([n, v]) => n === change.name && v === change.value))
-        return true;
-    } else if (pairs.some(([n]) => n === change.name)) {
-      return true;
-    }
-  }
-  return false;
+  return change.value !== null
+    ? !pairs.some(([n, v]) => n === change.name && v === change.value)
+    : pairs.some(([n]) => n === change.name);
 }
 
 export class StaleNavigationDetector {

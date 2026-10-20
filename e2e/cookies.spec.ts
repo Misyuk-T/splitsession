@@ -184,4 +184,41 @@ test.describe("network cookies", () => {
       ),
     ).toEqual([]);
   });
+  // Drupal 10 (bug report on a Drupal Commerce site): the login form POSTs, the answer redirects at once with the new
+  // session cookie, and Chrome follows before the rules carry it. The stale hop is answered with a fresh anonymous
+  // session; importing that replaced the login in the jar ("your browser must accept cookies"; the second try worked).
+  for (const { status, anonymousFirst } of [
+    { status: 303, anonymousFirst: false },
+    { status: 303, anonymousFirst: true },
+    { status: 302, anonymousFirst: false },
+  ]) {
+    test(`a Drupal-style form login (POST, ${status}${anonymousFirst ? ", over an anonymous session" : ""}) succeeds on the first try`, async ({
+      facet,
+    }) => {
+      const A = await facet.container("A");
+      const login = `/drupal/user/login?status=${status}&user=alice`;
+      const page = await facet.openIn(
+        A.name,
+        at("a.localhost", anonymousFirst ? "/drupal/user/1" : login),
+      );
+      if (anonymousFirst) {
+        // Like a Commerce cart: the container already holds an anonymous session the login migrates.
+        await expect(page.locator("#login")).toBeVisible();
+        await go(page, at("a.localhost", login));
+      }
+      // A person logs in seconds after the tab got its container. Within the first second the assignment check
+      // (Set-Cookie of a request whose header is not from the jar is ignored) would hide the bug.
+      await page.waitForTimeout(1_200);
+      await page.click("#submit");
+      await expect(page.locator("#user")).toHaveText("alice", {
+        timeout: 10_000,
+      });
+      await expect(page.locator("#error")).toHaveCount(0);
+      await page.reload();
+      await expect(page.locator("#user")).toHaveText("alice");
+      const jar = await facet.api<JarCookie[]>("getJar", A.id);
+      expect(jar.filter((c) => c.name === "SESSdrupal")).toHaveLength(1);
+      expect(await facet.realCookies(at("a.localhost"))).toEqual([]);
+    });
+  }
 });

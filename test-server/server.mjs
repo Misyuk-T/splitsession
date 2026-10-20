@@ -14,6 +14,7 @@ const PORT = Number(process.argv[2] ?? process.env.FACET_TEST_PORT ?? 47321);
 const sessions = new Map(); // sid -> user (per host family: a.localhost and sub.a.localhost share)
 const ssoSessions = new Map(); // sso_sid -> user
 const codes = new Map(); // oauth code -> user
+const drupalMessages = new Map(); // anonymous Drupal-like session -> pending error message
 let log = [];
 
 const token = () => randomBytes(9).toString("base64url");
@@ -180,6 +181,55 @@ const server = createServer(async (req, res) => {
         { ok: true, user },
         { "set-cookie": `sid=${sid}; HttpOnly; Path=/; SameSite=Lax` },
       );
+    }
+    // ---- Drupal-like login, modelled on Drupal 10 core (UserLoginForm + the anonymous session it starts): the form
+    // POSTs to itself and the answer is an immediate redirect carrying the new session cookie (Domain=.<host>, Drupal's
+    // default cookie domain) to /drupal/user/1?check_logged_in=1. That page, asked without a valid session, does what
+    // Drupal 10 does (measured on a Drupal 10 Commerce site): it starts a NEW anonymous session holding the error "your
+    // browser must accept cookies" and redirects to the login form, which shows it. ?status=302|303|307 picks the
+    // login redirect code (Drupal's forms answer 303).
+    case "/drupal/user/login": {
+      const status = Number(url.searchParams.get("status") ?? "303");
+      if (req.method !== "POST") {
+        const sid = cookies.SESSdrupal;
+        const message = sid ? drupalMessages.get(sid) : undefined;
+        if (sid) drupalMessages.delete(sid);
+        return send(
+          res,
+          200,
+          page(
+            "drupal login",
+            `${message ? `<p id="error">${esc(message)}</p>` : ""}<form id="login" method="post" action="/drupal/user/login?status=${status}"><input name="name" value="${esc(url.searchParams.get("user") ?? "alice")}"><button id="submit">Log in</button></form>`,
+          ),
+        );
+      }
+      const body = await readBody(req);
+      const sid = token();
+      sessions.set(sid, String(body.name ?? "anon"));
+      return send(res, status, "", {
+        location: "/drupal/user/1?check_logged_in=1",
+        "set-cookie": `SESSdrupal=${sid}; path=/; domain=.${host}; HttpOnly; SameSite=Lax`,
+      });
+    }
+    case "/drupal/user/1": {
+      const user =
+        (cookies.SESSdrupal && sessions.get(cookies.SESSdrupal)) || null;
+      if (user)
+        return send(
+          res,
+          200,
+          page("drupal user", `<pre id="user">${esc(user)}</pre>`),
+        );
+      const anon = token();
+      if (url.searchParams.has("check_logged_in"))
+        drupalMessages.set(
+          anon,
+          `To log in to this site, your browser must accept cookies from the domain ${host}.`,
+        );
+      return send(res, 302, "", {
+        location: `/drupal/user/login?destination=${encodeURIComponent(url.pathname + url.search)}`,
+        "set-cookie": `SESSdrupal=${anon}; path=/; domain=.${host}; HttpOnly; SameSite=Lax`,
+      });
     }
     case "/logout":
       return send(res, 302, "", {
