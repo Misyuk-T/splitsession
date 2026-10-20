@@ -137,13 +137,53 @@ describe("RecentCookieChanges.missedBy", () => {
     ).toEqual([]);
   });
 
-  it("a deleted cookie that the hop still carried counts as missed", () => {
+  it("a deleted cookie that the hop still carried counts as missed (by its previous value)", () => {
     const { r } = recent();
-    const deleted = { ...login, value: null };
+    const deleted = { ...login, value: null, previousValue: "old" };
     r.open("c1", T0, [deleted]);
     expect(r.missedBy("c1", hop({ cookie: "SSESSabc=old" }))).toEqual([
       deleted,
     ]);
     expect(r.missedBy("c1", hop())).toEqual([]);
+  });
+
+  it("only the latest change of a cookie counts: a request carrying B after A->B is fresh (rotation, logout)", () => {
+    const { r } = recent();
+    const a = { ...login, value: "A" };
+    const b = { ...login, value: "B" };
+    r.open("c1", T0, [a]).settle(T0 + 5);
+    r.open("c1", T0 + 100, [b]).settle(T0 + 105);
+    expect(
+      r.missedBy("c1", hop({ sentAt: T0 + 200, cookie: "SSESSabc=B" })),
+    ).toEqual([]);
+    // Sent after B without it: stale against B, not A.
+    expect(
+      r.missedBy("c1", hop({ sentAt: T0 + 200, cookie: "SSESSabc=A" })),
+    ).toEqual([b]);
+    // Sent between A and B: A was the state then.
+    expect(r.missedBy("c1", hop({ sentAt: T0 + 50 }))).toEqual([a]);
+    expect(
+      r.missedBy("c1", hop({ sentAt: T0 + 50, cookie: "SSESSabc=A" })),
+    ).toEqual([]);
+  });
+
+  it("a same-name cookie of another identity is no evidence of a missed deletion", () => {
+    const { r } = recent();
+    // Host-only sid (value h1) deleted; a Domain sid (d1) of the same name lives on.
+    const deletedHostOnly = {
+      ...login,
+      name: "sid",
+      hostOnly: true,
+      value: null,
+      previousValue: "h1",
+    };
+    r.open("c1", T0, [deletedHostOnly]);
+    expect(r.missedBy("c1", hop({ cookie: "sid=d1" }))).toEqual([]);
+    expect(r.missedBy("c1", hop({ cookie: "sid=d1; sid=h1" }))).toEqual([
+      deletedHostOnly,
+    ]);
+    // Previous value unknown: ambiguous, the update is allowed.
+    r.open("c1", T0 + 1, [{ ...deletedHostOnly, previousValue: undefined }]);
+    expect(r.missedBy("c1", hop({ cookie: "sid=h1" }))).toEqual([]);
   });
 });

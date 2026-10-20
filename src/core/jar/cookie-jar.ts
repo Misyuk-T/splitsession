@@ -134,6 +134,11 @@ export class CookieJar {
     return { parsed, outcome };
   }
 
+  get(identity: CookieIdentity): Cookie | undefined {
+    const cookie = this.store.get(cookieKey(identity));
+    return cookie ? { ...cookie } : undefined;
+  }
+
   remove(identity: CookieIdentity): boolean {
     return this.store.delete(cookieKey(identity));
   }

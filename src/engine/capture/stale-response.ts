@@ -1,5 +1,5 @@
 import { type ContainerId, type Cookie, cookieKey } from "../../core";
-import { type CookieChange, missesChange } from "./stale-detector";
+import { type CookieChange, latestAt, missesChange } from "./stale-detector";
 
 /**
  * Keeps a stale navigation's answer from overwriting the cookie it missed.
@@ -105,21 +105,19 @@ export class RecentCookieChanges {
       return [];
     }
     const out: CookieChange[] = [];
-    for (const entry of this.entries) {
+    // The state of each cookie when the request went out: a request carrying the latest value is fresh, whatever older
+    // values were set before it (a rotation or a logout it answers must be imported).
+    for (const { entry, change } of latestAt(
+      this.entries.filter((e) => e.containerId === containerId),
+      req.sentAt,
+    ))
       if (
-        entry.containerId !== containerId ||
-        req.sentAt < entry.from ||
-        (entry.until !== null && req.sentAt >= entry.until + this.lagMs)
+        (entry.until === null || req.sentAt < entry.until + this.lagMs) &&
+        change.path !== undefined &&
+        pathMatches(path, change.path) &&
+        missesChange(req, change)
       )
-        continue;
-      for (const change of entry.changes)
-        if (
-          change.path !== undefined &&
-          pathMatches(path, change.path) &&
-          missesChange(req, change)
-        )
-          out.push(change);
-    }
+        out.push(change);
     return out;
   }
 

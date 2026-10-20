@@ -1560,3 +1560,14 @@ Goal: a container tab that is not in its container's tab group (dragged out, or 
   `/drupal/user/1`, modelled on the measured flow): 303, 303 over an anonymous session, 302. All three failed before the fix
   (the page ended on the login form with the error) and pass with it. Unit `stale-response.test.ts` (window bounds, per
   container, GET only, path/host/Secure/Strict/partitioned exclusions, identity match, deletions).
+- **Review follow-up (GPT-6.1 Sol via Codex, same day).** Two false matches, both fixed in a second commit:
+  (1) every retained change was checked on its own, so after `sid=A` then `sid=B` a normal GET carrying `B` still "missed"
+  `A`, and its rotation or logout (`Max-Age=0`) was dropped; the detector had the same false match. Now only the **latest
+  change per cookie identity at the request's send time** is an expectation (`latestAt`, `stale-detector.ts`, used by both
+  `RecentCookieChanges.missedBy` and the detector's window check). (2) A deletion was judged by name only, so with a host-only
+  `sid` deleted beside a surviving Domain `sid`, a correct request carrying the Domain one looked stale. A deletion now
+  carries the deleted cookie's last value (`previousValue`, read from the jar before the write, also for `document.cookie`
+  deletions) and only `name=previousValue` in the header is evidence; without it the deletion is no expectation (importing
+  beats dropping). Tests: `background/isolation/cookie-capture.test.ts` (CookieCapture with a real jar and detector: the
+  Drupal hop, A->B->C rotation, logout carrying B, the host-only/Domain pair; the last three failed on `8eddce7`), plus unit
+  cases in `stale-response.test.ts` and `stale-detector.test.ts`.

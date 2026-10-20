@@ -4,6 +4,7 @@ import {
   beaconSiteOf,
   type ContainerId,
   type Cookie,
+  cookieKey,
   type CookieSnapshotReply,
   deleteWhere,
   hostnameOf,
@@ -49,9 +50,14 @@ const CHANGED: ReadonlySet<UpsertOutcome> = new Set([
   "updated",
   "deleted",
 ]);
-const toChange = (cookie: Cookie, outcome: UpsertOutcome): CookieChange => ({
+const toChange = (
+  cookie: Cookie,
+  outcome: UpsertOutcome,
+  previous: Cookie | undefined,
+): CookieChange => ({
   name: cookie.name,
   value: outcome === "deleted" ? null : cookie.value,
+  previousValue: outcome === "deleted" ? previous?.value : undefined,
   domain: cookie.domain,
   hostOnly: cookie.hostOnly,
   secure: cookie.secure,
@@ -233,8 +239,10 @@ export class CookieCapture {
         skipped++;
         continue;
       }
+      const previous = jar.get(parsed.cookie);
       const outcome = jar.upsert(parsed.cookie, { now });
-      if (CHANGED.has(outcome)) changes.push(toChange(parsed.cookie, outcome));
+      if (CHANGED.has(outcome))
+        changes.push(toChange(parsed.cookie, outcome, previous));
     }
     if (skipped > 0)
       this.d.log(
@@ -371,6 +379,7 @@ export class CookieCapture {
     const host = hostnameOf(new URL(origin).hostname);
     const jar = this.d.containers.jar(rec.containerId);
     const now = Date.now();
+    const before = jar.all(); // a deletion's previous value (the write parses the identity itself)
     const { parsed, outcome } = jar.applyDocumentCookieWrite(host, value, {
       secure: isSecureUrl(`${origin}/`),
       path: path.startsWith("/") ? path : "/",
@@ -383,7 +392,11 @@ export class CookieCapture {
         ? Math.min(now, Math.max(now - 5_000, at))
         : now;
       const work = this.afterJarChange(rec.containerId, from, [
-        toChange(parsed.cookie, outcome),
+        toChange(
+          parsed.cookie,
+          outcome,
+          before.find((c) => cookieKey(c) === cookieKey(parsed.cookie)),
+        ),
       ]);
       this.track(rec.containerId, work);
       await work; // the reply doubles as the shim's fetch barrier: rules carry the cookie from here on
