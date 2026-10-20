@@ -75,9 +75,14 @@ describe("parseCookieHeader / violates", () => {
   });
 
   it("flags a deleted cookie that is still sent", () => {
+    const deleted = { ...sidChange, value: null, previousValue: "old" };
+    expect(violates(send({ cookie: "sid=old" }), [deleted])).toBe(true);
+    // Another cookie of the same name (a Domain `sid` beside the deleted host-only one) is no evidence.
+    expect(violates(send({ cookie: "sid=other" }), [deleted])).toBe(false);
+    // Previous value unknown: ambiguous, so not an expectation (importing beats dropping).
     expect(
       violates(send({ cookie: "sid=old" }), [{ ...sidChange, value: null }]),
-    ).toBe(true);
+    ).toBe(false);
     expect(
       violates(send({ cookie: "x=1" }), [{ ...sidChange, value: null }]),
     ).toBe(false);
@@ -85,6 +90,26 @@ describe("parseCookieHeader / violates", () => {
 });
 
 describe("StaleNavigationDetector", () => {
+  it("judges a request against the latest change of a cookie: after sid=A then sid=B, a request carrying B is fresh", () => {
+    const { d } = detector(T0 + 200);
+    d.noteChange({
+      containerId: "alt",
+      from: T0,
+      until: T0 + 3,
+      changes: [{ ...sidChange, value: "A", path: "/" }],
+    });
+    d.noteChange({
+      containerId: "alt",
+      from: T0 + 100,
+      until: T0 + 103,
+      changes: [{ ...sidChange, value: "B", path: "/" }],
+    });
+    expect(d.noteSend(send({ sentAt: T0 + 150, cookie: "sid=B" }))).toEqual([]);
+    expect(
+      d.noteSend(send({ requestId: "r2", sentAt: T0 + 150, cookie: "sid=A" })),
+    ).toHaveLength(1);
+  });
+
   it("re-navigates the 302 hop that went out before the new cookie (send noted first)", () => {
     const { d } = detector();
     expect(d.noteSend(send())).toEqual([]);

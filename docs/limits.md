@@ -168,6 +168,14 @@ Top-level navigations that went out in between are detected by the Cookie header
 once; fetch/XHR wait for it (the fetch barrier). Not covered: sync XHR, `<img>`/`<script>` subresources started in that
 window, and non-HttpOnly cookies set by a page's own main-frame response may be missing from `document.cookie` for the
 first scripts of that page (they arrive by push right after).
+The answer to such a stale top-level GET may not overwrite the cookie it missed (Drupal answers the hop after its login
+redirect with a new anonymous session): its `Set-Cookie` for that cookie is dropped, the rest is imported, and the
+repeated navigation gets the real answer. Not covered by that rule, so a login of this shape can still fail once there:
+- a **307/308** login redirect: the next hop is a POST again, which SplitSession never repeats, and its answer is imported
+  as is (a server that answers it with a new session replaces the login). Common login forms answer 302/303;
+- a **fetch/XHR login whose response is a redirect** that `fetch`/XHR follows by itself: the barrier waits for the final
+  response only, so the intermediate hop can go out without the new cookie, and its answer is imported;
+- a login form inside an **iframe**: sub-frame hops are neither repeated nor protected.
 
 **XHR handlers attached before `open()`** (residual of `52c65d4`). The XHR barrier (it holds back `readystatechange` at
 state 4, `load` and `loadend` until the response's cookies reached the rules) is installed when a script calls `open()`;

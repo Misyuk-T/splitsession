@@ -4,10 +4,12 @@ import {
   beaconSiteOf,
   type ContainerId,
   type Cookie,
+  cookieKey,
   type CookieSnapshotReply,
   deleteWhere,
   hostnameOf,
   isSecureUrl,
+  parseSetCookie,
   scriptVisibleCookies,
   sleep,
   type UpsertOutcome,
@@ -20,6 +22,10 @@ import {
   type Renavigation,
   type StaleNavigationDetector,
 } from "../../engine/capture/stale-detector";
+import {
+  RecentCookieChanges,
+  sameCookie,
+} from "../../engine/capture/stale-response";
 import type { SessionRuleManager } from "../../engine/dnr/session-rules";
 import type { EngineCore, WebRequestDetails } from "./types";
 import { senderOrigin, siteOfHttp } from "./urls";
@@ -44,14 +50,21 @@ const CHANGED: ReadonlySet<UpsertOutcome> = new Set([
   "updated",
   "deleted",
 ]);
-const toChange = (cookie: Cookie, outcome: UpsertOutcome): CookieChange => ({
+const toChange = (
+  cookie: Cookie,
+  outcome: UpsertOutcome,
+  previous: Cookie | undefined,
+): CookieChange => ({
   name: cookie.name,
   value: outcome === "deleted" ? null : cookie.value,
+  previousValue: outcome === "deleted" ? previous?.value : undefined,
   domain: cookie.domain,
   hostOnly: cookie.hostOnly,
   secure: cookie.secure,
   partitioned: cookie.partitioned,
   sameSite: cookie.sameSite,
+  path: cookie.path,
+  partitionKey: cookie.partitionKey,
 });
 const cookieHeaderOf = (
   headers: WebRequestDetails["requestHeaders"],
@@ -86,6 +99,11 @@ export class CookieCapture {
     string,
     { renav: Renavigation; timer: ReturnType<typeof setTimeout> }
   >();
+
+  /** Jar changes whose rules may not have reached requests yet: a stale hop's answer must not overwrite them. */
+  private readonly recentChanges = new RecentCookieChanges({
+    lagMs: ASSIGNMENT_LAG_MS,
+  });
 
   constructor(private readonly d: CookieCaptureDeps) {}
 
@@ -197,16 +215,41 @@ export class CookieCapture {
         ? siteOfHttp(details.url)
         : rec.topLevelSite;
     const now = Date.now();
+    // A top-level GET that raced the rules of a cookie it should have carried (the hop after a login redirect): its
+    // answer must not overwrite that cookie (Drupal answers it with a fresh anonymous session). See stale-response.ts.
+    const missed =
+      details.type === "main_frame" && send !== undefined
+        ? this.recentChanges.missedBy(containerId, {
+            url: details.url,
+            method: details.method,
+            sentAt,
+            cookie: send.cookie,
+          })
+        : [];
     const changes: CookieChange[] = [];
+    let skipped = 0;
     for (const header of headers) {
-      const { parsed, outcome } = jar.setFromHeader(header, {
+      const parsed = parseSetCookie(header, {
         url: details.url,
         now,
         topLevelSite,
       });
-      if (parsed.ok && CHANGED.has(outcome))
-        changes.push(toChange(parsed.cookie, outcome));
+      if (!parsed.ok) continue;
+      if (missed.some((change) => sameCookie(change, parsed.cookie))) {
+        skipped++;
+        continue;
+      }
+      const previous = jar.get(parsed.cookie);
+      const outcome = jar.upsert(parsed.cookie, { now });
+      if (CHANGED.has(outcome))
+        changes.push(toChange(parsed.cookie, outcome, previous));
     }
+    if (skipped > 0)
+      this.d.log(
+        "info",
+        `ignored ${skipped} Set-Cookie of a request that went out before the rules carried them`,
+        details.url,
+      );
     if (changes.length === 0) return;
     this.d.containers.touchJar(containerId);
     this.track(
@@ -232,7 +275,12 @@ export class CookieCapture {
     from: number,
     changes: CookieChange[],
   ): Promise<void> {
-    await this.d.rules.invalidate(containerId);
+    const recent = this.recentChanges.open(containerId, from, changes);
+    try {
+      await this.d.rules.invalidate(containerId);
+    } finally {
+      recent.settle(Date.now());
+    }
     const until = Date.now();
     for (const r of this.d.detector.noteChange({
       containerId,
@@ -331,6 +379,7 @@ export class CookieCapture {
     const host = hostnameOf(new URL(origin).hostname);
     const jar = this.d.containers.jar(rec.containerId);
     const now = Date.now();
+    const before = jar.all(); // a deletion's previous value (the write parses the identity itself)
     const { parsed, outcome } = jar.applyDocumentCookieWrite(host, value, {
       secure: isSecureUrl(`${origin}/`),
       path: path.startsWith("/") ? path : "/",
@@ -343,7 +392,11 @@ export class CookieCapture {
         ? Math.min(now, Math.max(now - 5_000, at))
         : now;
       const work = this.afterJarChange(rec.containerId, from, [
-        toChange(parsed.cookie, outcome),
+        toChange(
+          parsed.cookie,
+          outcome,
+          before.find((c) => cookieKey(c) === cookieKey(parsed.cookie)),
+        ),
       ]);
       this.track(rec.containerId, work);
       await work; // the reply doubles as the shim's fetch barrier: rules carry the cookie from here on

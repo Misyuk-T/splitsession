@@ -37,6 +37,12 @@ export interface CookieChange {
   name: string;
   /** null = deleted. */
   value: string | null;
+  /**
+   * For a deletion: the value the deleted cookie had. A request still carrying `name=previousValue` missed the
+   * deletion; without it, a same-name cookie in the header may be another cookie (host-only vs Domain, another path),
+   * so the deletion is not used as an expectation.
+   */
+  previousValue?: string;
   domain: string;
   hostOnly: boolean;
   secure: boolean;
@@ -47,6 +53,9 @@ export interface CookieChange {
    * legitimately goes without them (the rules split cookies by SameSite).
    */
   sameSite?: "strict" | "lax" | "none" | "unspecified";
+  /** Jar identity, for matching a later Set-Cookie of the same cookie (`stale-response.ts`). */
+  path?: string;
+  partitionKey?: string | null;
 }
 
 export interface ChangeWindow {
@@ -101,9 +110,53 @@ export function parseCookieHeader(
     });
 }
 
+/** Jar identity of a change (name, domain, host-only, path, partition): only the latest change of one counts. */
+export function changeKey(c: CookieChange): string {
+  return [
+    c.name,
+    c.domain,
+    c.hostOnly ? "h" : "d",
+    c.path ?? "",
+    c.partitionKey ?? "",
+  ].join("\u0000");
+}
+
+/**
+ * The state each cookie identity had when a request was sent: of the changes made at or before `sentAt`, the latest one
+ * per identity (later `from` wins; within one change set, the later entry). An older change of an identity that changed
+ * again (sid=A, then sid=B) is no expectation any more: a request carrying B is fresh.
+ */
+export function latestAt<
+  E extends { from: number; changes: readonly CookieChange[] },
+>(
+  entries: readonly E[],
+  sentAt: number,
+): Array<{ entry: E; change: CookieChange }> {
+  const latest = new Map<string, { entry: E; change: CookieChange }>();
+  const ordered = entries
+    .map((entry, index) => ({ entry, index }))
+    .filter(({ entry }) => entry.from <= sentAt)
+    .sort((a, b) => a.entry.from - b.entry.from || a.index - b.index);
+  for (const { entry } of ordered)
+    for (const change of entry.changes)
+      latest.set(changeKey(change), { entry, change });
+  return [...latest.values()];
+}
+
 export function violates(
   send: Pick<MainFrameSend, "url" | "cookie">,
   changes: readonly CookieChange[],
+): boolean {
+  return changes.some((change) => missesChange(send, change));
+}
+
+/**
+ * True when a request to `send.url` that carried `send.cookie` should have reflected `change` (carried its new value,
+ * or no longer carried a deleted cookie) and did not. Path is not checked here (see `stale-response.ts`).
+ */
+export function missesChange(
+  send: Pick<MainFrameSend, "url" | "cookie">,
+  change: CookieChange,
 ): boolean {
   let host: string;
   try {
@@ -111,27 +164,24 @@ export function violates(
   } catch {
     return false;
   }
-  const secureRequest = isSecureUrl(send.url);
+  const applies = change.hostOnly
+    ? host === change.domain
+    : domainMatches(host, change.domain);
+  if (
+    !applies ||
+    change.partitioned ||
+    change.sameSite === "strict" ||
+    (change.secure && !isSecureUrl(send.url))
+  )
+    return false;
   const pairs = parseCookieHeader(send.cookie);
-  for (const change of changes) {
-    const applies = change.hostOnly
-      ? host === change.domain
-      : domainMatches(host, change.domain);
-    if (
-      !applies ||
-      change.partitioned ||
-      change.sameSite === "strict" ||
-      (change.secure && !secureRequest)
-    )
-      continue;
-    if (change.value !== null) {
-      if (!pairs.some(([n, v]) => n === change.name && v === change.value))
-        return true;
-    } else if (pairs.some(([n]) => n === change.name)) {
-      return true;
-    }
-  }
-  return false;
+  if (change.value !== null)
+    return !pairs.some(([n, v]) => n === change.name && v === change.value);
+  // A deletion: only the deleted cookie's own value is evidence (another cookie may share the name).
+  return (
+    change.previousValue !== undefined &&
+    pairs.some(([n, v]) => n === change.name && v === change.previousValue)
+  );
 }
 
 export class StaleNavigationDetector {
@@ -179,11 +229,12 @@ export class StaleNavigationDetector {
   noteChange(window: ChangeWindow): Renavigation[] {
     this.prune();
     if (window.changes.length === 0) return [];
-    this.windows.push({ ...window, changes: [...window.changes] });
+    const stored: ChangeWindow = { ...window, changes: [...window.changes] };
+    this.windows.push(stored);
     const out: Renavigation[] = [];
     for (const send of this.sends.values()) {
       if (this.containerOf(send.tabId) !== window.containerId) continue;
-      if (this.inWindow(send, window))
+      if (this.inWindow(send, stored))
         out.push(...this.claim(send, "stale-cookies", `w${window.from}`));
     }
     return out;
@@ -228,11 +279,16 @@ export class StaleNavigationDetector {
   }
 
   private inWindow(send: MainFrameSend, w: ChangeWindow): boolean {
-    return (
-      send.sentAt >= w.from &&
-      send.sentAt < w.until + this.lagMs &&
-      violates(send, w.changes)
-    );
+    if (send.sentAt < w.from || send.sentAt >= w.until + this.lagMs)
+      return false;
+    // Only changes still current for their cookie when the request went out (sid=A then sid=B: B is expected, not A).
+    const current = latestAt(
+      this.windows.filter((x) => x.containerId === w.containerId),
+      send.sentAt,
+    )
+      .filter(({ entry }) => entry === w)
+      .map(({ change }) => change);
+    return violates(send, current);
   }
 
   private inAssignment(send: MainFrameSend, a: AssignmentWindow): boolean {

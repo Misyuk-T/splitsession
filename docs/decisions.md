@@ -1521,3 +1521,53 @@ Goal: a container tab that is not in its container's tab group (dragged out, or 
 - **Tests.** Unit: `core/saved-tabs.test.ts` (batching, ordering, cap, non-web skipped), `background/saved-tabs-recorder.test.ts`
   (group close, one by one, gap, shutdown cases, a worker that slept, setting off, moved tabs), `engine/storage/saved-tabs-store.test.ts`,
   `core/transfer.test.ts` (round trip, old file). e2e: `saved-tabs.spec.ts`.
+
+## A Drupal login failed the first time in a container (2026-10-20)
+
+- **Report.** Lite 0.1.1 from the Store, a Drupal 10 Commerce site: logging in inside a container tab showed Drupal's "To
+  log in to this site, your browser must accept cookies from the domain …"; the second try worked (as reported, not
+  reproduced by us). Other cookies (consent) of that site persist in the container.
+- **Drupal's flow, measured on the site** (curl, anonymous): the login form POSTs and is answered with an immediate redirect
+  carrying `Set-Cookie: SSESS…=<session>; domain=.<host>; secure; HttpOnly` to `/user/<id>?check_logged_in=1`. That page, asked
+  without a valid session (no cookie, or an unknown one), answers `302` to `/user/login?destination=…` **with a new anonymous
+  session cookie** that holds the error message.
+- **Root cause (stand, Chromium 156).** Chrome follows the redirect before the container's rules carry the new session: the
+  server log shows the hop to `?check_logged_in=1` going out with no cookie (or the old anonymous one) 3 ms after the POST,
+  every run. The stale-hop detector already repeats such a GET once it completes, but the stale hop's own answer had been
+  imported first: its anonymous `SSESS…` replaced the login session in the jar, so the repeated navigation went out
+  anonymous too and ended on the error. So the race was not the bug; importing the stale answer was. (Not a domain-scoping
+  problem: the stand sets `domain=.<host>` like Drupal and the repeated hop carries it; a parent `Domain` reaching
+  subdomains is covered by the existing "Domain cookies reach subdomains" e2e.) A login within
+  1 s of the tab's assignment happened to be protected by the assignment check (`headerFromJar`), which is why the stand's
+  "anonymous session first" variant needs a 1.2 s pause to fail.
+- **Fix** (`CookieCapture.harvest`, `src/background/isolation/cookie-capture.ts`; decision in
+  `src/engine/capture/stale-response.ts`). Every jar change is remembered with its window `[from, rules resolved + 1 s)`
+  (`RecentCookieChanges`, opened synchronously in `afterJarChange`, so a stale answer that arrives before the rules resolve
+  is covered). For a **main-frame GET** sent inside a window whose `Cookie` header does not reflect a change that applies to it
+  (host, path, Secure, not Strict, not partitioned; same test as the detector plus RFC 6265 path-match), a `Set-Cookie` with
+  that change's jar identity (name, domain, host-only, path, partition) is **not imported**; its other cookies are. The
+  detector then repeats the navigation with the login session, as before. In a plain browser that request would have carried
+  the new value, so the server could not have meant to replace it.
+- **Rejected.** Re-issuing the redirect ourselves (`tabs.update` to the `Location` after the rules update): the detector
+  already does exactly that for GET hops; the missing piece was the jar, and a second re-navigation path would race the first.
+  Dropping **every** `Set-Cookie` of a stale answer: the repeat would usually bring them back, but not when the detector's
+  per-tab budget is spent or the tab moved on, and unrelated cookies would be lost. Delaying the redirect (a blocking
+  `webRequest` listener) is not available to MV3 extensions outside policy installs.
+- **Not covered (limits.md).** 307/308 login redirects (the next hop is a POST: never repeated, its answer imported; POSTs
+  are excluded from the rule because a cross-site POST legitimately goes without Lax cookies), redirects followed inside
+  fetch/XHR (the barrier waits only for the final response), logins inside iframes.
+- **Tests.** e2e `cookies.spec.ts` "a Drupal-style form login … succeeds on the first try" (stand: `/drupal/user/login`,
+  `/drupal/user/1`, modelled on the measured flow): 303, 303 over an anonymous session, 302. All three failed before the fix
+  (the page ended on the login form with the error) and pass with it. Unit `stale-response.test.ts` (window bounds, per
+  container, GET only, path/host/Secure/Strict/partitioned exclusions, identity match, deletions).
+- **Review follow-up (GPT-6.1 Sol via Codex, same day).** Two false matches, both fixed in a second commit:
+  (1) every retained change was checked on its own, so after `sid=A` then `sid=B` a normal GET carrying `B` still "missed"
+  `A`, and its rotation or logout (`Max-Age=0`) was dropped; the detector had the same false match. Now only the **latest
+  change per cookie identity at the request's send time** is an expectation (`latestAt`, `stale-detector.ts`, used by both
+  `RecentCookieChanges.missedBy` and the detector's window check). (2) A deletion was judged by name only, so with a host-only
+  `sid` deleted beside a surviving Domain `sid`, a correct request carrying the Domain one looked stale. A deletion now
+  carries the deleted cookie's last value (`previousValue`, read from the jar before the write, also for `document.cookie`
+  deletions) and only `name=previousValue` in the header is evidence; without it the deletion is no expectation (importing
+  beats dropping). Tests: `background/isolation/cookie-capture.test.ts` (CookieCapture with a real jar and detector: the
+  Drupal hop, A->B->C rotation, logout carrying B, the host-only/Domain pair; the last three failed on `8eddce7`), plus unit
+  cases in `stale-response.test.ts` and `stale-detector.test.ts`.
