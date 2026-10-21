@@ -100,7 +100,21 @@ test.describe("saved tabs", () => {
     for (const page of await created) facet.adopt(page);
 
     await expect.poll(async () => (await info(facet, A.id)).tabCount).toBe(3);
-    expect((await info(facet, A.id)).savedCount).toBe(0); // open again: nothing saved
+    // Open again: nothing saved. An entry leaves the set only after its tab was created, assigned and seeded, so the last
+    // one goes a moment after the tab count reaches 3: wait for the removal (in memory, then in storage), do not sample once.
+    await expect.poll(async () => (await info(facet, A.id)).savedCount).toBe(0);
+    await expect
+      .poll(() =>
+        facet.inWorker(
+          async () =>
+            Object.keys(
+              (await (globalThis as any).chrome.storage.local.get("savedTabs"))
+                .savedTabs ?? {},
+            ),
+          null,
+        ),
+      )
+      .not.toContain(A.id);
     const tabs = (
       await facet.api<Array<{ tabId: number; containerId: string }>>("listTabs")
     ).filter((t) => t.containerId === A.id);
