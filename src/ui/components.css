@@ -485,6 +485,17 @@
   border: 1px solid var(--fx-danger);
   color: var(--fx-danger);
 }
+/* Another SplitSession copy is enabled: the text, and the button that opens chrome://extensions. */
+.fx-copynotice {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+}
+.fx-copynotice__text {
+  margin: 0;
+  line-height: 1.4;
+}
 .fx-notice--info {
   background: var(--fx-accent-soft);
   border: 1px solid transparent;

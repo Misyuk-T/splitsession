@@ -1,5 +1,6 @@
 import { browser } from "wxt/browser";
 
+import { createCopyDetector, registerCopyListeners } from "./copies";
 import { Extras } from "./extras";
 import { registerExtrasListeners } from "./extras-listeners";
 import { Facet } from "./facet";
@@ -14,6 +15,7 @@ import { registerListeners } from "./listeners";
 export function main(): void {
   const facet = new Facet();
   const extras = new Extras(facet);
+  const copies = createCopyDetector();
   const agent = __FULL__ ? createAgentSide(facet, extras) : null;
   const api = createFullApi(
     facet,
@@ -21,10 +23,12 @@ export function main(): void {
     () => browser.declarativeNetRequest.getSessionRules() as Promise<unknown[]>,
     browser,
     agent?.bridgeApi,
+    copies,
   );
   agent?.install(api);
   registerListeners(facet, api);
   registerExtrasListeners(extras);
+  registerCopyListeners(copies, facet.log);
   // Same API on the worker global, for e2e tests (Playwright `worker.evaluate`) and debugging from DevTools.
   (globalThis as { facet?: unknown }).facet = api;
   void extras.start(facet.start()).then(() => agent?.start());

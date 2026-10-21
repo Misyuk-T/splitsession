@@ -7,6 +7,7 @@ import { facetApi } from "../../engine/api-client";
 import { BridgeRow } from "../components/BridgeCard";
 import { Button } from "../components/Button";
 import { ContainerForm } from "../components/ContainerForm";
+import { CopyNotice, useOtherCopies } from "../components/CopyNotice";
 import { describeError, plural, tabsLabel } from "../format";
 import { IconPlus } from "../icons";
 import { useBridge } from "../useBridge";
@@ -37,6 +38,7 @@ export const Popup = () => {
     loadError,
     refresh,
   } = usePopupData();
+  const otherCopies = useOtherCopies();
   const { busy, status, say, run } = useStatus();
   const [mode, setMode] = useState<Mode>({ kind: "idle" });
   const [deleting, setDeleting] = useState<ContainerInfo | null>(null);
@@ -255,6 +257,8 @@ export const Popup = () => {
   return (
     <main class="popup">
       <Header bridge={bridge} />
+
+      <CopyNotice copies={otherCopies} />
 
       {__FULL__ && bridge && <BridgeRow bridge={bridge} />}
 

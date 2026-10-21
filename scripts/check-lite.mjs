@@ -11,6 +11,12 @@ import { fileURLToPath } from "node:url";
 const root = fileURLToPath(new URL("..", import.meta.url));
 const dir = path.resolve(root, process.argv[2] ?? ".output/lite/chrome-mv3");
 
+// The only extension IDs a copy may answer and ping (src/core/copies.ts), written out here on purpose: the Lite manifest's
+// `externally_connectable` must be exactly this list, so a test hook (FACET_TEST_COPY_IDS) cannot leak into a release.
+const COPY_IDS = [
+  "hapfikidacgfgnnajkgnaednpgnhmffk", // Full
+  "hhodioekcdmhpocjbkjnblmbmchddphf", // Lite on the Chrome Web Store
+];
 const FORBIDDEN_PERMISSIONS = ["nativeMessaging", "debugger", "userScripts"];
 // [label, regex]: any hit in any text file of the bundle fails the check.
 const MARKERS = [
@@ -88,8 +94,16 @@ else {
     problems.push(
       'manifest has a "key": Lite must not pin an extension ID (the Web Store assigns its own)',
     );
-  if ("externally_connectable" in manifest)
-    problems.push('manifest has "externally_connectable"');
+  const ec = manifest.externally_connectable;
+  if (
+    !ec ||
+    Object.keys(ec).some((k) => k !== "ids") ||
+    !Array.isArray(ec.ids) ||
+    JSON.stringify([...ec.ids].sort()) !== JSON.stringify([...COPY_IDS].sort())
+  )
+    problems.push(
+      `manifest "externally_connectable" must be exactly { ids: [${COPY_IDS.join(", ")}] } (no matches), got ${JSON.stringify(ec)}`,
+    );
 }
 
 if (problems.length > 0) {

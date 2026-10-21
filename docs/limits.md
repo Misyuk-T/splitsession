@@ -298,6 +298,15 @@ back from regex to per-scheme URL filters past 900 regex rules, and refuses to p
 would not fit. Deleting a container closes its tabs and forgets its cookies, but leaves its namespaced storage
 (`__facet:<key>:…` keys, databases, caches) in the sites' origins.
 
+**Two copies of SplitSession in one profile.** Not supported: both rewrite `Cookie` headers, both capture `Set-Cookie` into
+their own jars and both run the tab-group guard, so logins do not stick and tabs reload in a loop. SplitSession warns about
+it (the popup, and Settings > General) when it can see the other copy: each copy answers one ping from the other known IDs
+(the Chrome Web Store Lite and Full) and pings them itself, through `externally_connectable` (no permission). It does not
+cover two **unpacked Lites**: an unpacked extension's ID comes from its folder's path, so no copy can know it in advance
+(an unpacked Lite does find the Store Lite and Full, and they find each other). It also cannot see a copy from before this check existed (it does not answer the ping), and finds a
+newly enabled copy within about ten seconds (a found copy is remembered for a minute). It never turns the other copy off:
+that is the person's call, in `chrome://extensions`.
+
 **Tabs opened by the user** next to a container tab (Ctrl+T, bookmarks, omnibox) are plain tabs, as in Firefox.
 
 ## Interface, domain rules, tab groups and indicators (Stage C)
