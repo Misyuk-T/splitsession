@@ -1571,3 +1571,34 @@ Goal: a container tab that is not in its container's tab group (dragged out, or 
   beats dropping). Tests: `background/isolation/cookie-capture.test.ts` (CookieCapture with a real jar and detector: the
   Drupal hop, A->B->C rotation, logout carrying B, the host-only/Domain pair; the last three failed on `8eddce7`), plus unit
   cases in `stale-response.test.ts` and `stale-detector.test.ts`.
+
+## Two copies of SplitSession in one profile (2026-10-21)
+
+- **Incident.** A user had two copies enabled in one Chrome profile (Lite and Full; the same happens with the Store Lite
+  beside a GitHub or unpacked one). Both rewrite `Cookie` headers, both capture `Set-Cookie` into their own jars and both run
+  the tab-group guard: logins did not stick and tabs reloaded without end. Nothing told the user why.
+- **Decision.** Warn, do not fix. Each copy answers one ping from the other known copies and pings them itself
+  (`src/core/copies.ts`, `src/background/copies.ts`): `runtime.onMessageExternal` answers exactly `{ type:
+  "splitsession.ping" }` from the Chrome Web Store Lite (`hhodioekcdmhpocjbkjnblmbmchddphf`) or Full
+  (`hapfikidacgfgnnajkgnaednpgnhmffk`) with `{ type: "splitsession.pong", edition, version }`, and nothing else (no other
+  data, no actions). The popup and Settings > General show a warning with an "Open extensions" button (`tabs.create` of
+  `chrome://extensions/?id=<other>`; an extension may open that, a web page may not). Detection runs at install and browser
+  start and when the popup or settings open; a found copy is remembered for a minute, "none" for ten seconds (a failed ping
+  costs nothing, and a copy enabled a moment later should show up soon).
+- **Why `externally_connectable`, not the `management` permission.** `management` would list every extension and show
+  "Manage your apps, extensions and themes" at install (a warning for every user, in a store review where we already ask for
+  all sites). `externally_connectable` with `ids` and no `matches` is not a permission: no install warning, no web page can
+  connect, and only the two named IDs can message the extension. `scripts/check-lite.mjs`, which used to forbid the key,
+  now requires exactly that list in Lite.
+- **Limits** (docs/limits.md). An unpacked extension's ID is derived from its folder's path, so two unpacked Lites cannot
+  find each other (an unpacked Lite finds the Store Lite and Full, and they find it only when it is one of the two IDs).
+  A copy that predates this check does not answer. The other copy is never turned off by SplitSession.
+- **Rejected.** `management` (above). Detecting a rival by its effects (a cookie written by someone else, a second
+  `declarativeNetRequest` rule set): no API names the other extension, and the symptoms are the ones users already saw.
+  Making the second copy stand down by itself: it needs a shared lock across two service workers that die at any time, and
+  a copy that disables itself surprises the person who chose it.
+- **Tests.** Unit `core/copies.test.ts` (the ping answered only from known IDs and only in its exact shape, no receiver means
+  none, a pong means found, the cache), `background/copies.test.ts` (the listener and detection through a stub browser). e2e
+  `duplicate-copies.spec.ts`: Lite and Full in one profile, each popup and Settings warn about the other with edition and
+  version, "Open extensions" opens `chrome://extensions/?id=<other>`, a copy alone shows nothing. The spec builds its own Full
+  with the Lite's path-derived ID added by the build-time variable `FACET_TEST_COPY_IDS` (no runtime setting).

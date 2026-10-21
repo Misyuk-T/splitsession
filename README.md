@@ -53,6 +53,8 @@ Lite is the Chrome Web Store edition. Full adds the agent bridge; its code is no
 3. Choose *Load unpacked*.
 4. Select the unzipped folder.
 
+Keep one copy of SplitSession per Chrome profile (Store or GitHub, Lite or Full): two enabled copies fight over cookies, and SplitSession warns when it finds the other one.
+
 To build from source, see *Development* below.
 
 ## Quick start

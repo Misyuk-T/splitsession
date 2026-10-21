@@ -3,6 +3,8 @@ import { fileURLToPath } from "node:url";
 import preact from "@preact/preset-vite";
 import { defineConfig } from "wxt";
 
+import { KNOWN_COPY_IDS } from "./src/core/copies";
+
 /**
  * Two editions from one codebase (docs/decisions.md, "Two editions"). `FACET_EDITION=lite` selects Lite; anything else is
  * Full, the author's daily build and the default of `pnpm build`, `pnpm dev` and the e2e suite. Name and description per
@@ -30,6 +32,16 @@ const extensionKey = full
   ? readFileSync(new URL("./extension-key.pub", import.meta.url), "utf8").trim()
   : undefined;
 
+// Duplicate-copy detection (src/core/copies.ts): the copies that may talk to each other, in the manifest
+// (`externally_connectable`) and in the bundle (`__EXTRA_COPY_IDS__`). The e2e spec duplicate-copies.spec.ts builds
+// a Full with the path-derived ID of a local Lite added through FACET_TEST_COPY_IDS (and FACET_OUT_DIR); a release build
+// sets neither, and scripts/check-lite.mjs fails a Lite whose list is not exactly the two known IDs.
+const extraCopyIds = (process.env.FACET_TEST_COPY_IDS ?? "")
+  .split(",")
+  .map((id) => id.trim())
+  .filter((id) => /^[a-p]{32}$/.test(id));
+const copyIds = [...new Set([...KNOWN_COPY_IDS, ...extraCopyIds])];
+
 // Rendered from assets/icon.svg by scripts/make-icons.mjs and committed.
 const iconSet = {
   16: "icons/icon-16.png",
@@ -41,7 +53,7 @@ const iconSet = {
 export default defineConfig({
   srcDir: "src",
   // Full keeps `.output/chrome-mv3` (the folder loaded unpacked in Chrome); Lite builds into `.output/lite/chrome-mv3`.
-  outDir: full ? ".output" : ".output/lite",
+  outDir: process.env.FACET_OUT_DIR ?? (full ? ".output" : ".output/lite"),
   zip: { artifactTemplate: `splitsession-${edition}-{{version}}.zip` },
   vite: () => ({
     plugins: [
@@ -65,7 +77,10 @@ export default defineConfig({
     ],
     // Compile-time edition flag (src/env.d.ts): the bundler removes every `if (__FULL__)` branch from Lite, and with it the
     // modules only those branches use (agent bridge, CDP, activity overlay, page-name features).
-    define: { __FULL__: JSON.stringify(full) },
+    define: {
+      __FULL__: JSON.stringify(full),
+      __EXTRA_COPY_IDS__: JSON.stringify(extraCopyIds),
+    },
   }),
   hooks: {
     // The beacon runs in every frame of every tab: swap the full Public Suffix List for a tiny stand-in there
@@ -118,6 +133,9 @@ export default defineConfig({
     host_permissions: ["<all_urls>"],
     icons: iconSet,
     action: { default_title: "SplitSession", default_icon: iconSet },
+    // Only the other SplitSession copies may message this one (src/background/copies.ts answers one ping, nothing else).
+    // Not a permission: no install-time warning. No `matches`: no web page can connect.
+    externally_connectable: { ids: copyIds },
     // Static default answer for the beacon (`{}` = no container) so the content script never reaches the network,
     // even before the service worker has started. Per-tab (session) and managed-site (dynamic) rules override it.
     declarative_net_request: {

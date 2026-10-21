@@ -17,7 +17,9 @@ Full edition's features or extra permissions. The source code is public: <https:
 
 - Everything SplitSession handles stays **on your computer**. The extension sends nothing to the developer or to any other
   server. There is no account, no analytics, no crash reporting and no telemetry.
-- The extension makes no network requests of its own. (The pages you browse make theirs, as usual.)
+- The extension makes no network requests of its own. (The pages you browse make theirs, as usual.) The one thing it says to
+  another extension is a ping between two copies of SplitSession, answered with the edition and version only, so it can warn
+  when two copies are on; no page, tab or cookie data is involved.
 - Full only: if **you switch on** the agent bridge, an AI agent on your own computer can read and operate your tabs. It is
   off by default. See "The Full edition's agent bridge" below.
 

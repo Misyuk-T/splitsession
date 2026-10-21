@@ -60,7 +60,11 @@ by the environment variable `FACET_EDITION` (`lite`; anything else or unset is F
   effect in a module that is otherwise dead (`TOOLS.map(...)` once kept the whole tool list alive) needs `/* @__PURE__ */`.
 - **IDs**: Full is pinned by `extension-key.pub` (below). Lite has no `key`: the Web Store assigns the published ID, a local
   unpacked Lite gets one derived from its folder's path. `e2e/lite.spec.ts` reads it from its own service-worker URL.
-- **Tests**: every spec except `lite.spec.ts` runs the Full build. `lite.spec.ts` launches `.output/lite/chrome-mv3` in its own
+- **Duplicate copies**: both editions list the two known IDs in `externally_connectable` (`KNOWN_COPY_IDS`, `src/core/copies.ts`;
+  `check-lite.mjs` requires exactly that list in Lite). To test two copies in one profile, `e2e/duplicate-copies.spec.ts`
+  builds its own Full into `.output/dup-test` with the local Lite's path-derived ID added through the build-time variables
+  `FACET_TEST_COPY_IDS` and `FACET_OUT_DIR` (`wxt.config.ts`); a release build sets neither.
+- **Tests**: every spec except `lite.spec.ts` and `duplicate-copies.spec.ts` runs the Full build. `lite.spec.ts` launches `.output/lite/chrome-mv3` in its own
   browser (skipped when it is not built) and checks the manifest, the missing APIs, the settings schema, 302 login isolation
   between two containers, and the popup and options pages. `pnpm e2e` builds both editions first.
 - **CI**: `.github/workflows/ci.yml`: typecheck, unit tests, both builds with the Lite check, both zips as artifacts; on a tag

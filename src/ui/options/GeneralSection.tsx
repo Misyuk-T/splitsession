@@ -3,6 +3,7 @@ import { useEffect, useState } from "preact/hooks";
 import { DEFAULT_SETTINGS, type Settings } from "../../core";
 import { facetApi } from "../../engine/api-client";
 import { Button } from "../components/Button";
+import { CopyNotice, useOtherCopies } from "../components/CopyNotice";
 import { More } from "../components/More";
 import { Switch } from "../components/Toggle";
 import { WhyStrict } from "../components/WhyStrict";
@@ -14,6 +15,7 @@ export const GeneralSection = () => {
   const [strictError, setStrictError] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [regrouped, setRegrouped] = useState(false);
+  const otherCopies = useOtherCopies();
 
   useEffect(() => {
     facetApi.getSettings().then(setSettings, (e) => setError(describeError(e)));
@@ -53,6 +55,7 @@ export const GeneralSection = () => {
   return (
     <section class="opt-section" aria-labelledby="general-title" id="general">
       <h2 id="general-title">General</h2>
+      <CopyNotice copies={otherCopies} />
       <div class="opt-card opt-card--rows">
         <div class="opt-row">
           <Switch
