@@ -17,6 +17,7 @@ import {
   GATE_RULE_ID_BASE,
   gateKey,
   gateUrlFilter,
+  GROUP_PULSE,
   groupMarker,
   groupNameOf,
   groupTitle,
@@ -114,6 +115,27 @@ describe("group-title marker", () => {
       }
       expect(hasActiveGlyph(typed + marker)).toBe(/^\s*◉/.test(typed));
     }
+    // Every frame of the pulse is a glyph: ◉ ◎ ○ (◎ between them), the order is fixed, and Lite has none of them.
+    expect(GROUP_PULSE).toEqual([true, "mid", "hollow", "mid"]);
+    expect(GROUP_PULSE.map((g) => groupTitle("main", "work", g)[0])).toEqual([
+      "◉",
+      "◎",
+      "○",
+      "◎",
+    ]);
+    for (const g of GROUP_PULSE) {
+      const t = groupTitle("Job", "work", g);
+      expect(hasActiveGlyph(t)).toBe(true);
+      expect(groupNameOf(t)).toBe("Job");
+      expect(decodeGroupMarker(t)).toBe("work");
+      expect(groupTitleWithGlyph(t, false)).toBe(groupTitle("Job", "work"));
+      expect(groupTitleWithGlyph(groupTitle("Job", "work"), g)).toBe(t);
+    }
+    expect(groupTitleWithGlyph(" ◎Job", "hollow")).toBe("○ Job");
+    expect(groupNameOf(" ◎ Job")).toBe("Job");
+    for (const name of ["◎ Job", " ◎Job"])
+      expect(startsWithGroupGlyph(name)).toBe(true);
+    expect(groupNameOf("◎ ◎ Job")).toBe("◎ Job");
     // The hollow half of the pulse is a glyph too.
     expect(groupTitle("main", "work", "hollow").startsWith("○ main")).toBe(
       true,

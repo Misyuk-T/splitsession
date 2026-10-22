@@ -7,6 +7,8 @@ import {
   type ContainerId,
   decodeGroupMarker,
   GROUP_COLOR,
+  GROUP_PULSE,
+  type GroupGlyph,
   groupNameOf,
   groupTitle,
   groupTitleWithGlyph,
@@ -92,8 +94,8 @@ const RETRIES = 6;
 const RETRY_DELAY_MS = 150;
 /** The user types a group's name in Chrome's editor and Chrome reports every keystroke: the container follows once they pause. */
 const EDIT_SETTLE_MS = 700;
-/** The glyph of a marked group alternates ◉ / ○ this often (Full). */
-export const PULSE_MS = 1_000;
+/** The glyph of a marked group moves one frame of its pulse (◉ ◎ ○ ◎) this often (Full). */
+export const PULSE_MS = 400;
 /** An update SplitSession made itself is remembered this long, to tell its echo from the user's edit. */
 const EXPECTED_TTL_MS = 10_000;
 
@@ -129,11 +131,11 @@ export class TabGroupProjection {
   >();
 
   /**
-   * Full only: groups that show the agent-activity mark right now (glyph pulsing ◉ / ○ and the agent's colour), with whether
-   * the glyph is at its hollow half. Memory only on purpose: when the worker dies the agent's activity display is gone with
+   * Full only: groups that show the agent-activity mark right now (glyph pulsing ◉ ◎ ○ ◎ and the agent's colour), with the
+   * frame of the pulse the glyph is at. Memory only on purpose: when the worker dies the agent's activity display is gone with
    * it, so the next start (`adoptExisting`) puts "⧉ " and the container's colour back.
    */
-  private activity = new Map<number, boolean>();
+  private activity = new Map<number, number>();
   private pulseTimer: ReturnType<typeof setInterval> | null = null;
 
   /** groupId -> counter of the user's last edit, so only the last one of a burst is acted on. */
@@ -370,7 +372,7 @@ export class TabGroupProjection {
       if (!this.owned.has(groupId) || !this.deps.settings().tabGroups)
         return Promise.resolve();
       if (this.activity.has(groupId)) return Promise.resolve();
-      this.activity.set(groupId, false);
+      this.activity.set(groupId, 0);
     } else if (!this.activity.delete(groupId)) {
       return Promise.resolve();
     }
@@ -584,20 +586,21 @@ export class TabGroupProjection {
     return index !== -1;
   }
 
+  /** The glyph a group shows now: idle (`false`) or its frame of the pulse. */
+  private glyphOf(groupId: number): GroupGlyph {
+    const frame = __FULL__ ? this.activity.get(groupId) : undefined;
+    return frame === undefined ? false : (GROUP_PULSE[frame] ?? true);
+  }
+
   /** The title and colour a group of the container shows now: the activity glyph and colour while the agent works in it. */
   private wantedFor(
     container: Container,
     groupId: number,
   ): { title: string; color: string } {
-    const hollow = __FULL__ ? this.activity.get(groupId) : undefined;
     return {
-      title: groupTitle(
-        container.name,
-        container.id,
-        hollow === undefined ? false : hollow ? "hollow" : true,
-      ),
+      title: groupTitle(container.name, container.id, this.glyphOf(groupId)),
       color:
-        hollow === undefined
+        this.glyphOf(groupId) === false
           ? GROUP_COLOR[container.color]
           : agentGroupColor(container.color),
     };
@@ -636,13 +639,10 @@ export class TabGroupProjection {
       }
       // A title without the container's marker (retyped by the user): not ours to edit; the sync puts the title back, with the glyph.
       if (decodeGroupMarker(group.title) !== containerId) return;
-      const hollow = this.activity.get(groupId);
-      const title = groupTitleWithGlyph(
-        group.title ?? "",
-        hollow === undefined ? false : hollow ? "hollow" : true,
-      );
+      const glyph = this.glyphOf(groupId);
+      const title = groupTitleWithGlyph(group.title ?? "", glyph);
       const color =
-        hollow === undefined
+        glyph === false
           ? GROUP_COLOR[container.color]
           : agentGroupColor(container.color);
       const patch: { title?: string; color?: string } = {};
@@ -660,10 +660,10 @@ export class TabGroupProjection {
     }
   }
 
-  /** One pulse tick: every marked group's glyph goes to its other half (title only, the colour stays). */
+  /** One pulse tick: every marked group's glyph moves to the next frame (title only, the colour stays). */
   private pulse(): void {
-    for (const [groupId, hollow] of [...this.activity]) {
-      this.activity.set(groupId, !hollow);
+    for (const [groupId, frame] of [...this.activity]) {
+      this.activity.set(groupId, (frame + 1) % GROUP_PULSE.length);
       void this.enqueue(() => this.showActivity(groupId, false));
     }
   }

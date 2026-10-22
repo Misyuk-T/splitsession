@@ -11,6 +11,7 @@ import { MemoryStorageArea } from "../engine/storage/storage-area";
 import {
   type GroupTab,
   OWNED_GROUPS_KEY,
+  PULSE_MS,
   TabGroupProjection,
 } from "./tab-groups";
 
@@ -1187,14 +1188,14 @@ describe("TabGroupProjection", () => {
         const { projection, chrome, gid } = await marked();
         vi.useFakeTimers();
         await projection.setActivity(gid(1), true);
-        await vi.advanceTimersByTimeAsync(1_000); // ○, written without a colour
+        await vi.advanceTimersByTimeAsync(PULSE_MS); // ◎, written without a colour
         const group = { ...chrome.groups.get(gid(1))! };
-        expect(group.title![0]).toBe("○");
+        expect(group.title![0]).toBe("◎");
         expect(projection.takeMarkEcho({ ...group, color: "red" })).toBe(false); // someone recoloured: an edit
         expect(projection.takeMarkEcho(group)).toBe(true); // the tick's own echo, colour as it was
       });
 
-      it("the glyph pulses ◉ / ○ once a second with one title-only write per tick; the colour stays; the timer stops with the mark", async () => {
+      it("the glyph breathes ◉ ◎ ○ ◎ at one frame per PULSE_MS with one title-only write per tick; the colour stays; the timer stops with the mark", async () => {
         vi.useFakeTimers();
         const { projection, chrome, gid, updates, title, book } =
           await marked();
@@ -1203,13 +1204,16 @@ describe("TabGroupProjection", () => {
         expect(title(1)).toBe(groupTitle("Work", "work", true));
         expect(updates).toHaveLength(1);
         expect(vi.getTimerCount()).toBe(1);
+        expect(PULSE_MS).toBeLessThanOrEqual(500);
+        await vi.advanceTimersByTimeAsync(PULSE_MS - 50);
+        expect(updates).toHaveLength(1); // no tick yet: no write
         const glyphs: string[] = [];
-        for (let i = 0; i < 4; i++) {
-          await vi.advanceTimersByTimeAsync(1_000);
+        for (let i = 0; i < 8; i++) {
+          await vi.advanceTimersByTimeAsync(i === 0 ? 50 : PULSE_MS);
           glyphs.push(title(1)![0]!);
         }
-        expect(glyphs).toEqual(["○", "◉", "○", "◉"]);
-        expect(updates).toHaveLength(5); // the set and one write per tick
+        expect(glyphs).toEqual(["◎", "○", "◎", "◉", "◎", "○", "◎", "◉"]); // two breaths
+        expect(updates).toHaveLength(9); // the set and one write per tick
         for (const u of updates.slice(1))
           expect(Object.keys(u.props)).toEqual(["title"]);
         expect(chrome.groups.get(gid(1))!.color).toBe("purple");
@@ -1248,7 +1252,7 @@ describe("TabGroupProjection", () => {
       });
 
       it("a hollow ○ in a typed title never reaches the container name, and a second ○ is refused", async () => {
-        for (const typed of ["○ Job", " ○Job", "◉ Job"]) {
+        for (const typed of ["○ Job", " ○Job", "◉ Job", "◎ Job", "  ◎Job"]) {
           const { projection, chrome, gid, book } = await marked();
           await projection.setActivity(gid(1), true);
           const event = {
@@ -1264,7 +1268,7 @@ describe("TabGroupProjection", () => {
         const { projection, chrome, gid, book, logs } = await marked();
         const event = {
           id: gid(1),
-          title: `○ ○ Job${groupMarker("work")}`,
+          title: `○ ◎ Job${groupMarker("work")}`,
           color: "blue",
         };
         chrome.groups.get(gid(1))!.title = event.title;
@@ -1279,7 +1283,7 @@ describe("TabGroupProjection", () => {
         ).toBe(true);
       });
 
-      it("a leftover mark (◉ or ○, the agent's colour) is cleaned at the next start: title to ⧉ and the container's colour back", async () => {
+      it("a leftover mark (◉ ◎ or ○, the agent's colour) is cleaned at the next start: title to ⧉ and the container's colour back", async () => {
         const { chrome, startup } = await restarted([
           { id: 50, title: groupTitle("Work", "work", true), color: "purple" },
           {
@@ -1288,6 +1292,7 @@ describe("TabGroupProjection", () => {
             color: "purple",
           },
           { id: 52, title: "○ mine", color: "purple" }, // no marker: the user's own
+          { id: 53, title: groupTitle("Work", "work", "mid"), color: "purple" },
         ]);
         expect(chrome.groups.get(50)).toMatchObject({
           title: groupTitle("Work", "work"),
@@ -1301,7 +1306,11 @@ describe("TabGroupProjection", () => {
           title: "○ mine",
           color: "purple",
         });
-        expect(startup.ownedGroups().map(([id]) => id)).toEqual([50, 51]);
+        expect(chrome.groups.get(53)).toMatchObject({
+          title: groupTitle("Work", "work"),
+          color: "blue",
+        });
+        expect(startup.ownedGroups().map(([id]) => id)).toEqual([50, 51, 53]);
       });
 
       it("the cleanup of title and colour also runs with groups off", async () => {

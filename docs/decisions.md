@@ -1683,3 +1683,19 @@ Goal: a container tab that is not in its container's tab group (dragged out, or 
   the agent's colour then) and travels with the pending edit; settling no longer asks whether the group is marked now. A rename
   made while marked whose pause ends after the mark did could otherwise save the agent's purple into the container. An event
   received while unmarked keeps its colour even if the mark starts before the pause is over. Both are unit tests.
+
+## The group glyph breathes in four frames (2026-10-22)
+
+- **Request.** Two frames at one second looked jerky. The glyph now cycles **◉ → ◎ → ○ → ◎** and starts again, one frame every
+  `PULSE_MS` = 400 ms (a breath of 1.6 s).
+- **Decision.** `GROUP_PULSE` (`core/restore/group-marker.ts`, empty in Lite) lists the frames; the projection keeps the frame
+  index per marked group (`activity: Map<groupId, frame>`), one title-only write per tick per marked group, nothing when the
+  title is unchanged, title and colour re-read before the write as before. The start is still ◉ with the agent's colour, the
+  end ⧉ with the container's colour. `◎` is a group glyph like `◉`, `○` and `⧉` for `groupNameOf`, the whitespace-aware swap,
+  `hasActiveGlyph` (start-up clean-up) and the sync refusal: a container name never starts with any of the four. The Lite bundle
+  has none of ◉ ◎ ○ (checked after `build:lite`).
+- **Cost.** 2.5 title writes a second per marked group instead of 1 (each also reads the group twice). Only while the agent
+  works; the timer stops with the last mark.
+- **Tests.** Unit: frame order over two breaths, no write before the first tick, ◎ in titles, names, refusals and clean-up.
+  e2e asserts timing-robustly: only frames of the pulse appear, at least three distinct, every change differs, colour constant,
+  restore to ⧉ and the container's colour.

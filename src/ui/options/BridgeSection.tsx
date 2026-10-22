@@ -105,7 +105,7 @@ const AgentSwitches = () => {
             glowing frame and a small “Agent: reading” label on the page, a ring
             of purple dots on the tab’s icon, the dot on the toolbar button
             blinks, and its container’s tab group turns purple (red for a purple
-            container) with a pulsing ◉ ○ in front of its name, also when the
+            container) with a pulsing ◉ ◎ ○ in front of its name, also when the
             group is collapsed. All of it fades a few seconds after the last
             action and never takes focus or switches tabs. Pages cannot read or
             click it.
