@@ -94,7 +94,7 @@ const RETRY_DELAY_MS = 150;
 /** The user types a group's name in Chrome's editor and Chrome reports every keystroke: the container follows once they pause. */
 const EDIT_SETTLE_MS = 700;
 /** The glyph of a marked group goes to the other frame of its blink this often (Full). */
-export const BLINK_MS = 600;
+export const BLINK_MS = 1_200;
 /** An update SplitSession made itself is remembered this long, to tell its echo from the user's edit. */
 const EXPECTED_TTL_MS = 10_000;
 
@@ -351,8 +351,8 @@ export class TabGroupProjection {
 
   /**
    * Full only. The agent is working in a tab of this group (`on`) or has stopped. While it works the group's title glyph blinks
-   * between "🟣" and "⚪" every `BLINK_MS` instead of "⧉" (the two emoji are equally wide, so the tabs next to the chip do not
-   * move; only the start and the end change the width); name and invisible marker are untouched, and the group's COLOUR is never
+   * between "✦" and "✧" every `BLINK_MS` instead of "⧉" (the three glyphs are equally wide, so the tabs next to the chip do not
+   * move, and neither do the start and the end); name and invisible marker are untouched, and the group's COLOUR is never
    * written. The glyph shows when the group is collapsed too. Only groups SplitSession keeps are marked (a plain group, or any
    * group with groups off, is ignored). One title-only write for the start, one per tick, one for the end; a call that does not
    * change the state, and a burst, write nothing. Every write is remembered as ours and quiet (`takeMarkEcho`,

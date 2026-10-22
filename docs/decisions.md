@@ -1774,3 +1774,27 @@ Goal: a container tab that is not in its container's tab group (dragged out, or 
 - **Tests.** `tab-groups.test.ts`: a deliberate purple or pink on a marker-bearing group with groups off is untouched start after
   start (only the glyph changes); with groups on a purple container's purple group is untouched start after start and a stuck
   colour on a blue container is set to the container's colour by the take-over; groups without our marker are never touched.
+
+## The agent group mark blinks ✦ / ✧ slowly: glyphs as wide as ⧉ (2026-10-23)
+
+- **Feedback on the emoji blink.** The tabs next to the group chip still jumped, and the blink was too fast. Measured with canvas
+  `measureText` at `12px system-ui` in Chrome: `⧉` is 9.55 px wide and the emoji `🟣` / `⚪` are 15 px, so every start, end and
+  (with different widths) blink moved the neighbours. This is a measurement of the font, not something the extension or the
+  e2e suite can check (the chip's box is not exposed to extensions; Node has no text metrics), so there is no test for the
+  width: the numbers are recorded here and in the comment on `AGENT_MARK_GLYPHS`.
+- **Candidates measured against `⧉`.** `✦` (U+2726): -0.04 px; `✧` (U+2727): -0.02 px. Both are within a hundredth of a pixel
+  of `⧉`, so neither the start, the end nor a blink changes the chip's width. They also read as "sparkle", the usual sign of
+  an AI at work, which a plain dot or ring did not.
+- **Decision.** Frames `✦ name` ↔ `✧ name` every `BLINK_MS` = 1200 ms (it was 600), starting at `✦`, `⧉ name` after the fade.
+  The colour is never written. Everything else is the machinery of the previous entries: one title-only write per transition and per
+  tick, none when unchanged, quiet echoes, title and colour re-read before the write, a user rename or recolour while marked syncs,
+  glyph clean-up at every start for groups with our marker.
+- **Recognition.** Prefix glyphs, with an optional U+FE0F and the whitespace before them: `⧉`, the mark glyphs `✦` `✧`, and for one
+  release the legacy `🟣` `⚪` (the blink emoji of the previous dev builds) and `◉` `◎` `○` (0.1.5-dev). `groupNameOf` strips one,
+  the swap replaces one, `hasMarkGlyph` finds any non-`⧉` one (start-up clean-up back to `⧉`) and `startsWithGroupGlyph` makes the
+  sync refuse a container name that starts with any of them. All but `⧉` is under `__FULL__`: the Lite bundle has none of `✦ ✧ 🟣 ⚪
+  ◉ ◎ ○` (checked, also as escapes). Remove the legacy ones after the next release.
+- **Tests.** Unit: frames `✦`/`✧` and wrap, 1200 ms, one title-only write per tick, the glyph set incl. FE0F and spaces, legacy
+  emoji and `◉ ◎ ○` cleaned to `⧉` with groups on and off, names never starting with any glyph. e2e (`agent-activity.spec.ts`): the
+  title alternates ✦/✧ on a collapsed group with the colour constant and the container unchanged, ⧉ after the fade; recolour and
+  rename while marked; bridge or setting off restores at once; clean-up after a worker restart (sparkle and legacy 🟣).
