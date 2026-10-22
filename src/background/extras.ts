@@ -397,8 +397,8 @@ export class Extras {
   }
 
   /**
-   * `tabGroups.onUpdated`: a group was retitled or recoloured. The echo of the agent-activity mark (Full: "⧉ " <-> "◉ ", our
-   * own update) is dropped here: it is neither an edit of the user's nor news for the group guard. Anything else is both: the
+   * `tabGroups.onUpdated`: a group was retitled or recoloured. The echo of the agent-activity mark (Full: the group's pulse colour, our own
+   * update) is dropped here: it is neither an edit of the user's nor news for the group guard. Anything else is both: the
    * guard sweeps soon, and the user may have renamed or recoloured a group of ours in Chrome's menu.
    */
   handleGroupUpdated(group: {

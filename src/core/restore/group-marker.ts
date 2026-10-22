@@ -31,56 +31,25 @@ export function groupMarker(containerId: ContainerId): string {
 export const GROUP_GLYPH = "⧉";
 export const GROUP_PREFIX = `${GROUP_GLYPH} `;
 
-/**
- * Full only (the agent activity mark): while the agent works in a tab of a group, the group's glyph breathes through "◉" "◎" "○" "◎"
- * (a pulse) instead of "⧉", and the rest of the title (name, invisible marker) stays exactly as it is. In Lite the
- * constants are empty and dropped, so the Lite bundle has none of the glyphs.
- */
-export const GROUP_ACTIVE_PREFIX = __FULL__ ? "◉ " : "";
-export const GROUP_MID_PREFIX = __FULL__ ? "◎ " : "";
-export const GROUP_HOLLOW_PREFIX = __FULL__ ? "○ " : "";
-
-/**
- * The glyph a group title leads with: `false` idle "⧉"; `true` the activity "◉"; `"mid"` "◎"; `"hollow"` "○" (the lowest
- * point of the pulse).
- */
-export type GroupGlyph = boolean | "mid" | "hollow";
-
-/** One breath of the pulse, frame by frame (Full only; empty in Lite). */
-export const GROUP_PULSE: readonly GroupGlyph[] = __FULL__
-  ? [true, "mid", "hollow", "mid"]
-  : [];
-
-const prefixOf = (glyph: GroupGlyph): string =>
-  !__FULL__ || glyph === false
-    ? GROUP_PREFIX
-    : glyph === "hollow"
-      ? GROUP_HOLLOW_PREFIX
-      : glyph === "mid"
-        ? GROUP_MID_PREFIX
-        : GROUP_ACTIVE_PREFIX;
-
-/** `active`: the agent-activity form (Full only; Lite always gets the plain glyph). */
-export function groupTitle(
-  name: string,
-  containerId: ContainerId,
-  active: GroupGlyph = false,
-): string {
-  return prefixOf(active) + name + groupMarker(containerId);
+export function groupTitle(name: string, containerId: ContainerId): string {
+  return GROUP_PREFIX + name + groupMarker(containerId);
 }
 
-/** The glyph at the front of a title, with its space: "⧉" always, "◉" "◎" "○" too in Full. */
+/**
+ * Glyphs that 0.1.5-dev builds wrote in front of a group's title while the agent worked ("◉", "◎", "○"; the mark is now the
+ * group's colour and the title is never touched). They are still recognised, for one release, so that a group left marked by
+ * such a build is cleaned up and its glyph never becomes part of a container name. Full only; Lite never had them. Remove
+ * after the release that follows 0.1.5.
+ */
 const LEADING_GLYPH_RE = __FULL__ ? /^\s*(?:[⧉◉◎○] ?)?/ : /^\s*(?:⧉ ?)?/;
 
-/** The title with its leading glyph set to the idle one (`false`) or an activity one; name and marker untouched. */
-export function groupTitleWithGlyph(title: string, glyph: GroupGlyph): string {
-  // The same prefix groupNameOf takes off (leading whitespace, one glyph, its space): a title the user typed as " ◉ Job" or
-  // "◉Job" gets the glyph swapped, not a second glyph in front of it.
-  return prefixOf(glyph) + title.replace(LEADING_GLYPH_RE, "");
+/** The title with its leading glyph (and the whitespace before it) replaced by the idle "⧉ "; name and marker untouched. */
+export function groupTitleIdle(title: string): string {
+  return GROUP_PREFIX + title.replace(LEADING_GLYPH_RE, "");
 }
 
-/** Whether the title carries an activity glyph, "◉" "◎" or "○" (Full only). */
-export function hasActiveGlyph(title: string | undefined): boolean {
+/** Whether the title still carries an agent-mark glyph of a 0.1.5-dev build, "◉" "◎" or "○" (Full only). */
+export function hasLegacyMarkGlyph(title: string | undefined): boolean {
   return __FULL__ && /^\s*[◉◎○]/.test(title ?? "");
 }
 
@@ -91,7 +60,7 @@ export function startsWithGroupGlyph(name: string): boolean {
 
 /**
  * The container name a (possibly edited) group title says: the invisible marker and stray invisible characters taken off,
- * one leading "⧉" (or "◉" / "◎" / "○", the activity mark) with its space taken off, whitespace collapsed. Not validated (see `checkContainerName`).
+ * one leading "⧉" (or a leftover "◉" / "◎" / "○") with its space taken off, whitespace collapsed. Not validated (see `checkContainerName`).
  */
 export function groupNameOf(title: string | undefined): string {
   const bare = stripGroupMarker(title ?? "").replace(/[\u2061-\u2064]/g, "");

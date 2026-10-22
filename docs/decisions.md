@@ -1699,3 +1699,31 @@ Goal: a container tab that is not in its container's tab group (dragged out, or 
 - **Tests.** Unit: frame order over two breaths, no write before the first tick, ◎ in titles, names, refusals and clean-up.
   e2e asserts timing-robustly: only frames of the pulse appear, at least three distinct, every change differs, colour constant,
   restore to ⧉ and the container's colour.
+
+## The agent group mark pulses the colour, not the title (2026-10-22)
+
+- **Feedback.** Changing the glyph (◉ ◎ ○) changed the width of the group chip, and the tabs next to it jumped on every frame.
+- **Decision.** The title is never written by the mark: it is always `⧉ name` + the invisible marker. While the agent works in a
+  group, only its **colour** changes: purple and pink alternate every `PULSE_MS` = 600 ms (`agentGroupColors`,
+  `core/indicators.ts`); for a purple or pink container the pair is red and orange. The end restores the container's colour.
+  One colour-only `tabGroups.update` for the start, one per tick per marked group, one for the end; nothing is written when the
+  colour is already the wanted one. The glyph frames, `GROUP_PULSE` and the title swap are gone.
+- **Kept from the earlier design.** The writes are quiet echoes: `applyGroup` registers the full state its echo must report
+  (title as read, the new colour), so a rename or a recolour by the user between two ticks is not taken for ours; the sync and the
+  guard sweep ignore ours (`takeMarkEcho`). The decoration context is captured when a user's edit event arrives (`markColors`:
+  the pair the group pulsed between): a colour equal to either of them from an event received while marked is never synced,
+  also when the mark ended before the pause; any other colour recolours the container, the pair is recomputed for the new
+  colour, and the end restores it. Title and colour are read again right before the write; a user edit that slips in after
+  that is applied from their event. A user pick equal to a pulse colour cannot be told from the mark and is ignored while marked.
+- **Clean-up at the worker's start (only groups with our marker).** Any group that is not marked now and wears one of its
+  container's pulse colours while the container's own colour is different goes back to the container's colour, with groups on
+  (`normalise`, as for every taken-over group) or off (`clearLeftoverMark`). The glyphs `◉ ◎ ○` that 0.1.5-dev builds wrote are
+  still recognised for one release (`groupNameOf`, the whitespace-aware prefix, `hasLegacyMarkGlyph`, the sync refusal, so a container
+  name never starts with ⧉ ◉ ◎ ○) and are replaced by `⧉`; remove that after the release that follows 0.1.5. Lite never had
+  them: the regexes are under `__FULL__` and the Lite bundle contains none of ◉ ◎ ○.
+- **Tests.** Unit (`tab-groups.test.ts`, `restore.test.ts`): the pair choice, colour-only writes, alternation and timer,
+  echoes, rename and recolour while marked, the context captured at the event, both races, clean-up (colour and legacy glyph, with
+  groups on and off), `agentGroupColors`. e2e (`agent-activity.spec.ts`): the colour alternates between the pair on a collapsed
+  group with the title constant `⧉ name` throughout and the container unchanged, restore after the fade; red/orange for a
+  purple container and bridge off restores at once; a user recolour and a user rename while marked; setting off; clean-up after a
+  worker restart.
