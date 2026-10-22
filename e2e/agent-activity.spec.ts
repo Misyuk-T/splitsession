@@ -180,7 +180,16 @@ const containerNameNow = async (facet: Facet, id: string) =>
   (await facet.api<Array<{ id: string; name: string }>>("listContainers")).find(
     (c) => c.id === id,
   )?.name;
-/** Records every title the group is given from now on (the extension worker keeps the listener while it lives). */
+const containerColourNow = async (facet: Facet, id: string) =>
+  (
+    await facet.api<Array<{ id: string; color: string }>>("listContainers")
+  ).find((c) => c.id === id)?.color;
+const groupColourNow = async (facet: Facet, groupId: number) =>
+  (await facet.groupInfo(groupId))?.color ?? null;
+/** The title of a marked group: the glyph pulses between ◉ and ○. */
+const markedTitle = (name: string) =>
+  new RegExp(`^[◉○] ${name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`);
+/** Records every state (title without the marker, colour) the group is given from now on (the worker keeps the listener). */
 const recordTitles = (facet: Facet, groupId: number) =>
   facet.inWorker(async (id: number) => {
     const g = globalThis as any;
@@ -191,13 +200,19 @@ const recordTitles = (facet: Facet, groupId: number) =>
         /[\u2060-\u2064\u200b-\u200d]/g,
         "",
       );
-      const seen: string[] = g.__groupTitles;
-      if (group.id === id && seen.at(-1) !== t) seen.push(t);
+      const seen: Array<{ title: string; color: string }> = g.__groupTitles;
+      const last = seen.at(-1);
+      if (group.id === id && (last?.title !== t || last?.color !== group.color))
+        seen.push({ title: t, color: group.color });
     });
   }, groupId);
 const titlesSeen = (facet: Facet) =>
   facet.inWorker(
-    async () => (globalThis as any).__groupTitles as string[],
+    async () =>
+      (globalThis as any).__groupTitles as Array<{
+        title: string;
+        color: string;
+      }>,
     null,
   );
 
@@ -1503,7 +1518,7 @@ test.describe("visible agent activity", () => {
       .toBe(false);
     expect(await pageSees(page)).toMatchObject({ element: false });
   });
-  test("the group of a container tab shows ◉ while the agent works in it (collapsed too), once per change, the container name stays, and ⧉ comes back after the fade", async ({
+  test("the group of a container tab turns purple and its glyph pulses ◉ / ○ while the agent works in it (collapsed too); the container name and colour stay; ⧉ and the colour come back after the fade", async ({
     facet,
   }) => {
     const c = await facet.container("Grp");
@@ -1512,36 +1527,91 @@ test.describe("visible agent activity", () => {
     const page = await facet.openIn(c.name, at("a.localhost", "/agent"));
     const tabId = await facet.tabIdOf(page);
     const group = await groupOfTab(facet, tabId);
+    const own = await groupColourNow(facet, group);
+    expect(own).not.toBe("purple");
     expect(await facet.groupInfo(group)).toMatchObject({
       title: `⧉ ${c.name}`,
       marker: c.id,
     });
+    const containerColour = await containerColourNow(facet, c.id);
     await setCollapsed(facet, group, true);
     await recordTitles(facet, group);
 
-    // A burst of actions: one change to ◉, the name and the invisible marker untouched, the group still collapsed.
+    // A burst of actions: ◉ and the agent's colour in one change; name and invisible marker untouched; still collapsed.
     for (let i = 0; i < 3; i++) await mcp.call("get_tab_text", { tabId });
-    await expect.poll(() => groupTitleNow(facet, group)).toBe(`◉ ${c.name}`);
+    await expect
+      .poll(() => groupTitleNow(facet, group))
+      .toMatch(markedTitle(c.name));
+    expect(await groupColourNow(facet, group)).toBe("purple");
     expect(await facet.groupInfo(group)).toMatchObject({ marker: c.id });
     expect(await containerNameNow(facet, c.id)).toBe(c.name);
+    expect(await containerColourNow(facet, c.id)).toBe(containerColour);
     const info = await facet.inWorker(
       async (id: number) => (globalThis as any).chrome.tabGroups.get(id),
       group,
     );
     expect(info.collapsed).toBe(true);
     // The page's own title is not part of this.
-    expect(await page.title()).not.toContain("◉");
+    expect(await page.title()).not.toMatch(/[◉○]/);
 
-    // It ends with the toolbar dot (about 3.65 s after the last action), with a single change back.
+    // It pulses (the other half shows up within a second or two), the colour constant.
+    await expect
+      .poll(
+        async () => (await titlesSeen(facet)).map((e) => e.title[0]).join(""),
+        {
+          timeout: 5_000,
+        },
+      )
+      .toMatch(/◉.*○|○.*◉/);
+
+    // It ends with the toolbar dot (about 3.65 s after the last action): ⧉ and the container's colour, in one change.
     await expect
       .poll(() => groupTitleNow(facet, group), { timeout: 12_000 })
       .toBe(`⧉ ${c.name}`);
-    expect(await titlesSeen(facet)).toEqual([`◉ ${c.name}`, `⧉ ${c.name}`]);
+    expect(await groupColourNow(facet, group)).toBe(own);
+    const states = await titlesSeen(facet);
+    expect(states[0]).toEqual({ title: `◉ ${c.name}`, color: "purple" });
+    expect(states.at(-1)).toEqual({ title: `⧉ ${c.name}`, color: own });
+    const middle = states.slice(0, -1);
+    expect(middle.every((e) => e.color === "purple")).toBe(true); // constant during the pulse
+    middle.forEach((e, i) => expect(e.title[0]).toBe(i % 2 === 0 ? "◉" : "○")); // strictly alternating, one change per tick
     expect(await containerNameNow(facet, c.id)).toBe(c.name);
+    expect(await containerColourNow(facet, c.id)).toBe(containerColour);
     // Nothing comes back later (the echoes were not taken for an edit).
     await page.waitForTimeout(1_500);
     expect(await groupTitleNow(facet, group)).toBe(`⧉ ${c.name}`);
+    expect(await groupColourNow(facet, group)).toBe(own);
     expect(await containerNameNow(facet, c.id)).toBe(c.name);
+    expect(await containerColourNow(facet, c.id)).toBe(containerColour);
+  });
+
+  test("a purple container's group turns red instead; bridge off restores title and colour at once", async ({
+    facet,
+  }) => {
+    const c = await facet.api<{ id: string; name: string }>("createContainer", {
+      name: `Purp-${Date.now().toString(36)}`,
+      color: "purple",
+    });
+    await turnOn(facet);
+    mcp = await startMcp(facet);
+    const page = await facet.openIn(c.name, at("a.localhost", "/agent"));
+    const tabId = await facet.tabIdOf(page);
+    const group = await groupOfTab(facet, tabId);
+    expect(await groupColourNow(facet, group)).toBe("purple");
+    await mcp.call("get_tab_text", { tabId });
+    await expect
+      .poll(() => groupTitleNow(facet, group))
+      .toMatch(markedTitle(c.name));
+    expect(await groupColourNow(facet, group)).toBe("red");
+    expect(await containerColourNow(facet, c.id)).toBe("purple");
+    await facet.api("updateSettings", { agentBridge: false });
+    await expect
+      .poll(() => groupTitleNow(facet, group), { timeout: 2_000 })
+      .toBe(`⧉ ${c.name}`);
+    expect(await groupColourNow(facet, group)).toBe("purple");
+    expect(await containerColourNow(facet, c.id)).toBe("purple");
+    expect(await containerNameNow(facet, c.id)).toBe(c.name);
+    await facet.api("deleteContainer", c.id).catch(() => {});
   });
 
   test("a rename in Chrome's group editor while the mark is on renames the container, and the mark stays on the new name", async ({
@@ -1563,7 +1633,9 @@ test.describe("visible agent activity", () => {
       }
     })();
     try {
-      await expect.poll(() => groupTitleNow(facet, group)).toBe(`◉ ${c.name}`);
+      await expect
+        .poll(() => groupTitleNow(facet, group))
+        .toMatch(markedTitle(c.name));
       await facet.inWorker(
         async ([id, title]: [number, string]) =>
           (globalThis as any).chrome.tabGroups.update(id, { title }),
@@ -1572,10 +1644,10 @@ test.describe("visible agent activity", () => {
       await expect
         .poll(() => containerNameNow(facet, c.id), { timeout: 6_000 })
         .toBe(next);
-      expect(await facet.groupInfo(group)).toMatchObject({
-        title: `◉ ${next}`,
-        marker: c.id,
-      }); // not reverted to the old name, not to ⧉
+      await expect
+        .poll(() => groupTitleNow(facet, group))
+        .toMatch(markedTitle(next)); // not reverted to the old name, not to ⧉
+      expect(await facet.groupInfo(group)).toMatchObject({ marker: c.id });
     } finally {
       busy = false;
       await keepBusy;
@@ -1595,13 +1667,18 @@ test.describe("visible agent activity", () => {
     const page = await facet.openIn(c.name, at("a.localhost", "/agent"));
     const tabId = await facet.tabIdOf(page);
     const group = await groupOfTab(facet, tabId);
+    const own = await groupColourNow(facet, group);
 
     await mcp.call("get_tab_text", { tabId });
-    await expect.poll(() => groupTitleNow(facet, group)).toBe(`◉ ${c.name}`);
+    await expect
+      .poll(() => groupTitleNow(facet, group))
+      .toMatch(markedTitle(c.name));
+    expect(await groupColourNow(facet, group)).toBe("purple");
     await facet.api("updateSettings", { agentActivity: false });
     await expect
       .poll(() => groupTitleNow(facet, group), { timeout: 2_000 })
       .toBe(`⧉ ${c.name}`); // well before the fade would have ended it
+    expect(await groupColourNow(facet, group)).toBe(own);
 
     await mcp.call("get_tab_text", { tabId });
     await page.waitForTimeout(800);
@@ -1609,11 +1686,14 @@ test.describe("visible agent activity", () => {
 
     await facet.api("updateSettings", { agentActivity: true });
     await mcp.call("get_tab_text", { tabId });
-    await expect.poll(() => groupTitleNow(facet, group)).toBe(`◉ ${c.name}`);
+    await expect
+      .poll(() => groupTitleNow(facet, group))
+      .toMatch(markedTitle(c.name));
     await facet.api("updateSettings", { agentBridge: false });
     await expect
       .poll(() => groupTitleNow(facet, group), { timeout: 2_000 })
       .toBe(`⧉ ${c.name}`);
+    expect(await groupColourNow(facet, group)).toBe(own);
     expect(await containerNameNow(facet, c.id)).toBe(c.name);
   });
 
@@ -1646,7 +1726,9 @@ test.describe("visible agent activity", () => {
     await facet.tabIdOf(other);
     const group = await groupOfTab(facet, boxedId);
     await mcp.call("get_tab_text", { tabId: boxedId });
-    await expect.poll(() => groupTitleNow(facet, group)).toBe(`◉ ${c.name}`);
+    await expect
+      .poll(() => groupTitleNow(facet, group))
+      .toMatch(markedTitle(c.name));
     await facet.inWorker(
       async (id: number) => (globalThis as any).chrome.tabs.ungroup([id]),
       boxedId,
@@ -1657,7 +1739,7 @@ test.describe("visible agent activity", () => {
     expect(await containerNameNow(facet, c.id)).toBe(c.name);
   });
 
-  test("a ◉ left behind by a worker that died is cleaned up at the next start (by the invisible marker); a user's own ◉ group stays", async ({
+  test("a ◉ / ○ and the agent's colour left behind by a worker that died is cleaned up at the next start (by the invisible marker); a user's own ◉ group stays", async ({
     facet,
   }) => {
     const c = await facet.container("Left");
@@ -1674,18 +1756,22 @@ test.describe("visible agent activity", () => {
       },
       await facet.tabIdOf(mine),
     );
-    // What the dead worker left: the activity glyph on our group.
+    const own = await groupColourNow(facet, group);
+    // What the dead worker left: the activity glyph (here the hollow half) and the agent's colour on our group.
     await facet.inWorker(
       async ([id, title]: [number, string]) => {
         const chrome = (globalThis as any).chrome;
         const g = await chrome.tabGroups.get(id);
         await chrome.tabGroups.update(id, {
           title: String(g.title).replace(/^⧉/, title),
+          color: "purple",
         });
       },
-      [group, "◉"] as [number, string],
+      [group, "○"] as [number, string],
     );
-    await expect.poll(() => groupTitleNow(facet, group)).toBe(`◉ ${c.name}`);
+    await expect
+      .poll(() => groupTitleNow(facet, group))
+      .toMatch(markedTitle(c.name));
 
     await facet.stopServiceWorker(page);
     await openPopup(facet); // wakes the worker, which cleans up at its start
@@ -1693,6 +1779,7 @@ test.describe("visible agent activity", () => {
       .poll(() => groupTitleNow(facet, group), { timeout: 15_000 })
       .toBe(`⧉ ${c.name}`);
     expect(await facet.groupInfo(group)).toMatchObject({ marker: c.id });
+    expect(await groupColourNow(facet, group)).toBe(own);
     expect(await containerNameNow(facet, c.id)).toBe(c.name);
     expect(await facet.groupInfo(mineGroup)).toMatchObject({
       title: "◉ mine",

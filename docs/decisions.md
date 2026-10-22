@@ -1648,3 +1648,34 @@ Goal: a container tab that is not in its container's tab group (dragged out, or 
   the title the user's `onUpdated` event reported (`syncEdited(groupId, seen)`), not from a re-read of the group, so an
   overwritten edit is still applied (the container is renamed and the mark is written on the new name). Tests: both races
   (`tab-groups.test.ts`), the whitespace and second-glyph cases (`restore.test.ts`, `tab-groups.test.ts`).
+
+## The agent group mark gets the agent's colour and a pulse (2026-10-22)
+
+- **Request.** The `◉` alone was easy to miss. While the mark is on, the group takes the agent's colour and the glyph pulses.
+- **Decision.** (1) The group's colour becomes **purple**, or **red** when the container is purple (`agentGroupColor`,
+  `core/indicators.ts`), and the container's colour comes back at the end. (2) The glyph alternates `◉` and `○` once a second
+  (`PULSE_MS`), one title-only `tabGroups.update` per tick per marked group; the colour does not change during the pulse. The
+  start is one write (glyph and colour together), the end is one write (`⧉` and the colour). One `setInterval` in the
+  projection runs while some group is marked and is cleared when the last mark goes (also on group removal, container deletion
+  and "groups off"). Nothing is written when nothing differs.
+- **Echoes, now for the colour too.** A write is registered with the full state its echo must report (`applyGroup`'s `after`):
+  a title-only tick expects the colour the group had, so a recolour by the user between two ticks is not taken for our echo.
+  The quiet entries are consumed by `takeMarkEcho` (before the sync and the guard sweep), as before.
+- **User edits while marked.** The sync reads the colour from the user's event, like the title. An event that reports the
+  agent's colour is ours, not a choice (a colour the user picks that equals the mark colour cannot be told apart and is
+  ignored while marked; a purple container's mark is red, so picking red there is ignored the same way). Any other colour
+  recolours the container, `applyToGroups` writes the mark on top of it (the agent's colour is recomputed for the new container
+  colour), and the restore at the end uses the new container colour.
+- **Same race handling as the title.** Title and colour are read again right before the write; when either changed, the values
+  are worked out again from the new state. A user edit that slips in after that is not lost: the sync takes it from the event.
+- **Names.** `○` is a group glyph like `◉` and `⧉`: `groupNameOf`, the whitespace-aware glyph swap and `hasActiveGlyph` know it,
+  and the sync refuses a name that starts with any of the three.
+- **Clean-up at the worker's start.** `adoptExisting` puts `⧉` and the container's colour back on any of our groups (marker
+  present) that shows `◉` / `○`, also with groups off; for a deleted container only the title. User groups without the marker
+  stay as they are.
+- **Lite.** The `○` prefix, the pulse timer and the regexes are under `__FULL__`; the Lite bundle has neither glyph.
+- **Tests.** Unit: colour choice (purple / red), colour echo, title-only tick echo, user recolour while marked and the restore
+  colour, both races for the colour, the pulse (alternation, one title-only write per tick, timer stops), `○` in names, clean-up
+  of title and colour. e2e (`agent-activity.spec.ts`): purple and alternating glyph on a collapsed group, container name
+  and colour unchanged, restore after the fade; red for a purple container and bridge off restores at once; setting off;
+  leftover `○` and purple cleaned after a worker restart.

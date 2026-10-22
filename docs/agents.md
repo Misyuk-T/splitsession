@@ -314,15 +314,20 @@ toolbar badge's colour dot).
   change (SVG-icon pages too), so the tab strip animates. The toolbar button's dot of that tab **blinks** (about twice a second:
   purple and a lighter purple; on a container tab the container's colour and purple) for as long as the agent works with
   the tab and ~3.6 s after its last action; then the idle dot comes back. With "Show agent activity" off it does not blink.
-- **Tab group** (container tabs in a SplitSession group only): while the agent works in any tab of the group, the **group's**
-  title shows **"◉ name"** instead of "⧉ name" (the name and the invisible container marker are exactly as before), also when
-  the group is collapsed. It is set with the tab's first action and put back when the toolbar dot of the last active tab stops
-  blinking (the same timer, ~3.6 s after the last action; no second clock), when "Show agent activity" or the bridge is switched
-  off, when the tab leaves the group or closes, and when the group goes. One title change each way, however many actions come.
-  The change is not an edit: the container is not renamed by it and the tab-group guard ignores it; a rename the user makes
-  while the mark is on still renames the container, and the mark stays on the new name. If the worker dies while the mark is on,
-  the next start puts "⧉ " back (the invisible marker says the group is ours). Plain groups, groups SplitSession does not keep
-  and plain tabs get no mark. Full edition only (`group-activity.ts`, `TabGroupProjection.setActivity`).
+- **Tab group** (container tabs in a SplitSession group only): while the agent works in any tab of the group, the **group**
+  turns **purple** (the agent's colour; **red** when the container is purple itself) and its title glyph **pulses**
+  "◉ name" / "○ name" once a second instead of "⧉ name" (the name and the invisible container marker are exactly as before),
+  also when the group is collapsed. Writes: one for the start (glyph and colour together), one per tick (the glyph only,
+  the colour stays), one at the end (glyph and the container's colour back). It starts with the tab's first action and ends
+  when the toolbar dot of the last active tab stops blinking (the same timer, ~3.6 s after the last action; no second clock),
+  when "Show agent activity" or the bridge is switched off, when the tab leaves the group or closes, and when the group goes.
+  The pulse timer runs only while some group is marked. The changes are not edits: the container is not renamed or recoloured
+  by them and the tab-group guard ignores them; a rename or a recolour the user makes while the mark is on still syncs to the
+  container, the mark stays on top, and the end restores the container's new colour. A colour the user picks that equals the
+  mark's own colour is indistinguishable from it and is ignored while the mark is on. If the worker dies while the mark is
+  on, the next start puts "⧉ " and the container's colour back (the invisible marker says the group is ours). Plain groups,
+  groups SplitSession does not keep and plain tabs get no mark. Full edition only (`group-activity.ts`,
+  `TabGroupProjection.setActivity`).
 - **While the bridge is on**, plain tabs show a small **purple dot** on the toolbar button (idle, steady); container tabs keep
   their container-colour dot. With the bridge off there is no purple dot at all. The button's tooltip says the agent has full access.
 - `list_tabs`, `list_containers` and `bridge_info` touch no specific tab: popup counter and list only.
