@@ -9,9 +9,9 @@ import {
 } from "../core";
 import { MemoryStorageArea } from "../engine/storage/storage-area";
 import {
+  BLINK_MS,
   type GroupTab,
   OWNED_GROUPS_KEY,
-  PULSE_MS,
   TabGroupProjection,
 } from "./tab-groups";
 
@@ -830,8 +830,10 @@ describe("TabGroupProjection", () => {
       expect(chrome.tabs.get(2)!.groupId).toBe(-1);
     });
   });
-  describe("agent-activity mark on the group colour (Full)", () => {
+  describe("agent-activity mark on the group title (Full)", () => {
     afterEach(() => vi.useRealTimers());
+    const ON = "🟣";
+    const OFF = "⚪";
 
     async function marked(settings: Partial<Settings> = {}) {
       const t = setup(settings);
@@ -866,14 +868,15 @@ describe("TabGroupProjection", () => {
       return { ...t, gid, updates, title, color, deliver, slowSettle };
     }
 
-    it("the group's colour becomes the agent's purple and the container's colour comes back; the title is never written; one write each way", async () => {
+    it("the glyph becomes 🟣 while the agent works and ⧉ again after; name, marker and colour stay; the colour is never written; one title-only write each way", async () => {
       const { projection, gid, updates, title, color, book } = await marked();
-      const idle = groupTitle("Work", "work");
       await projection.setActivity(gid(1), true);
-      expect(color(1)).toBe("purple");
-      expect(title(1)).toBe(idle);
+      expect(title(1)).toBe(groupTitle("Work", "work", 0));
+      expect(title(1)!.startsWith(`${ON} Work`)).toBe(true);
+      expect(decodeGroupMarker(title(1))).toBe("work");
+      expect(color(1)).toBe("blue");
       expect(updates).toHaveLength(1);
-      expect(updates[0]!.props).toEqual({ color: "purple" }); // colour only
+      expect(updates[0]!.props).toEqual({ title: title(1) });
       // A burst of actions and a repeat change nothing.
       await Promise.all([
         projection.setActivity(gid(1), true),
@@ -881,89 +884,43 @@ describe("TabGroupProjection", () => {
         projection.setActivity(gid(1), true),
       ]);
       expect(updates).toHaveLength(1);
-      expect(color(3)).toBe("cyan"); // another container's group is untouched
+      expect(title(3)).toBe(groupTitle("Home", "home")); // another container's group is untouched
 
       await projection.setActivity(gid(1), false);
-      expect(color(1)).toBe("blue");
-      expect(title(1)).toBe(idle);
+      expect(title(1)).toBe(groupTitle("Work", "work"));
       await projection.setActivity(gid(1), false);
       expect(updates).toHaveLength(2);
-      expect(updates[1]!.props).toEqual({ color: "blue" });
-      expect(decodeGroupMarker(title(1))).toBe("work");
+      expect(updates[1]!.props).toEqual({ title: groupTitle("Work", "work") });
+      expect(color(1)).toBe("blue");
       expect(book.get("work")).toMatchObject({ name: "Work", color: "blue" });
     });
 
-    it("the pair is purple / pink, and red / orange for a purple or pink container", async () => {
-      const { projection, gid, book, color } = await marked();
-      const pairOf = async (container: string, tab: number, c: string) => {
-        const cont = book.get(container)!;
-        cont.color = c as never;
-        await projection.containerUpdated(cont);
-        vi.useFakeTimers();
-        await projection.setActivity(gid(tab), true);
-        const first = color(tab);
-        await vi.advanceTimersByTimeAsync(PULSE_MS);
-        const second = color(tab);
-        await projection.setActivity(gid(tab), false);
-        vi.useRealTimers();
-        return [first, second, color(tab)];
-      };
-      expect(await pairOf("work", 1, "blue")).toEqual([
-        "purple",
-        "pink",
-        "blue",
-      ]);
-      expect(await pairOf("work", 1, "turquoise")).toEqual([
-        "purple",
-        "pink",
-        "cyan",
-      ]);
-      expect(await pairOf("work", 1, "purple")).toEqual([
-        "red",
-        "orange",
-        "purple",
-      ]);
-      expect(await pairOf("work", 1, "pink")).toEqual([
-        "red",
-        "orange",
-        "pink",
-      ]);
-      expect(await pairOf("work", 1, "red")).toEqual(["purple", "pink", "red"]);
-    });
-
-    it("the colour alternates every PULSE_MS with one colour-only write per tick; the title stays; the timer stops with the mark", async () => {
+    it("the glyph blinks 🟣 ⚪ every BLINK_MS with one title-only write per tick; the colour is never written; the timer stops with the mark", async () => {
       vi.useFakeTimers();
       const { projection, gid, updates, title, color, book } = await marked();
-      const idle = groupTitle("Work", "work");
       expect(vi.getTimerCount()).toBe(0);
       await projection.setActivity(gid(1), true);
       expect(vi.getTimerCount()).toBe(1);
-      expect(PULSE_MS).toBeLessThanOrEqual(700);
-      await vi.advanceTimersByTimeAsync(PULSE_MS - 50);
+      expect(BLINK_MS).toBeLessThanOrEqual(700);
+      await vi.advanceTimersByTimeAsync(BLINK_MS - 50);
       expect(updates).toHaveLength(1); // no tick yet: no write
-      const seen: string[] = [color(1)!];
+      const seen: string[] = [title(1)![0]! + title(1)![1]!];
       for (let i = 0; i < 6; i++) {
-        await vi.advanceTimersByTimeAsync(i === 0 ? 50 : PULSE_MS);
-        seen.push(color(1)!);
+        await vi.advanceTimersByTimeAsync(i === 0 ? 50 : BLINK_MS);
+        seen.push([...title(1)!][0]!);
       }
-      expect(seen).toEqual([
-        "purple",
-        "pink",
-        "purple",
-        "pink",
-        "purple",
-        "pink",
-        "purple",
-      ]);
+      expect(seen[0]).toBe(ON);
+      expect(seen.slice(1)).toEqual([OFF, ON, OFF, ON, OFF, ON]);
       expect(updates).toHaveLength(7); // the start and one write per tick
-      for (const u of updates) expect(Object.keys(u.props)).toEqual(["color"]);
-      expect(title(1)).toBe(idle); // never touched, so the chip keeps its width
+      for (const u of updates) expect(Object.keys(u.props)).toEqual(["title"]);
+      expect(color(1)).toBe("blue");
       expect(book.get("work")).toMatchObject({ name: "Work", color: "blue" });
+      expect(decodeGroupMarker(title(1))).toBe("work");
       // Another marked group shares the timer; each ends on its own.
       await projection.setActivity(gid(3), true);
       expect(vi.getTimerCount()).toBe(1);
       await projection.setActivity(gid(1), false);
-      expect(color(1)).toBe("blue");
+      expect(title(1)).toBe(groupTitle("Work", "work"));
       expect(vi.getTimerCount()).toBe(1);
       await projection.setActivity(gid(3), false);
       expect(vi.getTimerCount()).toBe(0);
@@ -972,12 +929,12 @@ describe("TabGroupProjection", () => {
       expect(updates).toHaveLength(count); // nothing more is written
     });
 
-    it("our colour writes are quiet echoes: nothing recolours or renames the container, nothing reaches the guard", async () => {
+    it("our own writes are quiet echoes: nothing renames the container, nothing reaches the guard", async () => {
       vi.useFakeTimers();
       const { projection, gid, book, deliver, updates } = await marked();
       await projection.setActivity(gid(1), true);
       expect(await deliver(1)).toBe("dropped");
-      await vi.advanceTimersByTimeAsync(PULSE_MS);
+      await vi.advanceTimersByTimeAsync(BLINK_MS);
       expect(await deliver(1)).toBe("dropped"); // a tick
       await projection.setActivity(gid(1), false);
       expect(await deliver(1)).toBe("dropped");
@@ -987,7 +944,6 @@ describe("TabGroupProjection", () => {
     });
 
     it("the echo of a write is the echo only while title and colour are what we wrote: a recolour or a rename meanwhile is an edit", async () => {
-      vi.useFakeTimers();
       const { projection, chrome, gid } = await marked();
       await projection.setActivity(gid(1), true);
       const group = { ...chrome.groups.get(gid(1))! };
@@ -996,168 +952,70 @@ describe("TabGroupProjection", () => {
       expect(projection.takeMarkEcho(group)).toBe(true);
     });
 
-    it("a rename by the user while marked renames the container; the title is the idle one with the new name, the colour still pulses", async () => {
-      const { projection, chrome, gid, title, color, book, deliver } =
-        await marked();
+    it("a rename by the user while marked renames the container, and the mark stays on the new name", async () => {
+      const { projection, chrome, gid, title, book, deliver } = await marked();
       await projection.setActivity(gid(1), true);
       await deliver(1);
-      chrome.groups.get(gid(1))!.title = `⧉ Job${groupMarker("work")}`;
+      chrome.groups.get(gid(1))!.title = `${ON} Job${groupMarker("work")}`;
       expect(await deliver(1)).toBe("synced");
-      expect(book.get("work")).toMatchObject({ name: "Job", color: "blue" });
-      expect(title(1)).toBe(groupTitle("Job", "work"));
-      expect(title(2)).toBe(groupTitle("Job", "work"));
-      expect(["purple", "pink"]).toContain(color(1));
+      expect(book.get("work")!.name).toBe("Job");
+      expect(title(1)).toBe(groupTitle("Job", "work", 0)); // not reverted to the old name, not to ⧉
+      expect(title(2)).toBe(groupTitle("Job", "work", 0)); // the other window follows
       await projection.setActivity(gid(1), false);
-      expect(color(1)).toBe("blue");
-      expect(title(1)).toBe(groupTitle("Job", "work"));
+      expect(title(1)).toBe(groupTitle("Job", "work")); // the restore keeps the new name
+      expect(book.get("work")!.name).toBe("Job");
     });
 
-    it("a container renamed elsewhere (popup) while marked keeps the colour mark on its groups", async () => {
-      const { projection, gid, title, color, book } = await marked();
+    it("a name typed without glyph and marker while marked is accepted, the title comes back marked", async () => {
+      const { projection, chrome, gid, title, book, deliver } = await marked();
+      await projection.setActivity(gid(1), true);
+      chrome.groups.get(gid(1))!.title = "Job two";
+      await deliver(1);
+      expect(book.get("work")!.name).toBe("Job two");
+      expect(title(1)).toBe(groupTitle("Job two", "work", 0));
+    });
+
+    it("a container renamed elsewhere (popup) while marked keeps the mark on its groups", async () => {
+      const { projection, gid, title, book } = await marked();
       await projection.setActivity(gid(1), true);
       const work = book.get("work")!;
       work.name = "Work 2";
       await projection.containerUpdated(work);
+      expect(title(1)).toBe(groupTitle("Work 2", "work", 0));
+      await projection.setActivity(gid(1), false);
       expect(title(1)).toBe(groupTitle("Work 2", "work"));
-      expect(["purple", "pink"]).toContain(color(1));
-      await projection.setActivity(gid(1), false);
-      expect(color(1)).toBe("blue");
     });
 
-    it("a recolour by the user while marked recolours the container; the mark stays on top, and the restore uses the new colour", async () => {
-      const { projection, chrome, gid, book, color, deliver } = await marked();
-      await projection.setActivity(gid(1), true);
-      chrome.groups.get(gid(1))!.color = "red"; // the user picks red in Chrome's menu
-      expect(await deliver(1)).toBe("synced");
-      expect(book.get("work")!.color).toBe("red");
-      expect(["purple", "pink"]).toContain(color(1)); // still the agent's colours while it works
-      expect(["purple", "pink"]).toContain(color(2)); // the other window of the container follows
-      await projection.setActivity(gid(1), false);
-      expect(color(1)).toBe("red");
-      expect(color(2)).toBe("red");
-      expect(book.get("work")!.color).toBe("red");
-    });
-
-    it("a colour equal to either pulse colour, received while marked, is never the user's choice; any other colour is", async () => {
-      for (const pulse of ["purple", "pink"]) {
-        const { projection, chrome, gid, book } = await marked();
-        await projection.setActivity(gid(1), true);
-        await projection.groupUpdated({
-          id: gid(1),
-          title: chrome.groups.get(gid(1))!.title,
-          color: pulse,
-        });
-        await projection.idle();
-        expect(book.get("work")!.color).toBe("blue");
-      }
-      const { projection, chrome, gid, book } = await marked();
-      await projection.setActivity(gid(1), true);
-      await projection.groupUpdated({
-        id: gid(1),
-        title: chrome.groups.get(gid(1))!.title,
-        color: "orange",
-      });
-      await projection.idle();
-      expect(book.get("work")!.color).toBe("orange");
-    });
-
-    it("the pair is worked out again when the container's colour changes while marked, and the restore uses that colour", async () => {
-      const { projection, gid, book, color } = await marked();
-      await projection.setActivity(gid(1), true);
-      const work = book.get("work")!;
-      work.color = "purple" as never; // the popup, or a recolour synced from another group
-      await projection.containerUpdated(work);
-      expect(["red", "orange"]).toContain(color(1));
-      await projection.setActivity(gid(1), false);
-      expect(color(1)).toBe("purple");
-    });
-
-    it("a rename or a recolour made while marked, settled after the mark ended, keeps the container's real colour (a pulse colour is not saved into it)", async () => {
-      for (const pulse of ["purple", "pink"]) {
-        const { projection, chrome, gid, book, title, color, slowSettle } =
+    it("a recolour by the user while marked simply syncs, whatever the colour (purple and pink included): the group keeps what the user picked", async () => {
+      for (const picked of ["red", "purple", "pink", "orange"]) {
+        const { projection, chrome, gid, book, color, title, deliver } =
           await marked();
-        slowSettle();
         await projection.setActivity(gid(1), true);
-        const event = {
-          id: gid(1),
-          title: `⧉ Job${groupMarker("work")}`,
-          color: pulse,
-        };
-        chrome.groups.get(gid(1))!.title = event.title;
-        const pending = projection.groupUpdated(event);
-        await projection.setActivity(gid(1), false); // the mark ends before the pause is over
-        await pending;
-        await projection.idle();
-        expect(book.get("work")).toMatchObject({ name: "Job", color: "blue" });
-        expect(color(1)).toBe("blue");
-        expect(title(1)).toBe(groupTitle("Job", "work"));
+        chrome.groups.get(gid(1))!.color = picked;
+        expect(await deliver(1)).toBe("synced");
+        expect(book.get("work")!.color).toBe(picked);
+        expect(color(1)).toBe(picked); // nothing writes the colour back
+        expect(color(2)).toBe(picked); // the other window follows
+        expect(title(1)).toBe(groupTitle("Work", "work", 0)); // the mark stays
+        await projection.setActivity(gid(1), false);
+        expect(color(1)).toBe(picked);
       }
     });
 
-    it("a colour picked while NOT marked is the user's, even if the mark starts before the pause is over", async () => {
-      const { projection, chrome, gid, book, slowSettle } = await marked();
-      slowSettle();
-      chrome.groups.get(gid(1))!.color = "purple";
-      const pending = projection.groupUpdated({
-        id: gid(1),
-        title: chrome.groups.get(gid(1))!.title,
-        color: "purple",
-      });
+    it("a user edit that lands between the set and the restore is not lost to the restore (the glyph is swapped on the live title)", async () => {
+      const { projection, chrome, gid, title } = await marked();
       await projection.setActivity(gid(1), true);
-      await pending;
-      await projection.idle();
-      expect(book.get("work")!.color).toBe("purple");
+      chrome.groups.get(gid(1))!.title = `${ON} Typing${groupMarker("work")}`; // not synced yet
+      await projection.setActivity(gid(1), false);
+      expect(title(1)).toBe(`⧉ Typing${groupMarker("work")}`);
     });
 
-    it("a recolour that lands between the read and the write is worked out again; one that beats the write by a hair is read from the user's event", async () => {
-      const a = await marked();
-      const g = a.gid(1);
-      const real = a.chrome.api.tabGroups.get;
-      let reads = 0;
-      a.chrome.api.tabGroups.get = async (id: number) => {
-        const out = await real(id);
-        if (id === g && ++reads === 1) a.chrome.groups.get(g)!.color = "green";
-        return out;
-      };
-      await a.projection.setActivity(g, true);
-      a.chrome.api.tabGroups.get = real;
-      expect(a.color(1)).toBe("purple");
-      await a.projection.groupUpdated({
-        ...a.chrome.groups.get(g)!,
-        color: "green",
-      }); // the user's event
-      await a.projection.idle();
-      expect(a.book.get("work")!.color).toBe("green");
-      await a.projection.setActivity(g, false);
-      expect(a.color(1)).toBe("green");
-
-      const b = await marked();
-      const g2 = b.gid(1);
-      const update = b.chrome.api.tabGroups.update;
-      b.chrome.api.tabGroups.update = async (id: number, props: object) => {
-        b.chrome.groups.get(id)!.color = "green"; // the user's write lands first, ours on top of it
-        return update(id, props);
-      };
-      await b.projection.setActivity(g2, true);
-      b.chrome.api.tabGroups.update = update;
-      expect(b.color(1)).toBe("purple");
-      await b.projection.groupUpdated({
-        id: g2,
-        title: b.title(1),
-        color: "green",
-      });
-      await b.projection.idle();
-      expect(b.book.get("work")!.color).toBe("green");
-      await b.projection.setActivity(g2, false);
-      expect(b.color(1)).toBe("green");
-    });
-
-    it("a rename that lands between the read and the write is never overwritten (the title is not written at all) and the sync reads it from the event", async () => {
-      const { projection, chrome, gid, title, color, book } = await marked();
+    it("a rename that lands between the read and the write of the mark is not overwritten: the swap is worked out again from the new title", async () => {
+      const { projection, chrome, gid, title, book } = await marked();
       const g = gid(1);
       const real = chrome.api.tabGroups.get;
-      const user = `⧉ Job${groupMarker("work")}`;
       let reads = 0;
+      const user = `⧉ Job${groupMarker("work")}`;
       chrome.api.tabGroups.get = async (id: number) => {
         const out = await real(id);
         if (id === g && ++reads === 1) chrome.groups.get(g)!.title = user;
@@ -1165,12 +1023,98 @@ describe("TabGroupProjection", () => {
       };
       await projection.setActivity(g, true);
       chrome.api.tabGroups.get = real;
-      expect(title(1)).toBe(user);
-      expect(color(1)).toBe("purple");
+      expect(title(1)).toBe(groupTitle("Job", "work", 0)); // the user's name, with the mark on top
       await projection.groupUpdated({ id: g, title: user, color: "blue" });
       await projection.idle();
       expect(book.get("work")!.name).toBe("Job");
+      expect(title(1)).toBe(groupTitle("Job", "work", 0));
+    });
+
+    it("a rename that beats the mark's write by a hair is overwritten in Chrome but not lost: the sync reads the user's title from their event", async () => {
+      const { projection, chrome, gid, title, book } = await marked();
+      const g = gid(1);
+      const real = chrome.api.tabGroups.update;
+      const user = `⧉ Job${groupMarker("work")}`;
+      chrome.api.tabGroups.update = async (id: number, props: object) => {
+        chrome.groups.get(id)!.title = user; // the user's write lands first ...
+        return real(id, props); // ... and the mark's, worked out from the old title, lands on top of it
+      };
+      await projection.setActivity(g, true);
+      chrome.api.tabGroups.update = real;
+      expect(title(1)).toBe(groupTitle("Work", "work", 0)); // the stale write won in Chrome
+      await projection.groupUpdated({ id: g, title: user, color: "blue" });
+      await projection.idle();
+      expect(book.get("work")!.name).toBe("Job");
+      expect(title(1)).toBe(groupTitle("Job", "work", 0));
+      expect(title(2)).toBe(groupTitle("Job", "work", 0));
+      await projection.setActivity(g, false);
       expect(title(1)).toBe(groupTitle("Job", "work"));
+    });
+
+    it("a recolour that lands between the read and the write of the mark is not undone by it; the sync takes it from the event", async () => {
+      const { projection, chrome, gid, book, color, title } = await marked();
+      const g = gid(1);
+      const real = chrome.api.tabGroups.get;
+      let reads = 0;
+      chrome.api.tabGroups.get = async (id: number) => {
+        const out = await real(id);
+        if (id === g && ++reads === 1) chrome.groups.get(g)!.color = "green";
+        return out;
+      };
+      await projection.setActivity(g, true);
+      chrome.api.tabGroups.get = real;
+      expect(color(1)).toBe("green");
+      expect(title(1)).toBe(groupTitle("Work", "work", 0));
+      // The user's own event (the title as it was before the mark's write, their colour); the mark's echo is a separate event.
+      await projection.groupUpdated({
+        id: g,
+        title: groupTitle("Work", "work"),
+        color: "green",
+      });
+      await projection.idle();
+      expect(book.get("work")!.color).toBe("green");
+    });
+
+    it("🟣 ⚪ (with or without U+FE0F, with spaces or none) ◉ ◎ ○ in a typed title never reach the container name; a second glyph is refused", async () => {
+      for (const typed of [
+        `${ON} Job`,
+        ` ${ON}Job`,
+        `${OFF} Job`,
+        `${OFF}️ Job`,
+        `  ${OFF}️Job`,
+        "◉ Job",
+        " ◎Job",
+        "○ Job",
+      ]) {
+        for (const active of [true, false]) {
+          const { projection, chrome, gid, book, title } = await marked();
+          if (active) await projection.setActivity(gid(1), true);
+          const event = {
+            id: gid(1),
+            title: `${typed}${groupMarker("work")}`,
+            color: "blue",
+          };
+          chrome.groups.get(gid(1))!.title = event.title;
+          await projection.groupUpdated(event);
+          await projection.idle();
+          expect(book.get("work")!.name).toBe("Job");
+          expect(title(1)).toBe(groupTitle("Job", "work", active ? 0 : false));
+        }
+      }
+      const { projection, chrome, gid, book, logs } = await marked();
+      const event = {
+        id: gid(1),
+        title: `${ON} ${OFF} Job${groupMarker("work")}`,
+        color: "blue",
+      };
+      chrome.groups.get(gid(1))!.title = event.title;
+      await projection.groupUpdated(event);
+      await projection.idle();
+      expect(book.get("work")!.name).toBe("Work");
+      expect(chrome.groups.get(gid(1))!.title).toBe(groupTitle("Work", "work"));
+      expect(
+        logs.some(([l, m]) => l === "warn" && /rename refused/.test(m)),
+      ).toBe(true);
     });
 
     it("never marks a group SplitSession does not keep: a user's group, an unknown id, or any group with groups off", async () => {
@@ -1191,17 +1135,19 @@ describe("TabGroupProjection", () => {
       await t.projection.setActivity(71, true);
       await t.projection.setActivity(999, true);
       expect(t.updates).toEqual([]);
-      expect(t.chrome.groups.get(70)).toMatchObject({
-        title: "Plain",
-        color: "red",
-      });
-      expect(t.chrome.groups.get(71)).toMatchObject({
-        title: "⧉ fake",
-        color: "red",
-      });
+      expect(t.chrome.groups.get(70)!.title).toBe("Plain");
+      expect(t.chrome.groups.get(71)!.title).toBe("⧉ fake");
       t.state.tabGroups = false;
       await t.projection.setActivity(t.gid(1), true);
       expect(t.updates).toEqual([]);
+    });
+
+    it("a title the user retyped without the marker is not edited by the mark", async () => {
+      const { projection, chrome, gid, updates } = await marked();
+      chrome.groups.get(gid(1))!.title = "Mine";
+      await projection.setActivity(gid(1), true);
+      expect(updates).toEqual([]);
+      expect(chrome.groups.get(gid(1))!.title).toBe("Mine");
     });
 
     it("a removed group or a deleted container stops the timer; a removed group is not restored", async () => {
@@ -1219,8 +1165,7 @@ describe("TabGroupProjection", () => {
       await projection.setActivity(gid(1), true);
       await projection.containerDeleted("work");
       expect(vi.getTimerCount()).toBe(0);
-      const g1 = gid(2);
-      await projection.setActivity(g1, true); // no longer owned: ignored
+      await projection.setActivity(gid(2), true); // no longer owned: ignored
       expect(vi.getTimerCount()).toBe(0);
     });
 
@@ -1232,45 +1177,6 @@ describe("TabGroupProjection", () => {
       await projection.releaseAll();
       expect(vi.getTimerCount()).toBe(0);
       await projection.setActivity(g, false);
-    });
-
-    describe("glyphs left by 0.1.5-dev builds", () => {
-      const legacy = (glyph: string, name: string, id: string) =>
-        `${glyph} ${name}${groupMarker(id)}`;
-
-      it("◉ ◎ ○ in a typed title, with spaces or without, never reach the container name; a second glyph is refused", async () => {
-        for (const typed of ["○ Job", " ○Job", "◉ Job", "◎ Job", "  ◎Job"]) {
-          const { projection, chrome, gid, book } = await marked();
-          const event = {
-            id: gid(1),
-            title: `${typed}${groupMarker("work")}`,
-            color: "blue",
-          };
-          chrome.groups.get(gid(1))!.title = event.title;
-          await projection.groupUpdated(event);
-          await projection.idle();
-          expect(book.get("work")!.name).toBe("Job");
-          expect(chrome.groups.get(gid(1))!.title).toBe(
-            groupTitle("Job", "work"),
-          );
-        }
-        const { projection, chrome, gid, book, logs } = await marked();
-        const event = {
-          id: gid(1),
-          title: legacy("○", "◎ Job", "work"),
-          color: "blue",
-        };
-        chrome.groups.get(gid(1))!.title = event.title;
-        await projection.groupUpdated(event);
-        await projection.idle();
-        expect(book.get("work")!.name).toBe("Work");
-        expect(chrome.groups.get(gid(1))!.title).toBe(
-          groupTitle("Work", "work"),
-        );
-        expect(
-          logs.some(([l, m]) => l === "warn" && /rename refused/.test(m)),
-        ).toBe(true);
-      });
     });
 
     async function restarted(
@@ -1306,45 +1212,51 @@ describe("TabGroupProjection", () => {
       await startup.adoptExisting();
       return { chrome, startup };
     }
+    const leftover = (glyph: string, name: string, id: string) =>
+      `${glyph} ${name}${groupMarker(id)}`;
 
-    it("a colour left by a worker that died while marked is put back at the next start (our groups only); legacy glyphs go too", async () => {
-      const { chrome } = await restarted([
-        { id: 50, title: groupTitle("Work", "work"), color: "pink" }, // pulse colour, container is blue
-        { id: 51, title: groupTitle("Home", "home"), color: "purple" },
-        { id: 52, title: "Mine", color: "purple" }, // the user's own: no marker
-        { id: 53, title: `◉ Work${groupMarker("work")}`, color: "purple" }, // a 0.1.5-dev build's leftover
-        { id: 54, title: `○ Home${groupMarker("home")}`, color: "cyan" },
+    it("a mark left by a worker that died (a blink emoji, or a ◉ ◎ ○ of 0.1.5-dev) is cleaned at the next start, by the invisible marker", async () => {
+      const { chrome, startup } = await restarted([
+        { id: 50, title: leftover(ON, "Work", "work") },
+        { id: 51, title: leftover(OFF, "Home", "home"), color: "cyan" },
+        { id: 52, title: leftover("◉", "Work", "work") },
+        { id: 53, title: leftover("○", "Home", "home"), color: "cyan" },
+        { id: 54, title: leftover(`${OFF}️`, "Work", "work") },
+        { id: 55, title: `${ON} looks like ours` }, // no marker: the user's own
       ]);
-      expect(chrome.groups.get(50)).toMatchObject({
-        title: groupTitle("Work", "work"),
-        color: "blue",
-      });
-      expect(chrome.groups.get(51)).toMatchObject({
-        title: groupTitle("Home", "home"),
-        color: "cyan",
-      });
-      expect(chrome.groups.get(52)).toMatchObject({
+      for (const id of [50, 52, 54])
+        expect(chrome.groups.get(id)!.title).toBe(groupTitle("Work", "work"));
+      for (const id of [51, 53])
+        expect(chrome.groups.get(id)!.title).toBe(groupTitle("Home", "home"));
+      expect(chrome.groups.get(55)!.title).toBe(`${ON} looks like ours`);
+      expect(startup.ownedGroups().map(([id]) => id)).toEqual([
+        50, 51, 52, 53, 54,
+      ]);
+    });
+
+    it("0.1.6's stuck pulse colour goes back to the container's colour at the next start (also red and orange for a purple or pink container)", async () => {
+      const { chrome } = await restarted([
+        { id: 50, title: groupTitle("Work", "work"), color: "purple" },
+        { id: 51, title: groupTitle("Work", "work"), color: "pink" },
+        { id: 52, title: groupTitle("Home", "home"), color: "purple" },
+        { id: 53, title: "Mine", color: "purple" }, // the user's own: no marker
+      ]);
+      expect(chrome.groups.get(50)!.color).toBe("blue");
+      expect(chrome.groups.get(51)!.color).toBe("blue");
+      expect(chrome.groups.get(52)!.color).toBe("cyan");
+      expect(chrome.groups.get(53)).toMatchObject({
         title: "Mine",
         color: "purple",
       });
-      expect(chrome.groups.get(53)).toMatchObject({
-        title: groupTitle("Work", "work"),
-        color: "blue",
-      });
-      expect(chrome.groups.get(54)).toMatchObject({
-        title: groupTitle("Home", "home"),
-        color: "cyan",
-      });
     });
 
-    it("the cleanup also runs with groups off: pulse colour back, legacy glyph to ⧉; a container's own colour, a non-pulse colour and user groups stay", async () => {
+    it("the cleanup also runs with groups off: glyph back to ⧉, a pulse colour that is not the container's back; other colours, user groups and a deleted container's colour stay", async () => {
       const { chrome } = await restarted(
         [
-          { id: 50, title: groupTitle("Work", "work"), color: "purple" },
+          { id: 50, title: leftover(ON, "Work", "work"), color: "purple" },
           { id: 51, title: groupTitle("Work", "work"), color: "green" }, // not a pulse colour: the user's choice
-          { id: 52, title: `◎ Work${groupMarker("work")}`, color: "blue" },
-          { id: 53, title: `◉ Old${groupMarker("deleted")}`, color: "purple" }, // deleted container: title only
-          { id: 54, title: "○ mine", color: "purple" },
+          { id: 52, title: leftover(OFF, "Old", "deleted"), color: "purple" }, // deleted container: title only
+          { id: 53, title: `${OFF} mine`, color: "pink" },
         ],
         false,
       );
@@ -1354,16 +1266,12 @@ describe("TabGroupProjection", () => {
       });
       expect(chrome.groups.get(51)).toMatchObject({ color: "green" });
       expect(chrome.groups.get(52)).toMatchObject({
-        title: groupTitle("Work", "work"),
-        color: "blue",
-      });
-      expect(chrome.groups.get(53)).toMatchObject({
         title: groupTitle("Old", "deleted"),
         color: "purple",
       });
-      expect(chrome.groups.get(54)).toMatchObject({
-        title: "○ mine",
-        color: "purple",
+      expect(chrome.groups.get(53)).toMatchObject({
+        title: `${OFF} mine`,
+        color: "pink",
       });
     });
 
@@ -1374,7 +1282,7 @@ describe("TabGroupProjection", () => {
       ]);
       await startup.setActivity(50, true);
       await startup.adoptExisting();
-      expect(["purple", "pink"]).toContain(chrome.groups.get(50)!.color);
+      expect(chrome.groups.get(50)!.title).toBe(groupTitle("Work", "work", 0));
       await startup.setActivity(50, false);
     });
   });

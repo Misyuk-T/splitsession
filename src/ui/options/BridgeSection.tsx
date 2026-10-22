@@ -104,11 +104,10 @@ const AgentSwitches = () => {
             While the agent reads or works in a tab, that tab shows it: a
             glowing frame and a small “Agent: reading” label on the page, a ring
             of purple dots on the tab’s icon, the dot on the toolbar button
-            blinks, and its container’s tab group pulses between purple and pink
-            (red and orange for a purple or pink container), also when the group
-            is collapsed. All of it fades a few seconds after the last action
-            and never takes focus or switches tabs. Pages cannot read or click
-            it.
+            blinks, and the ⧉ in front of its container’s tab group name blinks
+            between 🟣 and ⚪, also when the group is collapsed. All of it fades
+            a few seconds after the last action and never takes focus or
+            switches tabs. Pages cannot read or click it.
           </p>
           <p>Off: nothing is shown or changed on your tabs.</p>
         </More>
