@@ -7,7 +7,6 @@ import {
   createSequentialAllocator,
 } from "./dnr/rule-compiler";
 import { CookieJar } from "./jar/cookie-jar";
-import { agentGroupColors } from "./indicators";
 import {
   AGENT_MARK_GLYPHS,
   associateSessions,
@@ -121,14 +120,6 @@ describe("group-title marker", () => {
       expect(startsWithGroupGlyph(name)).toBe(true);
     for (const name of ["Job", "Job 🟣", "", "🔵 Job"])
       expect(startsWithGroupGlyph(name)).toBe(false);
-  });
-
-  it("the agent's colours: purple and pink, red and orange for a purple or pink container", () => {
-    expect(agentGroupColors("blue")).toEqual(["purple", "pink"]);
-    expect(agentGroupColors("turquoise")).toEqual(["purple", "pink"]);
-    expect(agentGroupColors("red")).toEqual(["purple", "pink"]);
-    expect(agentGroupColors("purple")).toEqual(["red", "orange"]);
-    expect(agentGroupColors("pink")).toEqual(["red", "orange"]);
   });
 
   it("a title without the marker (the user’s own group, or retyped) names no container", () => {

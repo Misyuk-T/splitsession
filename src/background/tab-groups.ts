@@ -1,6 +1,5 @@
 import {
   AGENT_MARK_GLYPHS,
-  agentGroupColors,
   checkContainerName,
   type Container,
   type ContainerColor,
@@ -272,9 +271,10 @@ export class TabGroupProjection {
   /**
    * Startup (after `load`): every group Chrome kept with a container's marker (restart, saved groups) is taken over and
    * shown in the container's current form, which also rewrites titles of earlier versions (no glyph), a blink emoji or a "◉ ◎ ○"
-   * that the previous worker left behind (Full: it died while the agent was working; nothing shows the activity now), and the
-   * stuck colour of 0.1.6's colour pulse. A marked group that is not taken over (groups off, deleted container) gets only that
-   * last cleanup (`clearLeftoverMark`).
+   * that the previous worker left behind (Full: it died while the agent was working; nothing shows the activity now). Taking
+   * over also sets the group's colour to the container's (the container is the truth), which is what puts back the colour
+   * that 0.1.6's colour pulse could leave behind. A marked group that is not taken over (groups off, deleted container) gets
+   * only the glyph clean-up (`clearLeftoverMark`); its colour is never touched.
    */
   adoptExisting(): Promise<void> {
     return this.enqueue(async () => {
@@ -666,27 +666,19 @@ export class TabGroupProjection {
 
   /**
    * Clean-up for a group of ours that nothing is marking (the worker that marked it is gone) and that is not taken over (groups
-   * off, deleted container): a glyph left by the mark (a blink emoji, or the "◉ ◎ ○" of 0.1.5-dev builds) goes back to "⧉ ".
-   * Also, for one release: 0.1.6 pulsed the group's colour, so a colour that is one of the container's pulse colours (purple and
-   * pink; red and orange for a purple or pink container) but not the container's own goes back to the container's colour. Only
-   * groups with our marker come here.
+   * off, deleted container): a glyph left by the mark (a blink emoji, or the "◉ ◎ ○" of 0.1.5-dev builds) goes back to "⧉ ". The
+   * glyph is unambiguous, so this runs on every start. The colour is NOT touched here: a palette colour cannot prove that 0.1.6's
+   * pulse left it, and with groups off the user's own purple or pink on a marked group is theirs. Only groups with our marker
+   * come here.
    */
   private async clearLeftoverMark(group: GroupState): Promise<void> {
     if (this.activity.has(group.id)) return;
     const id = decodeGroupMarker(group.title);
-    const container = id === null ? undefined : this.deps.container(id);
-    const own = container ? GROUP_COLOR[container.color] : group.color;
-    const stuck =
-      container !== undefined &&
-      agentGroupColors(container.color).some((c) => c === group.color);
-    const patch: { title?: string; color?: string } = {};
-    if (hasMarkGlyph(group.title))
-      patch.title = groupTitleWithGlyph(group.title ?? "", false);
-    if (stuck && group.color !== own) patch.color = own;
-    if (patch.title === undefined && patch.color === undefined) return;
-    await this.applyGroup(group.id, patch, true, {
-      title: patch.title ?? group.title ?? "",
-      color: patch.color ?? group.color,
+    if (id === null || !hasMarkGlyph(group.title)) return;
+    const title = groupTitleWithGlyph(group.title ?? "", false);
+    await this.applyGroup(group.id, { title }, true, {
+      title,
+      color: group.color,
     }).catch(() => {});
   }
 
