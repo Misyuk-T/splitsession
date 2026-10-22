@@ -6,7 +6,7 @@ export interface GroupActivityDeps {
   groupOf(tabId: number): Promise<number | null>;
   /** Whether the group stands for a container (an invisible title marker; a plain group never gets a mark). */
   isContainerGroup(groupId: number): Promise<boolean>;
-  /** Starts or ends the colour pulse of the group (`TabGroupProjection.setActivity`: idempotent, the title is never written). */
+  /** Starts or ends the blinking glyph in the group's title (`TabGroupProjection.setActivity`: idempotent, the colour is never written). */
   setMark(groupId: number, on: boolean): Promise<void>;
 }
 

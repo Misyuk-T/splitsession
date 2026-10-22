@@ -314,20 +314,20 @@ toolbar badge's colour dot).
   change (SVG-icon pages too), so the tab strip animates. The toolbar button's dot of that tab **blinks** (about twice a second:
   purple and a lighter purple; on a container tab the container's colour and purple) for as long as the agent works with
   the tab and ~3.6 s after its last action; then the idle dot comes back. With "Show agent activity" off it does not blink.
-- **Tab group** (container tabs in a SplitSession group only): while the agent works in any tab of the group, the **group's
-  colour alternates** between **purple and pink** (the agent's colours; **red and orange** when the container is purple or pink
-  itself) about every 0.6 s, also when the group is collapsed. **The title is never touched** (it stays "⧉ name"): a changing
-  glyph changed the width of the group chip and the tabs jumped. One colour-only write for the start, one per tick, one at the
-  end (the container's colour back). It starts with the tab's first action and ends when the toolbar dot of the last active tab
-  stops blinking (the same timer, ~3.6 s after the last action; no second clock), when "Show agent activity" or the bridge is
-  switched off, when the tab leaves the group or closes, and when the group goes. The pulse timer runs only while some group is
-  marked. The changes are not edits: the container is not renamed or recoloured by them and the tab-group guard ignores them;
-  a rename or a recolour the user makes while the mark is on still syncs to the container, the mark stays on top, and the end
-  restores the container's new colour. A colour the user picks that equals either pulse colour is indistinguishable from the
-  mark and is ignored while the mark is on. If the worker dies while the mark is on, the next start puts the container's colour
-  back on our groups (the invisible marker says they are ours); a "◉ ◎ ○" left in a title by a 0.1.5-dev build is turned back
-  into "⧉" the same way (recognised for one release). Plain groups, groups SplitSession does not keep and plain tabs get no
-  mark. Full edition only (`group-activity.ts`, `TabGroupProjection.setActivity`).
+- **Tab group** (container tabs in a SplitSession group only): while the agent works in any tab of the group, the **glyph in
+  the group's title blinks** "🟣 name" ↔ "⚪ name" about every 0.6 s instead of "⧉ name" (the name and the invisible container
+  marker are exactly as before), also when the group is collapsed. **The group's colour is never touched.** The two emoji are
+  equally wide, so a blink does not move the tabs next to the group chip; only the start and the end change the width. One
+  title-only write for the start, one per tick, one at the end ("⧉" back). It starts with the tab's first action and ends when the
+  toolbar dot of the last active tab stops blinking (the same timer, ~3.6 s after the last action; no second clock), when "Show
+  agent activity" or the bridge is switched off, when the tab leaves the group or closes, and when the group goes. The blink
+  timer runs only while some group is marked. The changes are not edits: the container is not renamed by them and the tab-group
+  guard ignores them; a rename or a recolour the user makes while the mark is on still syncs to the container (the mark stays
+  on the new name; a recolour simply wins, as the mark writes no colours). If the worker dies while the mark is on, the next
+  start puts "⧉" back on our groups (the invisible marker says they are ours); it also turns back a "◉ ◎ ○" of a 0.1.5-dev
+  build and, for one release, the purple/pink (red/orange) colour that 0.1.6's colour pulse could leave behind. Plain groups,
+  groups SplitSession does not keep and plain tabs get no mark. Full edition only (`group-activity.ts`,
+  `TabGroupProjection.setActivity`).
 - **While the bridge is on**, plain tabs show a small **purple dot** on the toolbar button (idle, steady); container tabs keep
   their container-colour dot. With the bridge off there is no purple dot at all. The button's tooltip says the agent has full access.
 - `list_tabs`, `list_containers` and `bridge_info` touch no specific tab: popup counter and list only.

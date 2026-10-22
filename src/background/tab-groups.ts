@@ -1,4 +1,5 @@
 import {
+  AGENT_MARK_GLYPHS,
   agentGroupColors,
   checkContainerName,
   type Container,
@@ -7,10 +8,11 @@ import {
   type ContainerId,
   decodeGroupMarker,
   GROUP_COLOR,
+  type GroupGlyph,
   groupNameOf,
   groupTitle,
-  groupTitleIdle,
-  hasLegacyMarkGlyph,
+  groupTitleWithGlyph,
+  hasMarkGlyph,
   type Settings,
   sleep,
   startsWithGroupGlyph,
@@ -92,8 +94,8 @@ const RETRIES = 6;
 const RETRY_DELAY_MS = 150;
 /** The user types a group's name in Chrome's editor and Chrome reports every keystroke: the container follows once they pause. */
 const EDIT_SETTLE_MS = 700;
-/** The colour of a marked group goes to the other colour of its pair this often (Full). */
-export const PULSE_MS = 600;
+/** The glyph of a marked group goes to the other frame of its blink this often (Full). */
+export const BLINK_MS = 600;
 /** An update SplitSession made itself is remembered this long, to tell its echo from the user's edit. */
 const EXPECTED_TTL_MS = 10_000;
 
@@ -115,9 +117,9 @@ const EXPECTED_TTL_MS = 10_000;
  * and leaves a group that carries a container's marker (`ungroupSplit`, `mixedSplit`).
  * Two ways: the user renaming or recolouring one of our groups in Chrome's group menu changes the container (`groupUpdated`,
  * after a short pause; SplitSession's own updates are told apart by an expected-updates list), and the container's other
- * groups follow. Collapsing a group is not an edit. Full edition: while the agent works in a tab of a group its colour alternates between
- * two agent colours (`setActivity`; the title is not touched); that change is ours too, never an edit, and a user's rename or
- * recolour meanwhile still syncs, with the mark on top.
+ * groups follow. Collapsing a group is not an edit. Full edition: while the agent works in a tab of a group its title glyph blinks between two
+ * emoji (`setActivity`; the colour is not touched); that change is ours too, never an edit, and a user's rename or recolour
+ * meanwhile still syncs, with the mark on top.
  */
 export class TabGroupProjection {
   /** groupId -> container it was made for. */
@@ -130,12 +132,12 @@ export class TabGroupProjection {
   >();
 
   /**
-   * Full only: groups that show the agent-activity mark right now (the colour pulsing between a pair), with the half of the
-   * pair the colour is at (0 or 1). Memory only on purpose: when the worker dies the agent's activity display is gone with
+   * Full only: groups that show the agent-activity mark right now (the title glyph blinking between two emoji), with the frame
+   * of the blink the glyph is at (0 or 1). Memory only on purpose: when the worker dies the agent's activity display is gone with
    * it, so the next start (`adoptExisting`) puts "⧉ " and the container's colour back.
    */
   private activity = new Map<number, number>();
-  private pulseTimer: ReturnType<typeof setInterval> | null = null;
+  private blinkTimer: ReturnType<typeof setInterval> | null = null;
 
   /** groupId -> counter of the user's last edit, so only the last one of a burst is acted on. */
   private editGen = new Map<number, number>();
@@ -255,15 +257,6 @@ export class TabGroupProjection {
       return Promise.resolve();
     const gen = (this.editGen.get(group.id) ?? 0) + 1;
     this.editGen.set(group.id, gen);
-    // Full: was the mark on when the event came, and which colours was it pulsing between? The edit is judged by that, not by
-    // the state when the pause is over (the mark may have ended meanwhile and the event still carries a pulse colour).
-    const containerId = this.owned.get(group.id);
-    const container =
-      containerId === undefined ? undefined : this.deps.container(containerId);
-    const markColors =
-      __FULL__ && container && this.activity.has(group.id)
-        ? agentGroupColors(container.color)
-        : null;
     const pause = this.deps.editSettleMs ?? EDIT_SETTLE_MS;
     return (
       pause > 0
@@ -272,15 +265,16 @@ export class TabGroupProjection {
     ).then(() => {
       if (this.editGen.get(group.id) !== gen) return; // edited again meanwhile: that one will do
       this.editGen.delete(group.id);
-      return this.enqueue(() => this.syncEdited(group.id, group, markColors));
+      return this.enqueue(() => this.syncEdited(group.id, group));
     });
   }
 
   /**
    * Startup (after `load`): every group Chrome kept with a container's marker (restart, saved groups) is taken over and
-   * shown in the container's current form, which also rewrites titles of earlier versions (no glyph, or the "◉ ◎ ○" of 0.1.5-dev
-   * builds) and a pulse colour that the previous worker left behind (Full: it died while the agent was working; nothing shows
-   * the activity now). A marked group that is not taken over (groups off, deleted container) gets only that last cleanup.
+   * shown in the container's current form, which also rewrites titles of earlier versions (no glyph), a blink emoji or a "◉ ◎ ○"
+   * that the previous worker left behind (Full: it died while the agent was working; nothing shows the activity now), and the
+   * stuck colour of 0.1.6's colour pulse. A marked group that is not taken over (groups off, deleted container) gets only that
+   * last cleanup (`clearLeftoverMark`).
    */
   adoptExisting(): Promise<void> {
     return this.enqueue(async () => {
@@ -313,7 +307,7 @@ export class TabGroupProjection {
           this.owned.delete(groupId);
           this.activity.delete(groupId);
         }
-      this.syncPulse();
+      this.syncBlink();
       await this.persist();
     });
   }
@@ -321,7 +315,7 @@ export class TabGroupProjection {
   /** Chrome removed a group (last tab closed, or the user closed it). */
   groupRemoved(groupId: number): Promise<void> {
     this.activity.delete(groupId);
-    this.syncPulse();
+    this.syncBlink();
     return this.enqueue(async () => {
       if (this.owned.delete(groupId)) await this.persist();
     });
@@ -350,20 +344,20 @@ export class TabGroupProjection {
       }
       this.owned.clear();
       this.activity.clear();
-      this.syncPulse();
+      this.syncBlink();
       await this.persist();
     });
   }
 
   /**
-   * Full only. The agent is working in a tab of this group (`on`) or has stopped. While it works the group's COLOUR alternates
-   * between a pair (purple and pink; red and orange for a purple or pink container) about every `PULSE_MS`; otherwise it is the
-   * container's colour. The title is never touched (a changing glyph changed the chip's width and the tabs jumped), so the
-   * name and invisible marker stay as they are; the colour shows when the group is collapsed too. Only groups SplitSession
-   * keeps are marked (a plain group, or any group with groups off, is ignored). One colour-only write for the start, one per
-   * tick, one for the end; a call that does not change the state, and a burst, write nothing. Every write is remembered as ours
-   * and quiet (`takeMarkEcho`, `consumeExpected`), so it neither renames or recolours the container nor wakes the group guard;
-   * a rename or a recolour the user makes meanwhile still does (and the mark stays on top: `wantedFor`).
+   * Full only. The agent is working in a tab of this group (`on`) or has stopped. While it works the group's title glyph blinks
+   * between "🟣" and "⚪" every `BLINK_MS` instead of "⧉" (the two emoji are equally wide, so the tabs next to the chip do not
+   * move; only the start and the end change the width); name and invisible marker are untouched, and the group's COLOUR is never
+   * written. The glyph shows when the group is collapsed too. Only groups SplitSession keeps are marked (a plain group, or any
+   * group with groups off, is ignored). One title-only write for the start, one per tick, one for the end; a call that does not
+   * change the state, and a burst, write nothing. Every write is remembered as ours and quiet (`takeMarkEcho`,
+   * `consumeExpected`), so it neither renames the container nor wakes the group guard; a rename or a recolour the user makes
+   * meanwhile still syncs (and the mark stays on top: `wantedFor`).
    */
   setActivity(groupId: number, on: boolean): Promise<void> {
     if (!__FULL__) return Promise.resolve();
@@ -375,7 +369,7 @@ export class TabGroupProjection {
     } else if (!this.activity.delete(groupId)) {
       return Promise.resolve();
     }
-    this.syncPulse();
+    this.syncBlink();
     return this.enqueue(() => this.showActivity(groupId));
   }
 
@@ -585,22 +579,20 @@ export class TabGroupProjection {
     return index !== -1;
   }
 
-  /** The colour a group shows now: its pulse colour while the agent works in it, else the container's. */
-  private colorFor(container: Container, groupId: number): string {
-    const half = __FULL__ ? this.activity.get(groupId) : undefined;
-    return half === undefined
-      ? GROUP_COLOR[container.color]
-      : agentGroupColors(container.color)[half]!;
+  /** The glyph a group shows now: idle (`false`) or its frame of the blink. */
+  private glyphOf(groupId: number): GroupGlyph {
+    const frame = __FULL__ ? this.activity.get(groupId) : undefined;
+    return frame === undefined ? false : frame;
   }
 
-  /** The title and colour a group of the container shows now (the title is always the idle one). */
+  /** The title and colour a group of the container shows now: the blink glyph while the agent works in it; the colour is always the container's. */
   private wantedFor(
     container: Container,
     groupId: number,
   ): { title: string; color: string } {
     return {
-      title: groupTitle(container.name, container.id),
-      color: this.colorFor(container, groupId),
+      title: groupTitle(container.name, container.id, this.glyphOf(groupId)),
+      color: GROUP_COLOR[container.color],
     };
   }
 
@@ -615,75 +607,82 @@ export class TabGroupProjection {
   }
 
   /**
-   * Puts the group's colour in line with `activity` (start, tick and end are all this): the pulse colour of the moment, or the
-   * container's colour when the mark is off. Colour only. Chrome has no "update if unchanged", so title and colour are read
-   * again right before the write; when either changed in between (the user is recolouring or renaming) the colour is worked
-   * out again from the new state, never written over a state it was not decided on. What still slips through that window is
-   * not lost: the user's event carries their colour and title and the sync reads the edit from it (`syncEdited`). Nothing is
-   * written when the colour already is the wanted one.
+   * Puts the group's glyph in line with `activity` (start, tick and end are all this), by swapping only the glyph of the title the
+   * group has now (name and marker kept). Title only. Chrome has no "update if unchanged", so title and colour are read again
+   * right before the write; when either changed in between (the user is renaming or recolouring) the swap is worked out again
+   * from the new state, never written over a state it was not decided on. What still slips through that window is not lost: the
+   * user's event carries their title and colour and the sync reads the edit from it (`syncEdited`). Nothing is written when the
+   * title already is the wanted one.
    */
   private async showActivity(groupId: number): Promise<void> {
     for (let attempt = 0; attempt < 4; attempt++) {
       const containerId = this.owned.get(groupId);
-      const container =
-        containerId === undefined
-          ? undefined
-          : this.deps.container(containerId);
       const group = await this.deps.tabGroups.get(groupId).catch(() => null);
-      if (!container || !group) {
+      if (
+        containerId === undefined ||
+        !this.deps.container(containerId) ||
+        !group
+      ) {
         this.activity.delete(groupId); // gone, or no longer ours
-        this.syncPulse();
+        this.syncBlink();
         return;
       }
-      const color = this.colorFor(container, groupId);
-      if (color === group.color) return;
+      // A title without the container's marker (retyped by the user): not ours to edit; the sync puts the title back, with the glyph.
+      if (decodeGroupMarker(group.title) !== containerId) return;
+      const title = groupTitleWithGlyph(
+        group.title ?? "",
+        this.glyphOf(groupId),
+      );
+      if (title === group.title) return;
       const again = await this.deps.tabGroups.get(groupId).catch(() => null);
       if (!again || again.title !== group.title || again.color !== group.color)
-        continue; // recoloured or renamed meanwhile: decide again from the new state
-      await this.applyGroup(groupId, { color }, true, {
-        title: group.title ?? "",
-        color,
+        continue; // renamed or recoloured meanwhile: decide again from the new state
+      await this.applyGroup(groupId, { title }, true, {
+        title,
+        color: group.color,
       }).catch(() => {});
       return;
     }
   }
 
-  /** One pulse tick: every marked group's colour goes to the other half of its pair (colour only). */
-  private pulse(): void {
-    for (const [groupId, half] of [...this.activity]) {
-      this.activity.set(groupId, half === 0 ? 1 : 0);
+  /** One blink tick: every marked group's glyph goes to the other frame (title only). */
+  private blink(): void {
+    for (const [groupId, frame] of [...this.activity]) {
+      this.activity.set(groupId, frame === 0 ? 1 : 0);
       void this.enqueue(() => this.showActivity(groupId));
     }
   }
 
-  /** The pulse timer runs while some group is marked, and only then. */
-  private syncPulse(): void {
+  /** The blink timer runs while some group is marked, and only then. */
+  private syncBlink(): void {
     if (!__FULL__) return;
-    if (this.activity.size > 0 && this.pulseTimer === null) {
-      this.pulseTimer = setInterval(() => this.pulse(), PULSE_MS);
-    } else if (this.activity.size === 0 && this.pulseTimer !== null) {
-      clearInterval(this.pulseTimer);
-      this.pulseTimer = null;
+    if (this.activity.size > 0 && this.blinkTimer === null) {
+      this.blinkTimer = setInterval(() => this.blink(), BLINK_MS);
+    } else if (this.activity.size === 0 && this.blinkTimer !== null) {
+      clearInterval(this.blinkTimer);
+      this.blinkTimer = null;
     }
   }
 
   /**
    * Clean-up for a group of ours that nothing is marking (the worker that marked it is gone) and that is not taken over (groups
-   * off, deleted container): a glyph left by a 0.1.5-dev build goes back to "⧉ ", and a colour that is one of the container's
-   * pulse colours but not the container's own goes back to the container's colour. Only groups with our marker come here.
+   * off, deleted container): a glyph left by the mark (a blink emoji, or the "◉ ◎ ○" of 0.1.5-dev builds) goes back to "⧉ ".
+   * Also, for one release: 0.1.6 pulsed the group's colour, so a colour that is one of the container's pulse colours (purple and
+   * pink; red and orange for a purple or pink container) but not the container's own goes back to the container's colour. Only
+   * groups with our marker come here.
    */
   private async clearLeftoverMark(group: GroupState): Promise<void> {
     if (this.activity.has(group.id)) return;
     const id = decodeGroupMarker(group.title);
     const container = id === null ? undefined : this.deps.container(id);
     const own = container ? GROUP_COLOR[container.color] : group.color;
-    const pulsing =
+    const stuck =
       container !== undefined &&
       agentGroupColors(container.color).some((c) => c === group.color);
     const patch: { title?: string; color?: string } = {};
-    if (hasLegacyMarkGlyph(group.title))
-      patch.title = groupTitleIdle(group.title ?? "");
-    if (pulsing && group.color !== own) patch.color = own;
+    if (hasMarkGlyph(group.title))
+      patch.title = groupTitleWithGlyph(group.title ?? "", false);
+    if (stuck && group.color !== own) patch.color = own;
     if (patch.title === undefined && patch.color === undefined) return;
     await this.applyGroup(group.id, patch, true, {
       title: patch.title ?? group.title ?? "",
@@ -699,13 +698,16 @@ export class TabGroupProjection {
     const container = this.deps.container(this.owned.get(groupId) ?? "");
     if (!container) return;
     const wanted = this.wantedFor(container, groupId);
-    // While the group is marked either colour of its pair is fine (the pulse moves it by itself).
-    const colorOk =
-      group.color === wanted.color ||
+    // While the group is marked either frame of the blink is fine (the blink moves it by itself).
+    const titleOk =
+      group.title === wanted.title ||
       (__FULL__ &&
         this.activity.has(groupId) &&
-        agentGroupColors(container.color).some((c) => c === group.color));
-    if (group.title !== wanted.title || !colorOk)
+        AGENT_MARK_GLYPHS.some(
+          (_, frame) =>
+            group.title === groupTitle(container.name, container.id, frame),
+        ));
+    if (!titleOk || group.color !== wanted.color)
       await this.applyGroup(groupId, wanted).catch(() => {});
   }
 
@@ -720,8 +722,6 @@ export class TabGroupProjection {
   private async syncEdited(
     groupId: number,
     seen: { title?: string; color?: string },
-    /** The two colours the group was pulsing between when the event came (null: no mark then). */
-    markColors: readonly string[] | null = null,
   ): Promise<void> {
     const containerId = this.owned.get(groupId);
     const container =
@@ -757,12 +757,11 @@ export class TabGroupProjection {
         { groupId, container: container.name, typed, reason: check.message },
       );
     }
-    // The colour is the one the event reported too. While the mark is on, the agent's colour is ours, not the user's choice.
-    const seenColor = seen.color ?? group.color;
-    const color =
-      __FULL__ && markColors?.includes(seenColor)
-        ? null
-        : containerColorOfGroup(seenColor, container.color);
+    // The colour is the one the event reported too (the mark never writes colours: whatever it says is the user's choice).
+    const color = containerColorOfGroup(
+      seen.color ?? group.color,
+      container.color,
+    );
     if (color !== null && color !== container.color) patch.color = color;
 
     if (patch.name !== undefined || patch.color !== undefined) {

@@ -1727,3 +1727,32 @@ Goal: a container tab that is not in its container's tab group (dragged out, or 
   group with the title constant `⧉ name` throughout and the container unchanged, restore after the fade; red/orange for a
   purple container and bridge off restores at once; a user recolour and a user rename while marked; setting off; clean-up after a
   worker restart.
+
+## The agent group mark blinks an emoji in the title; the colour is left alone (2026-10-23)
+
+- **Feedback on 0.1.6.** The purple/pink colour pulse looked like a traffic light. The earlier glyph frames (◉ ◎ ○) had made the
+  group chip change width and the tabs jump.
+- **Decision.** The group's colour is never written by the mark. The title glyph becomes a coloured emoji that blinks:
+  `⧉ name` → `🟣 name` ↔ `⚪ name` every `BLINK_MS` = 600 ms while the agent acts, `⧉ name` after the fade. The two emoji are
+  equally wide, so a blink should not move the tabs; only the start and the end change the width (not measurable from the
+  extension: the chip's box is not exposed; the e2e suite checks the sequence of titles and that the colour is constant).
+- **Reused from the first title mark (ae20c42, b39cb45), reviewed there.** `TabGroupProjection.setActivity` / `showActivity`:
+  a swap of the leading glyph on the live title (name and marker kept), one title-only write per transition and per tick, none
+  when unchanged; quiet echoes (`applyGroup`'s `after` pins the colour the echo must carry; `takeMarkEcho` before the sync and
+  the guard sweep); title and colour re-read right before the write; a user rename while marked syncs from the event's title
+  and the mark stays on the new name; only groups with our marker are marked. The colour work of 0.1.6 is removed: the pulse
+  pair, the pulse-colour exclusion in the sync and its doubt (a user pick equal to a pulse colour was ignored) are gone, a user
+  recolour simply syncs. `markColors` (event-time context) is gone with it.
+- **Emoji in the prefix matcher.** `🟣` is a surrogate pair and `⚪` may arrive with U+FE0F, so the matcher is a `u` regex with
+  an optional `\uFE0F`: `^\s*(?:(?:[⧉◉◎○⚪]|🟣)\uFE0F? ?)?`. `groupNameOf`, the glyph swap, `hasMarkGlyph` and the sync refusal use
+  it, so a container name never starts with ⧉ 🟣 ⚪ ◉ ◎ ○. Everything but `⧉` sits behind `__FULL__`: the Lite bundle has none of
+  them (checked after `build:lite`).
+- **Clean-up at the worker's start (groups with our marker).** A blink emoji or a `◉ ◎ ○` (0.1.5-dev) goes back to `⧉` (groups on:
+  `normalise`; groups off or a deleted container: `clearLeftoverMark`). For one release the colour too: a group of ours wearing
+  one of its container's 0.1.6 pulse colours (purple/pink, red/orange for a purple/pink container) that is not the container's
+  own goes back to the container's colour (`agentGroupColors` stays for this, to be removed after the next release).
+- **Tests.** Unit: emoji prefix matching incl. U+FE0F and spaces, frames and wrap, blink order and timer, one title-only write per
+  tick, echoes, rename and recolour while marked (recolours, purple and pink included, simply sync), both races, clean-up of
+  legacy glyphs and stuck colours with groups on and off. e2e (`agent-activity.spec.ts`): the title alternates 🟣/⚪ on a collapsed
+  group with the colour constant and the container unchanged, ⧉ after the fade; user recolour and rename while marked; a purple
+  container keeps its colour; bridge or setting off restores at once; plain groups; clean-up after a worker restart.
