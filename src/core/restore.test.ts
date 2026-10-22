@@ -20,6 +20,8 @@ import {
   groupMarker,
   groupNameOf,
   groupTitle,
+  groupTitleWithGlyph,
+  hasActiveGlyph,
   heldPageTarget,
   heldPageUrl,
   isRestorable,
@@ -63,6 +65,29 @@ describe("group-title marker", () => {
     expect(groupNameOf(`⧉ ${groupMarker("work")}`)).toBe("");
     expect(groupNameOf(undefined)).toBe("");
     expect(groupNameOf(groupTitle("⧉ odd", "x"))).toBe("⧉ odd"); // only one glyph is the prefix: the name round-trips
+  });
+
+  it("the agent-activity form swaps only the leading glyph: name and invisible marker stay exactly, both ways, idempotently", () => {
+    const plain = groupTitle("main", "work");
+    const active = groupTitle("main", "work", true);
+    expect(active).toBe(plain.replace("⧉", "◉"));
+    expect(active.startsWith("◉ main")).toBe(true);
+    expect(hasActiveGlyph(active)).toBe(true);
+    expect(hasActiveGlyph(plain)).toBe(false);
+    expect(hasActiveGlyph(undefined)).toBe(false);
+    // The marker and the name survive the swap; the swap is its own inverse and idempotent.
+    expect(decodeGroupMarker(active)).toBe("work");
+    expect(groupNameOf(active)).toBe("main");
+    expect(groupTitleWithGlyph(plain, true)).toBe(active);
+    expect(groupTitleWithGlyph(active, true)).toBe(active);
+    expect(groupTitleWithGlyph(active, false)).toBe(plain);
+    expect(groupTitleWithGlyph(plain, false)).toBe(plain);
+    // Without the marker (a retyped title) and without a glyph (an earlier version): the glyph is set, the rest stays.
+    expect(groupTitleWithGlyph("◉ main", false)).toBe("⧉ main");
+    expect(groupTitleWithGlyph("main", true)).toBe("◉ main");
+    expect(decodeGroupMarker(groupTitleWithGlyph("◉ main", false))).toBeNull();
+    // A name that itself starts with a glyph keeps it: only one glyph is the prefix.
+    expect(groupNameOf(groupTitle("◉ odd", "x", true))).toBe("◉ odd");
   });
 
   it("a title without the marker (the user’s own group, or retyped) names no container", () => {

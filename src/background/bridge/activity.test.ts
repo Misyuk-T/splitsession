@@ -43,11 +43,17 @@ function setup(tabs: Record<number, { active: boolean }>) {
   };
   const blink = { start: vi.fn(), stop: vi.fn(async () => {}) };
   const state = { enabled: true };
+  const groupMark = {
+    start: vi.fn(),
+    stop: vi.fn(),
+    stopAll: vi.fn(async () => {}),
+  };
   const activity = new AgentActivity({
     b: b as never,
     enabled: () => state.enabled,
     startBlink: blink.start,
     stopBlink: blink.stop,
+    groupMark,
   });
   return {
     activity,
@@ -55,6 +61,7 @@ function setup(tabs: Record<number, { active: boolean }>) {
     injected,
     tabs,
     blink,
+    groupMark,
     state,
     activate: () => onActivated?.(),
   };
@@ -156,5 +163,39 @@ describe("AgentActivity: favicon ticks and the action layer", () => {
     await vi.advanceTimersByTimeAsync(SESSION_TICK_MS * 10);
     expect(blink.stop).toHaveBeenCalledTimes(2); // no late end timers
     expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it("the group mark runs on the toolbar dot's clock: starts with the first action, ends with the dot, never has a timer of its own", async () => {
+    const { activity, blink, groupMark } = setup({ 1: { active: true } });
+    await activity.touch(1, "click");
+    await activity.touch(1, "click");
+    expect(groupMark.start).toHaveBeenCalledWith(1);
+    expect(groupMark.stop).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(3_000);
+    await activity.touch(1, "click"); // re-arms the end for both
+    await vi.advanceTimersByTimeAsync(3_000);
+    expect(groupMark.stop).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(ACTIVITY_TTL_MS);
+    expect(groupMark.stop).toHaveBeenCalledTimes(1);
+    expect(groupMark.stop).toHaveBeenCalledWith(1);
+    expect(blink.stop).toHaveBeenCalledTimes(1); // the same moment as the dot
+  });
+
+  it('no group mark for tools that touch no tab, or with "Show agent activity" off; stopAll and a closed tab restore it', async () => {
+    const { activity, groupMark, state } = setup({
+      1: { active: true },
+      2: { active: true },
+    });
+    await activity.touch(1, "list_tabs");
+    state.enabled = false;
+    await activity.touch(1, "click");
+    expect(groupMark.start).not.toHaveBeenCalled();
+    state.enabled = true;
+    await activity.touch(1, "click");
+    await activity.touch(2, "click");
+    activity.forget(2);
+    expect(groupMark.stop).toHaveBeenCalledWith(2);
+    await activity.stopAll();
+    expect(groupMark.stopAll).toHaveBeenCalledTimes(1);
   });
 });

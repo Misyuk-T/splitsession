@@ -1,6 +1,7 @@
 import type { browser } from "wxt/browser";
 
 import { AGENT_GLYPHS } from "../../ui/agent-glyphs";
+import type { GroupActivityMark } from "./group-activity";
 import {
   type ActivityCommand,
   type ActivityInspection,
@@ -89,6 +90,11 @@ export interface ActivityDeps {
    * watch, an open dialog): that keeps the agent session alive. The idle minute after a burst of actions does not.
    */
   held?: (tabId: number) => boolean;
+  /**
+   * The activity mark of tab groups: starts with the tab's first action and ends together with the toolbar dot (below), so
+   * it has no clock of its own.
+   */
+  groupMark?: Pick<GroupActivityMark, "start" | "stop" | "stopAll">;
   now?: () => number;
 }
 
@@ -175,15 +181,17 @@ export class AgentActivity {
   async stopAll(): Promise<void> {
     const tabs = [...this.sessions.keys()];
     for (const tabId of tabs) this.drop(tabId);
-    await Promise.all(
-      tabs.map(async (tabId) => {
+    const marks = this.d.groupMark?.stopAll().catch(() => {});
+    await Promise.all([
+      marks,
+      ...tabs.map(async (tabId) => {
         const timer = this.badgeTimers.get(tabId);
         if (timer) clearTimeout(timer);
         this.badgeTimers.delete(tabId);
         await this.inject(tabId, this.command("stop"));
         await this.d.stopBlink(tabId).catch(() => {});
       }),
-    );
+    ]);
   }
 
   /** Tabs that are in an agent session right now (tests). */
@@ -296,6 +304,7 @@ export class AgentActivity {
     const timer = this.badgeTimers.get(tabId);
     if (timer) clearTimeout(timer);
     this.badgeTimers.delete(tabId);
+    this.d.groupMark?.stop(tabId);
     void this.d.stopBlink(tabId).catch(() => {}); // ends the interval
   }
 
@@ -352,15 +361,17 @@ export class AgentActivity {
     }
   }
 
-  /** The dot of the tab blinks; the end is re-armed by every touch. */
+  /** The dot of the tab blinks (and its group, if it is a container's, shows the activity glyph); the end is re-armed by every touch. */
   private blink(tabId: number): void {
     this.d.startBlink(tabId);
+    this.d.groupMark?.start(tabId);
     const previous = this.badgeTimers.get(tabId);
     if (previous) clearTimeout(previous);
     this.badgeTimers.set(
       tabId,
       setTimeout(() => {
         this.badgeTimers.delete(tabId);
+        this.d.groupMark?.stop(tabId);
         void this.d.stopBlink(tabId).catch(() => {});
       }, BADGE_HOLD_MS),
     );

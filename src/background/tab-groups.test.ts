@@ -1,6 +1,12 @@
 import { describe, expect, it } from "vitest";
 
-import { type Container, groupTitle, type Settings } from "../core";
+import {
+  type Container,
+  decodeGroupMarker,
+  groupMarker,
+  groupTitle,
+  type Settings,
+} from "../core";
 import { MemoryStorageArea } from "../engine/storage/storage-area";
 import {
   type GroupTab,
@@ -821,6 +827,254 @@ describe("TabGroupProjection", () => {
       await projection.ungroupSplit([1, 2]);
       expect(chrome.tabs.get(1)!.groupId).toBe(-1);
       expect(chrome.tabs.get(2)!.groupId).toBe(-1);
+    });
+  });
+  describe("agent-activity mark on the group title (Full)", () => {
+    async function marked(settings: Partial<Settings> = {}) {
+      const t = setup(settings);
+      t.chrome.addTab(1);
+      t.chrome.addTab(2);
+      t.chrome.addTab(3);
+      await t.assign(1, "work");
+      await t.assign(2, "work");
+      await t.assign(3, "home");
+      const gid = (tab: number) => t.chrome.tabs.get(tab)!.groupId;
+      const updates: Array<{ id: number; props: object }> = [];
+      const realUpdate = t.chrome.api.tabGroups.update;
+      t.chrome.api.tabGroups.update = async (id, props) => {
+        updates.push({ id, props });
+        return realUpdate(id, props);
+      };
+      const title = (tab: number) => t.chrome.groups.get(gid(tab))!.title;
+      /** What `tabGroups.onUpdated` + `Extras.handleGroupUpdated` do with the latest state of the group. */
+      const deliver = async (tab: number) => {
+        const group = { ...t.chrome.groups.get(gid(tab))! };
+        if (t.projection.takeMarkEcho(group)) return "dropped";
+        await t.projection.groupUpdated(group);
+        await t.projection.idle();
+        return "synced";
+      };
+      return { ...t, gid, updates, title, deliver };
+    }
+
+    it("swaps only the glyph: ◉ while the agent works, ⧉ again after; name, marker and colour stay; one update per change", async () => {
+      const { projection, chrome, gid, updates, title, book } = await marked();
+      const before = chrome.groups.get(gid(1))!.color;
+      await projection.setActivity(gid(1), true);
+      expect(title(1)).toBe(groupTitle("Work", "work", true));
+      expect(title(1)!.startsWith("◉ Work")).toBe(true);
+      expect(decodeGroupMarker(title(1))).toBe("work");
+      expect(updates).toHaveLength(1);
+      expect(updates[0]!.props).toEqual({ title: title(1) }); // the title only: the colour is not ours to touch here
+      // A burst (every action of the agent) and a repeat change nothing.
+      await Promise.all([
+        projection.setActivity(gid(1), true),
+        projection.setActivity(gid(1), true),
+        projection.setActivity(gid(1), true),
+      ]);
+      expect(updates).toHaveLength(1);
+      expect(title(3)).toBe(groupTitle("Home", "home")); // another container's group is untouched
+
+      await projection.setActivity(gid(1), false);
+      expect(title(1)).toBe(groupTitle("Work", "work"));
+      await projection.setActivity(gid(1), false);
+      expect(updates).toHaveLength(2);
+      expect(chrome.groups.get(gid(1))!.color).toBe(before);
+      expect(book.get("work")!.name).toBe("Work");
+    });
+
+    it("our own set and restore are not edits of the user's: the container keeps its name, nothing is written back, the guard is not woken", async () => {
+      const { projection, gid, updates, book, logs, deliver } = await marked();
+      await projection.setActivity(gid(1), true);
+      expect(await deliver(1)).toBe("dropped"); // the echo of the set
+      await projection.setActivity(gid(1), false);
+      expect(await deliver(1)).toBe("dropped"); // the echo of the restore
+      expect(await deliver(1)).toBe("synced"); // nothing left to drop: a plain update goes the normal way
+      expect(updates).toHaveLength(2);
+      expect(book.get("work")!.name).toBe("Work");
+      expect(
+        logs.filter(([, m]) => /changed from its tab group/.test(m)),
+      ).toEqual([]);
+    });
+
+    it("even when the echo reaches the sync directly (no peek), it is consumed and changes nothing", async () => {
+      const { projection, chrome, gid, updates, book } = await marked();
+      await projection.setActivity(gid(1), true);
+      await projection.groupUpdated({ ...chrome.groups.get(gid(1))! });
+      await projection.idle();
+      expect(updates).toHaveLength(1);
+      expect(book.get("work")!.name).toBe("Work");
+    });
+
+    it("a rename by the user while marked still renames the container, and the mark stays on top of the new name", async () => {
+      const { projection, chrome, gid, title, book, deliver } = await marked();
+      await projection.setActivity(gid(1), true);
+      await deliver(1);
+      // The user types a new name in Chrome's editor (the glyph shown is the one in the title).
+      chrome.groups.get(gid(1))!.title = `◉ Job${groupMarker("work")}`;
+      expect(await deliver(1)).toBe("synced");
+      expect(book.get("work")!.name).toBe("Job");
+      expect(title(1)).toBe(groupTitle("Job", "work", true)); // not reverted to ⧉, not reverted to Work
+      expect(title(2)).toBe(groupTitle("Job", "work", true));
+      await projection.setActivity(gid(1), false);
+      expect(title(1)).toBe(groupTitle("Job", "work")); // the restore keeps the new name too
+      expect(book.get("work")!.name).toBe("Job");
+    });
+
+    it("a name typed without glyph and marker while marked is accepted, the title comes back marked", async () => {
+      const { projection, chrome, gid, title, book, deliver } = await marked();
+      await projection.setActivity(gid(1), true);
+      chrome.groups.get(gid(1))!.title = "Job two";
+      await deliver(1);
+      expect(book.get("work")!.name).toBe("Job two");
+      expect(title(1)).toBe(groupTitle("Job two", "work", true));
+    });
+
+    it("a container renamed elsewhere (popup, other group) while marked keeps the mark on its groups", async () => {
+      const { projection, gid, title, book } = await marked();
+      await projection.setActivity(gid(1), true);
+      const work = book.get("work")!;
+      work.name = "Work 2";
+      await projection.containerUpdated(work);
+      expect(title(1)).toBe(groupTitle("Work 2", "work", true));
+      await projection.setActivity(gid(1), false);
+      expect(title(1)).toBe(groupTitle("Work 2", "work"));
+    });
+
+    it("a user edit that lands between the set and the restore is not lost to the restore (the glyph is swapped on the live title)", async () => {
+      const { projection, chrome, gid, title } = await marked();
+      await projection.setActivity(gid(1), true);
+      chrome.groups.get(gid(1))!.title = `◉ Typing${groupMarker("work")}`; // not synced yet
+      await projection.setActivity(gid(1), false);
+      expect(title(1)).toBe(`⧉ Typing${groupMarker("work")}`);
+    });
+
+    it("never marks a group SplitSession does not keep: a user's group, an unknown id, or any group with groups off", async () => {
+      const t = await marked();
+      t.chrome.groups.set(70, {
+        id: 70,
+        windowId: 1,
+        title: "Plain",
+        color: "red",
+      });
+      t.chrome.groups.set(71, {
+        id: 71,
+        windowId: 1,
+        title: "⧉ fake",
+        color: "red",
+      });
+      await t.projection.setActivity(70, true);
+      await t.projection.setActivity(71, true);
+      await t.projection.setActivity(999, true);
+      expect(t.updates).toEqual([]);
+      expect(t.chrome.groups.get(70)!.title).toBe("Plain");
+      expect(t.chrome.groups.get(71)!.title).toBe("⧉ fake");
+
+      t.state.tabGroups = false;
+      await t.projection.setActivity(t.gid(1), true);
+      expect(t.updates).toEqual([]);
+    });
+
+    it("a title the user retyped without the marker is not edited by the mark", async () => {
+      const { projection, chrome, gid, updates } = await marked();
+      chrome.groups.get(gid(1))!.title = "Mine";
+      await projection.setActivity(gid(1), true);
+      expect(updates).toEqual([]);
+      expect(chrome.groups.get(gid(1))!.title).toBe("Mine");
+    });
+
+    it("a removed group forgets its mark; switching groups off forgets all of them", async () => {
+      const { projection, chrome, gid, updates } = await marked();
+      const g = gid(1);
+      await projection.setActivity(g, true);
+      chrome.tabs.get(1)!.groupId = -1;
+      chrome.tabs.get(2)!.groupId = -1;
+      chrome.groups.delete(g);
+      await projection.groupRemoved(g);
+      const count = updates.length;
+      await projection.setActivity(g, false); // nothing to restore, nothing thrown
+      expect(updates).toHaveLength(count);
+      const g3 = gid(3);
+      await projection.setActivity(g3, true);
+      await projection.releaseAll(); // the groups go with their tabs
+      await projection.setActivity(g3, false);
+      expect(updates).toHaveLength(count + 1); // the set only: no restore of a group that is gone
+    });
+
+    async function restarted(
+      groups: Array<{ id: number; title: string }>,
+      keep = true,
+    ) {
+      const chrome = new FakeChrome();
+      for (const g of groups) {
+        chrome.groups.set(g.id, {
+          id: g.id,
+          windowId: 1,
+          title: g.title,
+          color: "blue",
+        });
+        chrome.addTab(g.id, 1, { groupId: g.id });
+      }
+      const area = new MemoryStorageArea();
+      const startup = new TabGroupProjection({
+        tabs: chrome.api.tabs,
+        tabGroups: {
+          ...chrome.api.tabGroups,
+          query: async () => [...chrome.groups.values()],
+        },
+        area,
+        settings: () =>
+          ({
+            tabGroups: keep,
+            agentActivity: true,
+          }) as Settings,
+        container: (id) => containers.get(id),
+        containers: () => [...containers.values()],
+        updateContainer: async () => {},
+        containerTabs: () => [],
+        log: () => {},
+        delay: async () => {},
+      });
+      await startup.load();
+      await startup.adoptExisting();
+      return { chrome, startup };
+    }
+
+    it("a leftover ◉ (the worker died while marked) is cleaned at the next start, by the invisible marker", async () => {
+      const { chrome, startup } = await restarted([
+        { id: 50, title: groupTitle("Work", "work", true) },
+        { id: 51, title: groupTitle("Home", "home") },
+        { id: 52, title: "◉ looks like ours" }, // no marker: the user's own
+      ]);
+      expect(chrome.groups.get(50)!.title).toBe(groupTitle("Work", "work"));
+      expect(chrome.groups.get(51)!.title).toBe(groupTitle("Home", "home"));
+      expect(chrome.groups.get(52)!.title).toBe("◉ looks like ours");
+      expect(startup.ownedGroups().map(([id]) => id)).toEqual([50, 51]);
+    });
+
+    it("the cleanup also runs with groups off and for a container that is gone, and still leaves user groups alone", async () => {
+      const { chrome } = await restarted(
+        [
+          { id: 50, title: groupTitle("Work", "work", true) },
+          { id: 51, title: groupTitle("Old", "deleted", true) },
+          { id: 52, title: "◉ mine" },
+        ],
+        false,
+      );
+      expect(chrome.groups.get(50)!.title).toBe(groupTitle("Work", "work"));
+      expect(chrome.groups.get(51)!.title).toBe(groupTitle("Old", "deleted"));
+      expect(chrome.groups.get(52)!.title).toBe("◉ mine");
+    });
+
+    it("the cleanup does not undo a mark that is live: the agent started before the adoption ran", async () => {
+      const { chrome, startup } = await restarted([
+        { id: 50, title: groupTitle("Work", "work") },
+      ]);
+      await startup.setActivity(50, true);
+      await startup.adoptExisting();
+      expect(chrome.groups.get(50)!.title).toBe(
+        groupTitle("Work", "work", true),
+      );
     });
   });
 });

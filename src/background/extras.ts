@@ -396,15 +396,23 @@ export class Extras {
       .then(() => this.mark.refresh(tabId));
   }
 
-  /** `tabGroups.onUpdated`: the user may have renamed or recoloured a group of ours in Chrome's menu. */
-  handleGroupEdited(group: {
+  /**
+   * `tabGroups.onUpdated`: a group was retitled or recoloured. The echo of the agent-activity mark (Full: "⧉ " <-> "◉ ", our
+   * own update) is dropped here: it is neither an edit of the user's nor news for the group guard. Anything else is both: the
+   * guard sweeps soon, and the user may have renamed or recoloured a group of ours in Chrome's menu.
+   */
+  handleGroupUpdated(group: {
     id: number;
     title?: string;
     color: string;
   }): void {
     void this.facet.ready
       .then(() => this.ready)
-      .then(() => this.groups.groupUpdated(group));
+      .then(() => {
+        if (__FULL__ && this.groups.takeMarkEcho(group)) return;
+        this.guard.scheduleSweep();
+        return this.groups.groupUpdated(group);
+      });
   }
 
   /** A tab attached from another window, a group created or retitled, a container renamed or deleted: sweep soon. */

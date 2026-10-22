@@ -5,6 +5,7 @@ import { AgentActivity } from "./bridge/activity";
 import { AgentBridge } from "./bridge/agent-bridge";
 import { type BridgeApi, createBridgeApi } from "./bridge/bridge-api";
 import { CdpSessions, type DebuggerApi } from "./bridge/cdp";
+import { GroupActivityMark } from "./bridge/group-activity";
 import { readProfileLabel } from "./bridge/profile-label";
 import { BridgeRouter } from "./bridge/router";
 import type { Extras } from "./extras";
@@ -37,9 +38,26 @@ export function createAgentSide(
   return {
     bridgeApi: createBridgeApi(bridge, b),
     install(api) {
+      // The activity mark of tab groups follows the activity display (its timers) and never has a clock of its own.
+      const groupMark = new GroupActivityMark({
+        groupOf: (tabId) =>
+          b.tabs.get(tabId).then(
+            (tab) => tab.groupId,
+            () => null,
+          ),
+        isContainerGroup: async (groupId) => {
+          await extras.ready; // the books (owned groups, containers, settings) are loaded
+          return (await extras.groups.containerOfGroup(groupId)) !== null;
+        },
+        setMark: (groupId, on) => extras.groups.setActivity(groupId, on),
+      });
+      b.tabs.onUpdated.addListener((tabId, change) => {
+        if (change.groupId !== undefined) groupMark.groupChanged(tabId);
+      });
       const activity = new AgentActivity({
         b,
         enabled: () => extras.settings.get().agentActivity,
+        groupMark,
         startBlink: (tabId) => extras.badges.startBlink(tabId),
         stopBlink: (tabId) => extras.badges.stopBlink(tabId),
         held: (tabId) => cdp.isHeld(tabId),
