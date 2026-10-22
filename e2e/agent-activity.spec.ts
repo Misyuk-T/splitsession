@@ -186,9 +186,9 @@ const containerColourNow = async (facet: Facet, id: string) =>
   ).find((c) => c.id === id)?.color;
 const groupColourNow = async (facet: Facet, groupId: number) =>
   (await facet.groupInfo(groupId))?.color ?? null;
-/** The title of a marked group: the glyph pulses between ◉ and ○. */
+/** The title of a marked group: the glyph breathes through ◉ ◎ ○ ◎. */
 const markedTitle = (name: string) =>
-  new RegExp(`^[◉○] ${name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`);
+  new RegExp(`^[◉◎○] ${name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`);
 /** Records every state (title without the marker, colour) the group is given from now on (the worker keeps the listener). */
 const recordTitles = (facet: Facet, groupId: number) =>
   facet.inWorker(async (id: number) => {
@@ -1518,7 +1518,7 @@ test.describe("visible agent activity", () => {
       .toBe(false);
     expect(await pageSees(page)).toMatchObject({ element: false });
   });
-  test("the group of a container tab turns purple and its glyph pulses ◉ / ○ while the agent works in it (collapsed too); the container name and colour stay; ⧉ and the colour come back after the fade", async ({
+  test("the group of a container tab turns purple and its glyph breathes ◉ ◎ ○ ◎ while the agent works in it (collapsed too); the container name and colour stay; ⧉ and the colour come back after the fade", async ({
     facet,
   }) => {
     const c = await facet.container("Grp");
@@ -1552,17 +1552,15 @@ test.describe("visible agent activity", () => {
     );
     expect(info.collapsed).toBe(true);
     // The page's own title is not part of this.
-    expect(await page.title()).not.toMatch(/[◉○]/);
+    expect(await page.title()).not.toMatch(/[◉◎○]/);
 
-    // It pulses (the other half shows up within a second or two), the colour constant.
+    // It breathes (the lowest point shows up within a couple of seconds), the colour constant.
     await expect
       .poll(
         async () => (await titlesSeen(facet)).map((e) => e.title[0]).join(""),
-        {
-          timeout: 5_000,
-        },
+        { timeout: 5_000 },
       )
-      .toMatch(/◉.*○|○.*◉/);
+      .toContain("○");
 
     // It ends with the toolbar dot (about 3.65 s after the last action): ⧉ and the container's colour, in one change.
     await expect
@@ -1574,7 +1572,11 @@ test.describe("visible agent activity", () => {
     expect(states.at(-1)).toEqual({ title: `⧉ ${c.name}`, color: own });
     const middle = states.slice(0, -1);
     expect(middle.every((e) => e.color === "purple")).toBe(true); // constant during the pulse
-    middle.forEach((e, i) => expect(e.title[0]).toBe(i % 2 === 0 ? "◉" : "○")); // strictly alternating, one change per tick
+    // Only the frames of the pulse appear, at least three of them, and every change is a different glyph (one write per tick).
+    const glyphs = middle.map((e) => e.title[0]!);
+    expect(glyphs.every((g) => "◉◎○".includes(g))).toBe(true);
+    expect(new Set(glyphs).size).toBeGreaterThanOrEqual(3);
+    glyphs.forEach((g, i) => i > 0 && expect(g).not.toBe(glyphs[i - 1]));
     expect(await containerNameNow(facet, c.id)).toBe(c.name);
     expect(await containerColourNow(facet, c.id)).toBe(containerColour);
     // Nothing comes back later (the echoes were not taken for an edit).
@@ -1739,7 +1741,7 @@ test.describe("visible agent activity", () => {
     expect(await containerNameNow(facet, c.id)).toBe(c.name);
   });
 
-  test("a ◉ / ○ and the agent's colour left behind by a worker that died is cleaned up at the next start (by the invisible marker); a user's own ◉ group stays", async ({
+  test("a ◉ / ◎ / ○ and the agent's colour left behind by a worker that died is cleaned up at the next start (by the invisible marker); a user's own ◉ group stays", async ({
     facet,
   }) => {
     const c = await facet.container("Left");

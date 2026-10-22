@@ -316,7 +316,7 @@ toolbar badge's colour dot).
   the tab and ~3.6 s after its last action; then the idle dot comes back. With "Show agent activity" off it does not blink.
 - **Tab group** (container tabs in a SplitSession group only): while the agent works in any tab of the group, the **group**
   turns **purple** (the agent's colour; **red** when the container is purple itself) and its title glyph **pulses**
-  "◉ name" / "○ name" once a second instead of "⧉ name" (the name and the invisible container marker are exactly as before),
+  through "◉ name", "◎ name", "○ name", "◎ name" (a 4-frame breath, ~0.4 s a frame) instead of "⧉ name" (the name and the invisible container marker are exactly as before),
   also when the group is collapsed. Writes: one for the start (glyph and colour together), one per tick (the glyph only,
   the colour stays), one at the end (glyph and the container's colour back). It starts with the tab's first action and ends
   when the toolbar dot of the last active tab stops blinking (the same timer, ~3.6 s after the last action; no second clock),
