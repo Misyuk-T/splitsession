@@ -1,6 +1,6 @@
 {
   "name": "splitsession",
-  "version": "0.1.6",
+  "version": "0.1.7",
   "private": true,
   "description": "Same site, separate logins: several accounts of one site open side by side in one Chrome profile.",
   "license": "MIT",
