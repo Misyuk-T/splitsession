@@ -12,6 +12,7 @@ import {
   hasActiveGlyph,
   type Settings,
   sleep,
+  startsWithGroupGlyph,
 } from "../core";
 import type { StorageAreaLike } from "../engine/storage/storage-area";
 import { splitIsMixed, splitViewOf } from "./split-view";
@@ -240,7 +241,8 @@ export class TabGroupProjection {
   /**
    * The user changed one of our groups in Chrome's menu (`tabGroups.onUpdated`; call after `load`). Only groups SplitSession
    * keeps count (a restored group is taken over and set to the container's state, never the other way round). SplitSession's
-   * own updates, and collapsing, change nothing. See `syncEdited`.
+   * own updates, and collapsing, change nothing. The state this event reports is what the edit is read from (`syncEdited`), not
+   * the group as it is when the pause is over: a decoration written meanwhile (the agent mark) cannot take the edit with it.
    */
   groupUpdated(group: GroupState): Promise<void> {
     if (!this.owned.has(group.id) || this.consumeExpected(group))
@@ -255,7 +257,7 @@ export class TabGroupProjection {
     ).then(() => {
       if (this.editGen.get(group.id) !== gen) return; // edited again meanwhile: that one will do
       this.editGen.delete(group.id);
-      return this.enqueue(() => this.syncEdited(group.id));
+      return this.enqueue(() => this.syncEdited(group.id, group));
     });
   }
 
@@ -577,22 +579,32 @@ export class TabGroupProjection {
     }
   }
 
-  /** Puts the group's glyph in line with `activity`, by swapping only the glyph of the title the group has now. */
+  /**
+   * Puts the group's glyph in line with `activity`, by swapping only the glyph of the title the group has now. Chrome has no
+   * "update if unchanged", so the title is read again right before the write; when it changed in between (the user is renaming)
+   * the swap is worked out again from the new title, never written from the old one. What still slips through that window is
+   * not lost: the user's event carries their title and the sync reads the edit from it (`syncEdited`).
+   */
   private async showActivity(groupId: number): Promise<void> {
-    const containerId = this.owned.get(groupId);
-    const group = await this.deps.tabGroups.get(groupId).catch(() => null);
-    if (containerId === undefined || !group) {
-      this.activity.delete(groupId); // gone, or no longer ours
+    for (let attempt = 0; attempt < 4; attempt++) {
+      const containerId = this.owned.get(groupId);
+      const group = await this.deps.tabGroups.get(groupId).catch(() => null);
+      if (containerId === undefined || !group) {
+        this.activity.delete(groupId); // gone, or no longer ours
+        return;
+      }
+      // A title without the container's marker (retyped by the user): not ours to edit; the sync puts the title back, with the glyph.
+      if (decodeGroupMarker(group.title) !== containerId) return;
+      const title = groupTitleWithGlyph(
+        group.title ?? "",
+        this.activity.has(groupId),
+      );
+      if (title === group.title) return;
+      const again = await this.deps.tabGroups.get(groupId).catch(() => null);
+      if (!again || again.title !== group.title) continue; // renamed meanwhile: decide again from the new title
+      await this.applyGroup(groupId, { title }, true).catch(() => {});
       return;
     }
-    // A title without the container's marker (retyped by the user): not ours to edit; the sync puts the title back, with the glyph.
-    if (decodeGroupMarker(group.title) !== containerId) return;
-    const title = groupTitleWithGlyph(
-      group.title ?? "",
-      this.activity.has(groupId),
-    );
-    if (title !== group.title)
-      await this.applyGroup(groupId, { title }, true).catch(() => {});
   }
 
   /** A group whose title still shows the activity glyph that nothing is showing (the worker that set it is gone) gets "⧉ " back. */
@@ -622,9 +634,13 @@ export class TabGroupProjection {
    * container's name, the group colour becomes its colour; the container's groups in every window follow. A name that is
    * empty, too long or another container's is refused: the group shows the container's name again, and it is logged. A
    * colour no container has (grey) is refused the same way. Whatever the user deleted from the title (glyph, marker)
-   * is put back.
+   * is put back. The title the user typed is the one the update event reported (`seen`): re-reading the group could return a
+   * title a decoration of ours was written over, and the edit would be lost.
    */
-  private async syncEdited(groupId: number): Promise<void> {
+  private async syncEdited(
+    groupId: number,
+    seen: { title?: string },
+  ): Promise<void> {
     const containerId = this.owned.get(groupId);
     const container =
       containerId === undefined ? undefined : this.deps.container(containerId);
@@ -633,13 +649,24 @@ export class TabGroupProjection {
     if (!group) return;
 
     const patch: { name?: string; color?: ContainerColor } = {};
-    const typed = groupNameOf(group.title);
+    const typed = groupNameOf(seen.title);
     const others = this.deps
       .containers()
       .filter((c) => c.id !== container.id)
       .map((c) => c.name);
     const check = checkContainerName(typed, others, container.name);
-    if (check.ok) {
+    if (
+      check.ok &&
+      check.name !== container.name &&
+      startsWithGroupGlyph(check.name)
+    ) {
+      // "◉ ◉ Job": the second glyph is part of the name, which would read as the glyph next time. Never a container name.
+      this.deps.log(
+        "warn",
+        "tab group rename refused, the group shows the container’s name again",
+        { groupId, container: container.name, typed, reason: "starts with ⧉" },
+      );
+    } else if (check.ok) {
       if (check.name !== container.name) patch.name = check.name;
     } else {
       this.deps.log(

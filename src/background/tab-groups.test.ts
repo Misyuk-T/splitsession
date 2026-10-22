@@ -949,6 +949,87 @@ describe("TabGroupProjection", () => {
       expect(title(1)).toBe(`⧉ Typing${groupMarker("work")}`);
     });
 
+    it("a title typed with spaces or no space after the glyph never puts a glyph into the container name, whether or not the mark has expired", async () => {
+      for (const typed of [" ◉ Job", "◉Job", "   ◉   Job", " ⧉ Job"]) {
+        for (const expired of [false, true]) {
+          const { projection, chrome, gid, title, book } = await marked();
+          await projection.setActivity(gid(1), true);
+          const event = {
+            id: gid(1),
+            title: `${typed}${groupMarker("work")}`,
+            color: chrome.groups.get(gid(1))!.color,
+          };
+          chrome.groups.get(gid(1))!.title = event.title;
+          if (expired) await projection.setActivity(gid(1), false); // the mark ends before the pause is over
+          await projection.groupUpdated(event);
+          await projection.idle();
+          expect(book.get("work")!.name).toBe("Job");
+          expect(title(1)).toBe(groupTitle("Job", "work", !expired));
+          expect(title(2)).toBe(groupTitle("Job", "work", !expired));
+        }
+      }
+    });
+
+    it("a second glyph typed after the first is refused as a name: the container keeps its name and the group shows it again", async () => {
+      const { projection, chrome, gid, title, book, logs } = await marked();
+      await projection.setActivity(gid(1), true);
+      const event = {
+        id: gid(1),
+        title: `◉ ◉ Job${groupMarker("work")}`,
+        color: chrome.groups.get(gid(1))!.color,
+      };
+      chrome.groups.get(gid(1))!.title = event.title;
+      await projection.groupUpdated(event);
+      await projection.idle();
+      expect(book.get("work")!.name).toBe("Work");
+      expect(title(1)).toBe(groupTitle("Work", "work", true));
+      expect(
+        logs.some(([l, m]) => l === "warn" && /rename refused/.test(m)),
+      ).toBe(true);
+    });
+
+    it("a rename that lands between the read and the write of the mark is not overwritten: the swap is worked out again from the new title", async () => {
+      const { projection, chrome, gid, title, book } = await marked();
+      const g = gid(1);
+      const real = chrome.api.tabGroups.get;
+      let reads = 0;
+      const user = `⧉ Job${groupMarker("work")}`;
+      chrome.api.tabGroups.get = async (id: number) => {
+        const out = await real(id);
+        if (id === g && ++reads === 1) chrome.groups.get(g)!.title = user; // after the first read
+        return out;
+      };
+      await projection.setActivity(g, true);
+      chrome.api.tabGroups.get = real;
+      expect(title(1)).toBe(groupTitle("Job", "work", true)); // the user's name, with the mark on top
+      await projection.groupUpdated({ id: g, title: user, color: "blue" });
+      await projection.idle();
+      expect(book.get("work")!.name).toBe("Job");
+      expect(title(1)).toBe(groupTitle("Job", "work", true));
+      expect(title(2)).toBe(groupTitle("Job", "work", true));
+    });
+
+    it("a rename that beats the mark's write by a hair is overwritten in Chrome but not lost: the sync reads the user's title from their event", async () => {
+      const { projection, chrome, gid, title, book } = await marked();
+      const g = gid(1);
+      const real = chrome.api.tabGroups.update;
+      const user = `⧉ Job${groupMarker("work")}`;
+      chrome.api.tabGroups.update = async (id: number, props: object) => {
+        chrome.groups.get(id)!.title = user; // the user's write lands first ...
+        return real(id, props); // ... and the mark's, worked out from the old title, lands on top of it
+      };
+      await projection.setActivity(g, true);
+      chrome.api.tabGroups.update = real;
+      expect(title(1)).toBe(groupTitle("Work", "work", true)); // the stale write won in Chrome
+      await projection.groupUpdated({ id: g, title: user, color: "blue" }); // the user's event arrives
+      await projection.idle();
+      expect(book.get("work")!.name).toBe("Job");
+      expect(title(1)).toBe(groupTitle("Job", "work", true));
+      expect(title(2)).toBe(groupTitle("Job", "work", true));
+      await projection.setActivity(g, false);
+      expect(title(1)).toBe(groupTitle("Job", "work"));
+    });
+
     it("never marks a group SplitSession does not keep: a user's group, an unknown id, or any group with groups off", async () => {
       const t = await marked();
       t.chrome.groups.set(70, {

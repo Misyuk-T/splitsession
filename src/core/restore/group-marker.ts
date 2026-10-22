@@ -51,17 +51,24 @@ export function groupTitle(
 }
 
 /** The glyph at the front of a title, with its space: "⧉" always, "◉" too in Full. */
-const LEADING_GLYPH_RE = __FULL__ ? /^\s*[⧉◉] ?/ : /^\s*⧉ ?/;
+const LEADING_GLYPH_RE = __FULL__ ? /^\s*(?:[⧉◉] ?)?/ : /^\s*(?:⧉ ?)?/;
 
 /** The title with its leading glyph set to the plain one (`active` false) or the activity one; name and marker untouched. */
 export function groupTitleWithGlyph(title: string, active: boolean): string {
-  const rest = title.replace(__FULL__ ? /^[⧉◉] ?/ : /^⧉ ?/, "");
+  // The same prefix groupNameOf takes off (leading whitespace, one glyph, its space): a title the user typed as " ◉ Job" or
+  // "◉Job" gets the glyph swapped, not a second glyph in front of it.
+  const rest = title.replace(LEADING_GLYPH_RE, "");
   return (active ? GROUP_ACTIVE_PREFIX : GROUP_PREFIX) + rest;
 }
 
 /** Whether the title carries the activity glyph (Full only). */
 export function hasActiveGlyph(title: string | undefined): boolean {
-  return __FULL__ && (title ?? "").startsWith(GROUP_ACTIVE_PREFIX);
+  return __FULL__ && /^\s*◉/.test(title ?? "");
+}
+
+/** A container name never starts with a group glyph: it would be taken for the glyph the next time the title is read. */
+export function startsWithGroupGlyph(name: string): boolean {
+  return (__FULL__ ? /^\s*[⧉◉]/ : /^\s*⧉/).test(name);
 }
 
 /**

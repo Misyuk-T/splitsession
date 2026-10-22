@@ -35,6 +35,7 @@ import {
   pruneRecords,
   type RestoreRecord,
   runtimeGateKeys,
+  startsWithGroupGlyph,
   stripGroupMarker,
   windowSignature,
 } from "./restore";
@@ -88,6 +89,37 @@ describe("group-title marker", () => {
     expect(decodeGroupMarker(groupTitleWithGlyph("◉ main", false))).toBeNull();
     // A name that itself starts with a glyph keeps it: only one glyph is the prefix.
     expect(groupNameOf(groupTitle("◉ odd", "x", true))).toBe("◉ odd");
+  });
+
+  it("a title the user typed with spaces or without the space after the glyph gets its glyph swapped, never a second one; a name never starts with a glyph by this path", () => {
+    const marker = groupMarker("work");
+    for (const typed of [
+      " ◉ Job",
+      "◉Job",
+      "   ◉   Job",
+      "\t◉ Job",
+      "⧉ Job",
+      "  ⧉Job",
+      " Job",
+      "Job",
+    ]) {
+      for (const active of [true, false]) {
+        const swapped = groupTitleWithGlyph(typed + marker, active);
+        expect(swapped).toBe(
+          (active ? "◉ " : "⧉ ") + typed.replace(/^\s*[⧉◉]? ?/, "") + marker,
+        );
+        expect(decodeGroupMarker(swapped)).toBe("work");
+        expect(groupNameOf(swapped)).toBe("Job");
+        expect(groupNameOf(typed + marker)).toBe("Job");
+      }
+      expect(hasActiveGlyph(typed + marker)).toBe(/^\s*◉/.test(typed));
+    }
+    // A glyph the user typed after the first one is part of the name; the sync refuses such a name (startsWithGroupGlyph).
+    expect(groupNameOf("◉ ◉ Job")).toBe("◉ Job");
+    for (const name of ["◉ Job", " ⧉ Job", "◉Job", "⧉"])
+      expect(startsWithGroupGlyph(name)).toBe(true);
+    for (const name of ["Job", "Job ◉", ""])
+      expect(startsWithGroupGlyph(name)).toBe(false);
   });
 
   it("a title without the marker (the user’s own group, or retyped) names no container", () => {

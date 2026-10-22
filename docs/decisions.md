@@ -1640,3 +1640,11 @@ Goal: a container tab that is not in its container's tab group (dragged out, or 
   plain group, group moves, `stopAll`), `activity.test.ts` (the mark rides the dot's clock). e2e (`agent-activity.spec.ts`):
   mark on a collapsed group, one change each way, container name unchanged, fade; rename while marked; setting and bridge off;
   plain group and a tab leaving the group; leftover `◉` cleaned after a worker restart.
+- **Review fixes (2026-10-22).** (1) The glyph swap uses the same whitespace-aware prefix as `groupNameOf` (`" ◉ Job"`, `"◉Job"`
+  get one glyph, not two), and the sync refuses a name that still starts with `⧉`/`◉` (a second glyph typed by the user): a container
+  name never starts with a group glyph through this path. (2) Chrome has no compare-and-set for a group title, so a mark write
+  can still land on top of a rename in the instant between our read and write. Two defences: `showActivity` reads the title again
+  right before the write and works the swap out from the new title when it changed; and the sync takes the typed name from
+  the title the user's `onUpdated` event reported (`syncEdited(groupId, seen)`), not from a re-read of the group, so an
+  overwritten edit is still applied (the container is renamed and the mark is written on the new name). Tests: both races
+  (`tab-groups.test.ts`), the whitespace and second-glyph cases (`restore.test.ts`, `tab-groups.test.ts`).
