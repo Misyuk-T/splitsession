@@ -69,10 +69,16 @@ describe("group-title marker", () => {
     expect(groupNameOf(groupTitle("⧉ odd", "x"))).toBe("⧉ odd"); // only one glyph is the prefix: the name round-trips
   });
 
-  it("the mark emoji 🟣 ⚪ (a surrogate pair; ⚪ may carry U+FE0F) and the old ◉ ◎ ○ are glyphs: names never contain them, the swap replaces them, the marker stays", () => {
+  it("the mark sparkles ✦ ✧ (optional U+FE0F) and the legacy 🟣 ⚪ ◉ ◎ ○ are glyphs: names never contain them, the swap replaces them, the marker stays", () => {
     const marker = groupMarker("work");
-    const glyphs = ["⧉", ...AGENT_MARK_GLYPHS, "⚪\uFE0F", "◉", "◎", "○"];
-    expect(AGENT_MARK_GLYPHS).toEqual(["🟣", "⚪"]);
+    expect(AGENT_MARK_GLYPHS).toEqual(["✦", "✧"]);
+    const legacy = ["🟣", "⚪", "⚪\uFE0F", "◉", "◎", "○"];
+    const glyphs = [
+      "⧉",
+      ...AGENT_MARK_GLYPHS,
+      ...AGENT_MARK_GLYPHS.map((g) => `${g}\uFE0F`),
+      ...legacy,
+    ];
     for (const glyph of glyphs) {
       for (const typed of [
         `${glyph} Job`,
@@ -83,17 +89,17 @@ describe("group-title marker", () => {
         const title = typed + marker;
         expect(groupNameOf(title)).toBe("Job");
         expect(decodeGroupMarker(title)).toBe("work");
-        const rest = typed.replace(/^\s*[⧉◉◎○\u26AA\u{1F7E3}]\uFE0F? ?/u, "");
+        const rest = typed.replace(/^\s*[⧉✦✧◉◎○\u26AA\u{1F7E3}]\uFE0F? ?/u, "");
         expect(groupTitleWithGlyph(title, false)).toBe(`⧉ ${rest}${marker}`);
-        expect(groupTitleWithGlyph(title, 0)).toBe(`🟣 ${rest}${marker}`);
-        expect(groupTitleWithGlyph(title, 1)).toBe(`⚪ ${rest}${marker}`);
+        expect(groupTitleWithGlyph(title, 0)).toBe(`✦ ${rest}${marker}`);
+        expect(groupTitleWithGlyph(title, 1)).toBe(`✧ ${rest}${marker}`);
         expect(groupNameOf(groupTitleWithGlyph(title, 1))).toBe("Job");
         expect(hasMarkGlyph(title)).toBe(glyph !== "⧉");
       }
     }
-    // The frames of the blink, and the swap is idempotent and its own inverse.
-    expect(groupTitle("main", "work", 0).startsWith("🟣 main")).toBe(true);
-    expect(groupTitle("main", "work", 1).startsWith("⚪ main")).toBe(true);
+    // The frames of the blink start at ✦; the swap is idempotent and its own inverse.
+    expect(groupTitle("main", "work", 0).startsWith("✦ main")).toBe(true);
+    expect(groupTitle("main", "work", 1).startsWith("✧ main")).toBe(true);
     expect(groupTitle("main", "work", 2)).toBe(groupTitle("main", "work", 0)); // frames wrap
     expect(groupTitleWithGlyph(groupTitle("main", "work", 0), 0)).toBe(
       groupTitle("main", "work", 0),
@@ -107,18 +113,20 @@ describe("group-title marker", () => {
     expect(hasMarkGlyph(undefined)).toBe(false);
     expect(hasMarkGlyph(groupTitle("Job", "work"))).toBe(false);
     // Only one glyph is the prefix: a second one is part of the name, and the sync refuses such a name.
-    expect(groupNameOf("🟣 ⚪ Job")).toBe("⚪ Job");
-    expect(groupNameOf("⚪\uFE0F ⚪\uFE0F Job")).toBe("⚪\uFE0F Job");
+    expect(groupNameOf("✦ ✧ Job")).toBe("✧ Job");
+    expect(groupNameOf("✧\uFE0F ✧\uFE0F Job")).toBe("✧\uFE0F Job");
     for (const name of [
+      "✦ Job",
+      " ✧Job",
+      "✧\uFE0F Job",
       "🟣 Job",
       " ⚪Job",
-      "⚪\uFE0F Job",
       "◎ Job",
       "○",
       "⧉ x",
     ])
       expect(startsWithGroupGlyph(name)).toBe(true);
-    for (const name of ["Job", "Job 🟣", "", "🔵 Job"])
+    for (const name of ["Job", "Job ✦", "", "🔵 Job", "★ Job"])
       expect(startsWithGroupGlyph(name)).toBe(false);
   });
 

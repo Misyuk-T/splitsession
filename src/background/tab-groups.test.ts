@@ -832,8 +832,10 @@ describe("TabGroupProjection", () => {
   });
   describe("agent-activity mark on the group title (Full)", () => {
     afterEach(() => vi.useRealTimers());
-    const ON = "🟣";
-    const OFF = "⚪";
+    const ON = "✦";
+    const OFF = "✧";
+    // The blink emoji of 0.1.7-dev builds and the glyphs of 0.1.5-dev builds: recognised for one release, cleaned up to ⧉.
+    const LEGACY = ["🟣", "⚪", "⚪\uFE0F", "◉", "◎", "○"];
 
     async function marked(settings: Partial<Settings> = {}) {
       const t = setup(settings);
@@ -868,7 +870,7 @@ describe("TabGroupProjection", () => {
       return { ...t, gid, updates, title, color, deliver, slowSettle };
     }
 
-    it("the glyph becomes 🟣 while the agent works and ⧉ again after; name, marker and colour stay; the colour is never written; one title-only write each way", async () => {
+    it("the glyph becomes ✦ while the agent works and ⧉ again after; name, marker and colour stay; the colour is never written; one title-only write each way", async () => {
       const { projection, gid, updates, title, color, book } = await marked();
       await projection.setActivity(gid(1), true);
       expect(title(1)).toBe(groupTitle("Work", "work", 0));
@@ -895,16 +897,16 @@ describe("TabGroupProjection", () => {
       expect(book.get("work")).toMatchObject({ name: "Work", color: "blue" });
     });
 
-    it("the glyph blinks 🟣 ⚪ every BLINK_MS with one title-only write per tick; the colour is never written; the timer stops with the mark", async () => {
+    it("the glyph blinks ✦ ✧ every BLINK_MS with one title-only write per tick; the colour is never written; the timer stops with the mark", async () => {
       vi.useFakeTimers();
       const { projection, gid, updates, title, color, book } = await marked();
       expect(vi.getTimerCount()).toBe(0);
       await projection.setActivity(gid(1), true);
       expect(vi.getTimerCount()).toBe(1);
-      expect(BLINK_MS).toBeLessThanOrEqual(700);
+      expect(BLINK_MS).toBe(1_200);
       await vi.advanceTimersByTimeAsync(BLINK_MS - 50);
       expect(updates).toHaveLength(1); // no tick yet: no write
-      const seen: string[] = [title(1)![0]! + title(1)![1]!];
+      const seen: string[] = [[...title(1)!][0]!];
       for (let i = 0; i < 6; i++) {
         await vi.advanceTimersByTimeAsync(i === 0 ? 50 : BLINK_MS);
         seen.push([...title(1)!][0]!);
@@ -1075,16 +1077,14 @@ describe("TabGroupProjection", () => {
       expect(book.get("work")!.color).toBe("green");
     });
 
-    it("🟣 ⚪ (with or without U+FE0F, with spaces or none) ◉ ◎ ○ in a typed title never reach the container name; a second glyph is refused", async () => {
+    it("✦ ✧ (with or without U+FE0F, with spaces or none) and the legacy 🟣 ⚪ ◉ ◎ ○ in a typed title never reach the container name; a second glyph is refused", async () => {
       for (const typed of [
         `${ON} Job`,
         ` ${ON}Job`,
         `${OFF} Job`,
-        `${OFF}️ Job`,
-        `  ${OFF}️Job`,
-        "◉ Job",
-        " ◎Job",
-        "○ Job",
+        `${OFF}\uFE0F Job`,
+        `  ${ON}\uFE0FJob`,
+        ...LEGACY.map((g, i) => (i % 2 ? ` ${g}Job` : `${g} Job`)),
       ]) {
         for (const active of [true, false]) {
           const { projection, chrome, gid, book, title } = await marked();
@@ -1215,22 +1215,31 @@ describe("TabGroupProjection", () => {
     const leftover = (glyph: string, name: string, id: string) =>
       `${glyph} ${name}${groupMarker(id)}`;
 
-    it("a mark left by a worker that died (a blink emoji, or a ◉ ◎ ○ of 0.1.5-dev) is cleaned at the next start, by the invisible marker", async () => {
+    it("a mark left by a worker that died (a sparkle, or a legacy 🟣 ⚪ ◉ ◎ ○) is cleaned at the next start, by the invisible marker", async () => {
       const { chrome, startup } = await restarted([
         { id: 50, title: leftover(ON, "Work", "work") },
         { id: 51, title: leftover(OFF, "Home", "home"), color: "cyan" },
         { id: 52, title: leftover("◉", "Work", "work") },
         { id: 53, title: leftover("○", "Home", "home"), color: "cyan" },
-        { id: 54, title: leftover(`${OFF}️`, "Work", "work") },
+        { id: 54, title: leftover(`${OFF}\uFE0F`, "Work", "work") },
+        ...LEGACY.map((g, i) => ({
+          id: 60 + i,
+          title: leftover(g, "Work", "work"),
+        })),
         { id: 55, title: `${ON} looks like ours` }, // no marker: the user's own
       ]);
-      for (const id of [50, 52, 54])
+      for (const id of [50, 52, 54, ...LEGACY.map((_, i) => 60 + i)])
         expect(chrome.groups.get(id)!.title).toBe(groupTitle("Work", "work"));
       for (const id of [51, 53])
         expect(chrome.groups.get(id)!.title).toBe(groupTitle("Home", "home"));
       expect(chrome.groups.get(55)!.title).toBe(`${ON} looks like ours`);
       expect(startup.ownedGroups().map(([id]) => id)).toEqual([
-        50, 51, 52, 53, 54,
+        50,
+        51,
+        52,
+        53,
+        54,
+        ...LEGACY.map((_, i) => 60 + i),
       ]);
     });
 
