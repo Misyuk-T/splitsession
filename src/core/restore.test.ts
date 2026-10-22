@@ -114,6 +114,21 @@ describe("group-title marker", () => {
       }
       expect(hasActiveGlyph(typed + marker)).toBe(/^\s*◉/.test(typed));
     }
+    // The hollow half of the pulse is a glyph too.
+    expect(groupTitle("main", "work", "hollow").startsWith("○ main")).toBe(
+      true,
+    );
+    expect(
+      groupTitleWithGlyph(groupTitle("main", "work", "hollow"), true),
+    ).toBe(groupTitle("main", "work", true));
+    expect(
+      groupTitleWithGlyph(groupTitle("main", "work", true), "hollow"),
+    ).toBe(groupTitle("main", "work", "hollow"));
+    expect(groupTitleWithGlyph("  ○Job", false)).toBe("⧉ Job");
+    expect(groupNameOf(groupTitle("Job", "work", "hollow"))).toBe("Job");
+    expect(groupNameOf(" ○ Job")).toBe("Job");
+    expect(hasActiveGlyph(groupTitle("Job", "work", "hollow"))).toBe(true);
+    expect(startsWithGroupGlyph("○ Job")).toBe(true);
     // A glyph the user typed after the first one is part of the name; the sync refuses such a name (startsWithGroupGlyph).
     expect(groupNameOf("◉ ◉ Job")).toBe("◉ Job");
     for (const name of ["◉ Job", " ⧉ Job", "◉Job", "⧉"])

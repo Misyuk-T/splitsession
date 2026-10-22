@@ -28,6 +28,14 @@ export const GROUP_COLOR: Readonly<Record<ContainerColor, ChromeGroupColor>> = {
 };
 
 /**
+ * The colour a container's tab group takes while the agent works in it (Full): the agent's purple, or red when the container
+ * is purple itself (the mark must differ from the group's own colour).
+ */
+export function agentGroupColor(current: ContainerColor): ChromeGroupColor {
+  return GROUP_COLOR[current] === "purple" ? "red" : "purple";
+}
+
+/**
  * The container colour a Chrome group colour stands for (the user recoloured the group in Chrome's menu). The current
  * colour wins when it maps to that same group colour; null for a colour no container has (grey).
  */

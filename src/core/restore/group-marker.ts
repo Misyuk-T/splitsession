@@ -32,48 +32,55 @@ export const GROUP_GLYPH = "⧉";
 export const GROUP_PREFIX = `${GROUP_GLYPH} `;
 
 /**
- * Full only (the agent activity mark): while the agent works in a tab of a group, the group's glyph is "◉" instead of "⧉" and
- * the rest of the title (name, invisible marker) stays exactly as it is. In Lite the constants are never used and are dropped.
+ * Full only (the agent activity mark): while the agent works in a tab of a group, the group's glyph alternates between "◉" and
+ * "○" (a pulse) instead of "⧉", and the rest of the title (name, invisible marker) stays exactly as it is. In Lite the
+ * constants are empty and dropped, so the Lite bundle has neither glyph.
  */
 export const GROUP_ACTIVE_PREFIX = __FULL__ ? "◉ " : "";
+export const GROUP_HOLLOW_PREFIX = __FULL__ ? "○ " : "";
+
+/** The glyph a group title leads with: `false` idle "⧉"; `true` the activity "◉"; `"hollow"` the other half of the pulse "○". */
+export type GroupGlyph = boolean | "hollow";
+
+const prefixOf = (glyph: GroupGlyph): string =>
+  !__FULL__ || glyph === false
+    ? GROUP_PREFIX
+    : glyph === "hollow"
+      ? GROUP_HOLLOW_PREFIX
+      : GROUP_ACTIVE_PREFIX;
 
 /** `active`: the agent-activity form (Full only; Lite always gets the plain glyph). */
 export function groupTitle(
   name: string,
   containerId: ContainerId,
-  active = false,
+  active: GroupGlyph = false,
 ): string {
-  return (
-    (__FULL__ && active ? GROUP_ACTIVE_PREFIX : GROUP_PREFIX) +
-    name +
-    groupMarker(containerId)
-  );
+  return prefixOf(active) + name + groupMarker(containerId);
 }
 
-/** The glyph at the front of a title, with its space: "⧉" always, "◉" too in Full. */
-const LEADING_GLYPH_RE = __FULL__ ? /^\s*(?:[⧉◉] ?)?/ : /^\s*(?:⧉ ?)?/;
+/** The glyph at the front of a title, with its space: "⧉" always, "◉" and "○" too in Full. */
+const LEADING_GLYPH_RE = __FULL__ ? /^\s*(?:[⧉◉○] ?)?/ : /^\s*(?:⧉ ?)?/;
 
-/** The title with its leading glyph set to the plain one (`active` false) or the activity one; name and marker untouched. */
-export function groupTitleWithGlyph(title: string, active: boolean): string {
+/** The title with its leading glyph set to the idle one (`false`) or an activity one; name and marker untouched. */
+export function groupTitleWithGlyph(title: string, glyph: GroupGlyph): string {
   // The same prefix groupNameOf takes off (leading whitespace, one glyph, its space): a title the user typed as " ◉ Job" or
   // "◉Job" gets the glyph swapped, not a second glyph in front of it.
-  const rest = title.replace(LEADING_GLYPH_RE, "");
-  return (active ? GROUP_ACTIVE_PREFIX : GROUP_PREFIX) + rest;
+  return prefixOf(glyph) + title.replace(LEADING_GLYPH_RE, "");
 }
 
-/** Whether the title carries the activity glyph (Full only). */
+/** Whether the title carries an activity glyph, "◉" or "○" (Full only). */
 export function hasActiveGlyph(title: string | undefined): boolean {
-  return __FULL__ && /^\s*◉/.test(title ?? "");
+  return __FULL__ && /^\s*[◉○]/.test(title ?? "");
 }
 
 /** A container name never starts with a group glyph: it would be taken for the glyph the next time the title is read. */
 export function startsWithGroupGlyph(name: string): boolean {
-  return (__FULL__ ? /^\s*[⧉◉]/ : /^\s*⧉/).test(name);
+  return (__FULL__ ? /^\s*[⧉◉○]/ : /^\s*⧉/).test(name);
 }
 
 /**
  * The container name a (possibly edited) group title says: the invisible marker and stray invisible characters taken off,
- * one leading "⧉" (or "◉", the activity mark) with its space taken off, whitespace collapsed. Not validated (see `checkContainerName`).
+ * one leading "⧉" (or "◉" / "○", the activity mark) with its space taken off, whitespace collapsed. Not validated (see `checkContainerName`).
  */
 export function groupNameOf(title: string | undefined): string {
   const bare = stripGroupMarker(title ?? "").replace(/[\u2061-\u2064]/g, "");
