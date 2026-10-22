@@ -1084,6 +1084,48 @@ describe("TabGroupProjection", () => {
         expect(title(1)).toBe(groupTitle("Job", "work", true));
       });
 
+      it("a rename made while marked, settled after the mark ended, keeps the container's real colour (the agent's colour is not saved into it)", async () => {
+        const { projection, chrome, gid, book, title } = await marked();
+        await projection.setActivity(gid(1), true);
+        // The event arrives while the mark is on: title typed, colour as the group wears it (purple) ...
+        const event = {
+          id: gid(1),
+          title: `◉ Job${groupMarker("work")}`,
+          color: "purple",
+        };
+        chrome.groups.get(gid(1))!.title = event.title;
+        // ... and the mark ends before the pause is over (a slow settle: the pause is 30 ms here).
+        (
+          projection as unknown as { deps: { editSettleMs?: number } }
+        ).deps.editSettleMs = 30;
+        const pending = projection.groupUpdated(event);
+        await projection.setActivity(gid(1), false);
+        await pending;
+        await projection.idle();
+        expect(book.get("work")!.name).toBe("Job");
+        expect(book.get("work")!.color).toBe("blue");
+        expect(chrome.groups.get(gid(1))!.color).toBe("blue");
+        expect(title(1)).toBe(groupTitle("Job", "work"));
+      });
+
+      it("a purple pick made while NOT marked is the user's, even if the mark starts before the pause is over", async () => {
+        const { projection, chrome, gid, book } = await marked();
+        (
+          projection as unknown as { deps: { editSettleMs?: number } }
+        ).deps.editSettleMs = 30;
+        const event = {
+          id: gid(1),
+          title: chrome.groups.get(gid(1))!.title,
+          color: "purple",
+        };
+        chrome.groups.get(gid(1))!.color = "purple";
+        const pending = projection.groupUpdated(event);
+        await projection.setActivity(gid(1), true);
+        await pending;
+        await projection.idle();
+        expect(book.get("work")!.color).toBe("purple");
+      });
+
       it("a recolour by the user while marked recolours the container; the mark stays on top, and the restore uses the new colour", async () => {
         const { projection, chrome, gid, book, deliver } = await marked();
         await projection.setActivity(gid(1), true);

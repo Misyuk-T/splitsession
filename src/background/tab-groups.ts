@@ -254,6 +254,15 @@ export class TabGroupProjection {
       return Promise.resolve();
     const gen = (this.editGen.get(group.id) ?? 0) + 1;
     this.editGen.set(group.id, gen);
+    // Full: was the mark on when the event came, and which colour was it? The edit is judged by that, not by the state when the
+    // pause is over (the mark may have ended meanwhile and the event still carries the agent's colour).
+    const containerId = this.owned.get(group.id);
+    const container =
+      containerId === undefined ? undefined : this.deps.container(containerId);
+    const markColor =
+      __FULL__ && container && this.activity.has(group.id)
+        ? agentGroupColor(container.color)
+        : null;
     const pause = this.deps.editSettleMs ?? EDIT_SETTLE_MS;
     return (
       pause > 0
@@ -262,7 +271,7 @@ export class TabGroupProjection {
     ).then(() => {
       if (this.editGen.get(group.id) !== gen) return; // edited again meanwhile: that one will do
       this.editGen.delete(group.id);
-      return this.enqueue(() => this.syncEdited(group.id, group));
+      return this.enqueue(() => this.syncEdited(group.id, group, markColor));
     });
   }
 
@@ -711,6 +720,8 @@ export class TabGroupProjection {
   private async syncEdited(
     groupId: number,
     seen: { title?: string; color?: string },
+    /** The agent's colour the group wore when the event came (null: no mark then). */
+    markColor: string | null = null,
   ): Promise<void> {
     const containerId = this.owned.get(groupId);
     const container =
@@ -749,9 +760,7 @@ export class TabGroupProjection {
     // The colour is the one the event reported too. While the mark is on, the agent's colour is ours, not the user's choice.
     const seenColor = seen.color ?? group.color;
     const color =
-      __FULL__ &&
-      this.activity.has(groupId) &&
-      seenColor === agentGroupColor(container.color)
+      __FULL__ && markColor !== null && seenColor === markColor
         ? null
         : containerColorOfGroup(seenColor, container.color);
     if (color !== null && color !== container.color) patch.color = color;

@@ -1679,3 +1679,7 @@ Goal: a container tab that is not in its container's tab group (dragged out, or 
   of title and colour. e2e (`agent-activity.spec.ts`): purple and alternating glyph on a collapsed group, container name
   and colour unchanged, restore after the fade; red for a purple container and bridge off restores at once; setting off;
   leftover `○` and purple cleaned after a worker restart.
+- **Review fix (2026-10-22).** The mark context is captured when the user's edit event arrives (`groupUpdated`: marked or not, and
+  the agent's colour then) and travels with the pending edit; settling no longer asks whether the group is marked now. A rename
+  made while marked whose pause ends after the mark did could otherwise save the agent's purple into the container. An event
+  received while unmarked keeps its colour even if the mark starts before the pause is over. Both are unit tests.
