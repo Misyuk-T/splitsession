@@ -303,7 +303,7 @@ toolbar badge's colour dot).
   vignette stays for the session. It is one `<facet-agent-overlay>` element on `<html>` (not `<body>`) with a **closed** shadow root: fixed,
   `pointer-events: none`, maximal z-index, no layout effect, no reading or clicking it from the page. `prefers-reduced-motion`:
   a static vignette, no fades, a static ring of dots.
-- **Tab strip**: the tab title is **never touched** (no emoji, no marks: the title is the page's own data for analytics,
+- **Tab strip**: the *tab* title is **never touched** (no emoji, no marks: the title is the page's own data for analytics,
   history and rebuilt titles). The **favicon** is a **ring of 8 purple dots that rotates** (14 frames per turn at 10 frames
   a second, 1.4 s a turn; the leading dot opaque, the others fading into a tail). It is drawn at 64 px and Chrome scales it
   to 32 and 16 px (the e2e suite checks both). There is no glyph in it any more: the pill carries the eye and the pointer.
@@ -314,6 +314,15 @@ toolbar badge's colour dot).
   change (SVG-icon pages too), so the tab strip animates. The toolbar button's dot of that tab **blinks** (about twice a second:
   purple and a lighter purple; on a container tab the container's colour and purple) for as long as the agent works with
   the tab and ~3.6 s after its last action; then the idle dot comes back. With "Show agent activity" off it does not blink.
+- **Tab group** (container tabs in a SplitSession group only): while the agent works in any tab of the group, the **group's**
+  title shows **"◉ name"** instead of "⧉ name" (the name and the invisible container marker are exactly as before), also when
+  the group is collapsed. It is set with the tab's first action and put back when the toolbar dot of the last active tab stops
+  blinking (the same timer, ~3.6 s after the last action; no second clock), when "Show agent activity" or the bridge is switched
+  off, when the tab leaves the group or closes, and when the group goes. One title change each way, however many actions come.
+  The change is not an edit: the container is not renamed by it and the tab-group guard ignores it; a rename the user makes
+  while the mark is on still renames the container, and the mark stays on the new name. If the worker dies while the mark is on,
+  the next start puts "⧉ " back (the invisible marker says the group is ours). Plain groups, groups SplitSession does not keep
+  and plain tabs get no mark. Full edition only (`group-activity.ts`, `TabGroupProjection.setActivity`).
 - **While the bridge is on**, plain tabs show a small **purple dot** on the toolbar button (idle, steady); container tabs keep
   their container-colour dot. With the bridge off there is no purple dot at all. The button's tooltip says the agent has full access.
 - `list_tabs`, `list_containers` and `bridge_info` touch no specific tab: popup counter and list only.

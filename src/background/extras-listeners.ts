@@ -48,9 +48,6 @@ export function registerExtrasListeners(
       void extras.ready?.then(() => extras.groups.groupRemoved(group.id)),
   );
   on(b.tabGroups.onCreated, () => extras.handleGroupsChanged());
-  on(b.tabGroups.onUpdated, (group) => {
-    extras.handleGroupsChanged();
-    extras.handleGroupEdited(group);
-  });
+  on(b.tabGroups.onUpdated, (group) => extras.handleGroupUpdated(group));
   on(b.alarms.onAlarm, (alarm) => extras.handleAlarm(alarm.name));
 }

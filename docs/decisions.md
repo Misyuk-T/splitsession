@@ -1602,3 +1602,49 @@ Goal: a container tab that is not in its container's tab group (dragged out, or 
   `duplicate-copies.spec.ts`: Lite and Full in one profile, each popup and Settings warn about the other with edition and
   version, "Open extensions" opens `chrome://extensions/?id=<other>`, a copy alone shows nothing. The spec builds its own Full
   with the Lite's path-derived ID added by the build-time variable `FACET_TEST_COPY_IDS` (no runtime setting).
+
+## Agent activity mark on the tab group's title (2026-10-22)
+
+- **Need.** The glow, the favicon ring and the blinking dot show the agent in a tab, but a collapsed tab group hides its
+  tabs, and the group is where the user keeps the container. They want to see "the agent is in this account" on the group.
+- **Decision.** While the agent acts in any tab of a SplitSession group (a group that carries a container's marker), the
+  group's title leads with `◉ ` instead of `⧉ `: `⧉ main` becomes `◉ main`, name and invisible marker untouched; visible when
+  collapsed. Full only, behind `__FULL__` and the existing "Show agent activity" setting (no new setting).
+- **No second clock.** `AgentActivity.blink` already owns the toolbar dot's timer (re-armed by every action, ends
+  `ACTIVITY_TTL_MS + 150` ms after the last one). `GroupActivityMark` (`bridge/group-activity.ts`) is started from `blink` and
+  stopped from the same timer's end, from `stopAll` (setting or bridge off) and from `forget` (tab closed). It counts active
+  tabs per group (the group is looked up once per tab per activity, so a burst is one lookup), and a tab that joins, leaves or
+  changes group meanwhile moves the count (`tabs.onUpdated` with `groupId`).
+- **Where the title is written.** `TabGroupProjection.setActivity(groupId, on)` (Full), serialised in the projection's queue
+  with every other group write. It keeps `activity` (a memory set of marked groups) and swaps only the glyph of the live title
+  (`groupTitleWithGlyph`), so a half-typed edit is not lost. A change that does not change the state writes nothing: one
+  update per transition. Only groups the projection keeps, only titles that still carry the container's marker; a retyped
+  title is put right by the sync, which now builds the wanted title with the glyph for the group's state (`wantedFor`).
+- **Sync ignores it.** The write goes through `applyGroup` like every projection write: it registers an expected
+  `(title)` entry (colour optional, so a title-only update matches), marked `quiet`. `tabGroups.onUpdated` goes to
+  `Extras.handleGroupUpdated`, which first asks `takeMarkEcho` (consumes only quiet entries) and drops the echo: no sync and
+  no guard sweep. A reached `groupUpdated` consumes any expected entry as before. As a second line, `groupNameOf` strips
+  a leading `◉` like `⧉`, and `normalise`/`containerUpdated` use `wantedFor`, so even an unrecognised echo could neither rename
+  the container nor remove the mark. A user rename while marked is not an echo: the container follows, and
+  `applyToGroups` writes the new name with `◉` (while marked) and later `⧉`. Lite keeps `⧉` only: the regex, the `◉` prefix and
+  the method bodies are under `__FULL__`; `check-lite` passes and the Lite bundle has no `◉`.
+- **Clean-up.** The mark lives in memory only. `adoptExisting` (every worker start) rewrites any `◉ ` title of a group that
+  carries a container's marker and is not marked now (also with groups off or for a deleted container); user groups
+  without the marker, even titled `◉ …`, are never touched. Bridge or setting off restores at once.
+- **Rejected.** A new timer for the group (a second clock would drift from the dot). Writing the title from the container
+  name every time (it would overwrite a pending edit; the glyph swap on the live title does not). Marking per tab (Chrome has
+  no tab-level title in a group). Persisting the active set (a stale `◉` after a crash is worse than a missed one).
+- **Tests.** Unit: `restore.test.ts` (glyph swap with and without marker, idempotence, `◉` name stripping),
+  `tab-groups.test.ts` (set/restore, one update per change, echo dropped, user rename and container rename while marked, plain
+  and retyped groups, groups off, removed group, clean-up at start incl. groups off), `group-activity.test.ts` (counting,
+  plain group, group moves, `stopAll`), `activity.test.ts` (the mark rides the dot's clock). e2e (`agent-activity.spec.ts`):
+  mark on a collapsed group, one change each way, container name unchanged, fade; rename while marked; setting and bridge off;
+  plain group and a tab leaving the group; leftover `◉` cleaned after a worker restart.
+- **Review fixes (2026-10-22).** (1) The glyph swap uses the same whitespace-aware prefix as `groupNameOf` (`" ◉ Job"`, `"◉Job"`
+  get one glyph, not two), and the sync refuses a name that still starts with `⧉`/`◉` (a second glyph typed by the user): a container
+  name never starts with a group glyph through this path. (2) Chrome has no compare-and-set for a group title, so a mark write
+  can still land on top of a rename in the instant between our read and write. Two defences: `showActivity` reads the title again
+  right before the write and works the swap out from the new title when it changed; and the sync takes the typed name from
+  the title the user's `onUpdated` event reported (`syncEdited(groupId, seen)`), not from a re-read of the group, so an
+  overwritten edit is still applied (the container is renamed and the mark is written on the new name). Tests: both races
+  (`tab-groups.test.ts`), the whitespace and second-glyph cases (`restore.test.ts`, `tab-groups.test.ts`).
