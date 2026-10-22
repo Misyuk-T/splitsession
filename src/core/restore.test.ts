@@ -7,6 +7,7 @@ import {
   createSequentialAllocator,
 } from "./dnr/rule-compiler";
 import { CookieJar } from "./jar/cookie-jar";
+import { agentGroupColors } from "./indicators";
 import {
   associateSessions,
   CLOSED_GRACE_MS,
@@ -17,12 +18,11 @@ import {
   GATE_RULE_ID_BASE,
   gateKey,
   gateUrlFilter,
-  GROUP_PULSE,
   groupMarker,
   groupNameOf,
   groupTitle,
-  groupTitleWithGlyph,
-  hasActiveGlyph,
+  groupTitleIdle,
+  hasLegacyMarkGlyph,
   heldPageTarget,
   heldPageUrl,
   isRestorable,
@@ -69,94 +69,44 @@ describe("group-title marker", () => {
     expect(groupNameOf(groupTitle("⧉ odd", "x"))).toBe("⧉ odd"); // only one glyph is the prefix: the name round-trips
   });
 
-  it("the agent-activity form swaps only the leading glyph: name and invisible marker stay exactly, both ways, idempotently", () => {
-    const plain = groupTitle("main", "work");
-    const active = groupTitle("main", "work", true);
-    expect(active).toBe(plain.replace("⧉", "◉"));
-    expect(active.startsWith("◉ main")).toBe(true);
-    expect(hasActiveGlyph(active)).toBe(true);
-    expect(hasActiveGlyph(plain)).toBe(false);
-    expect(hasActiveGlyph(undefined)).toBe(false);
-    // The marker and the name survive the swap; the swap is its own inverse and idempotent.
-    expect(decodeGroupMarker(active)).toBe("work");
-    expect(groupNameOf(active)).toBe("main");
-    expect(groupTitleWithGlyph(plain, true)).toBe(active);
-    expect(groupTitleWithGlyph(active, true)).toBe(active);
-    expect(groupTitleWithGlyph(active, false)).toBe(plain);
-    expect(groupTitleWithGlyph(plain, false)).toBe(plain);
-    // Without the marker (a retyped title) and without a glyph (an earlier version): the glyph is set, the rest stays.
-    expect(groupTitleWithGlyph("◉ main", false)).toBe("⧉ main");
-    expect(groupTitleWithGlyph("main", true)).toBe("◉ main");
-    expect(decodeGroupMarker(groupTitleWithGlyph("◉ main", false))).toBeNull();
-    // A name that itself starts with a glyph keeps it: only one glyph is the prefix.
-    expect(groupNameOf(groupTitle("◉ odd", "x", true))).toBe("◉ odd");
-  });
-
-  it("a title the user typed with spaces or without the space after the glyph gets its glyph swapped, never a second one; a name never starts with a glyph by this path", () => {
+  it("glyphs left by 0.1.5-dev builds (◉ ◎ ○) are still read: the name never contains them, the idle glyph replaces them, the marker stays", () => {
     const marker = groupMarker("work");
-    for (const typed of [
-      " ◉ Job",
-      "◉Job",
-      "   ◉   Job",
-      "\t◉ Job",
-      "⧉ Job",
-      "  ⧉Job",
-      " Job",
-      "Job",
-    ]) {
-      for (const active of [true, false]) {
-        const swapped = groupTitleWithGlyph(typed + marker, active);
-        expect(swapped).toBe(
-          (active ? "◉ " : "⧉ ") + typed.replace(/^\s*[⧉◉]? ?/, "") + marker,
+    for (const glyph of ["◉", "◎", "○", "⧉"]) {
+      for (const typed of [
+        `${glyph} Job`,
+        ` ${glyph} Job`,
+        `${glyph}Job`,
+        `   ${glyph}   Job`,
+      ]) {
+        const title = typed + marker;
+        expect(groupNameOf(title)).toBe("Job");
+        expect(decodeGroupMarker(title)).toBe("work");
+        expect(groupTitleIdle(title)).toBe(
+          `⧉ ${typed.replace(/^\s*[⧉◉◎○]? ?/, "")}${marker}`,
         );
-        expect(decodeGroupMarker(swapped)).toBe("work");
-        expect(groupNameOf(swapped)).toBe("Job");
-        expect(groupNameOf(typed + marker)).toBe("Job");
+        expect(groupNameOf(groupTitleIdle(title))).toBe("Job");
+        expect(hasLegacyMarkGlyph(title)).toBe(glyph !== "⧉");
       }
-      expect(hasActiveGlyph(typed + marker)).toBe(/^\s*◉/.test(typed));
     }
-    // Every frame of the pulse is a glyph: ◉ ◎ ○ (◎ between them), the order is fixed, and Lite has none of them.
-    expect(GROUP_PULSE).toEqual([true, "mid", "hollow", "mid"]);
-    expect(GROUP_PULSE.map((g) => groupTitle("main", "work", g)[0])).toEqual([
-      "◉",
-      "◎",
-      "○",
-      "◎",
-    ]);
-    for (const g of GROUP_PULSE) {
-      const t = groupTitle("Job", "work", g);
-      expect(hasActiveGlyph(t)).toBe(true);
-      expect(groupNameOf(t)).toBe("Job");
-      expect(decodeGroupMarker(t)).toBe("work");
-      expect(groupTitleWithGlyph(t, false)).toBe(groupTitle("Job", "work"));
-      expect(groupTitleWithGlyph(groupTitle("Job", "work"), g)).toBe(t);
-    }
-    expect(groupTitleWithGlyph(" ◎Job", "hollow")).toBe("○ Job");
-    expect(groupNameOf(" ◎ Job")).toBe("Job");
-    for (const name of ["◎ Job", " ◎Job"])
-      expect(startsWithGroupGlyph(name)).toBe(true);
-    expect(groupNameOf("◎ ◎ Job")).toBe("◎ Job");
-    // The hollow half of the pulse is a glyph too.
-    expect(groupTitle("main", "work", "hollow").startsWith("○ main")).toBe(
-      true,
-    );
-    expect(
-      groupTitleWithGlyph(groupTitle("main", "work", "hollow"), true),
-    ).toBe(groupTitle("main", "work", true));
-    expect(
-      groupTitleWithGlyph(groupTitle("main", "work", true), "hollow"),
-    ).toBe(groupTitle("main", "work", "hollow"));
-    expect(groupTitleWithGlyph("  ○Job", false)).toBe("⧉ Job");
-    expect(groupNameOf(groupTitle("Job", "work", "hollow"))).toBe("Job");
-    expect(groupNameOf(" ○ Job")).toBe("Job");
-    expect(hasActiveGlyph(groupTitle("Job", "work", "hollow"))).toBe(true);
-    expect(startsWithGroupGlyph("○ Job")).toBe(true);
-    // A glyph the user typed after the first one is part of the name; the sync refuses such a name (startsWithGroupGlyph).
-    expect(groupNameOf("◉ ◉ Job")).toBe("◉ Job");
-    for (const name of ["◉ Job", " ⧉ Job", "◉Job", "⧉"])
+    expect(groupTitleIdle(`Job${marker}`)).toBe(groupTitle("Job", "work"));
+    expect(groupTitleIdle(groupTitle("Job", "work"))).toBe(
+      groupTitle("Job", "work"),
+    ); // idempotent
+    expect(hasLegacyMarkGlyph(undefined)).toBe(false);
+    // Only one glyph is the prefix: a second one is part of the name, and the sync refuses such a name.
+    expect(groupNameOf("◉ ◎ Job")).toBe("◎ Job");
+    for (const name of ["◎ Job", " ◉Job", "○", "⧉ x"])
       expect(startsWithGroupGlyph(name)).toBe(true);
     for (const name of ["Job", "Job ◉", ""])
       expect(startsWithGroupGlyph(name)).toBe(false);
+  });
+
+  it("the agent's colours: purple and pink, red and orange for a purple or pink container", () => {
+    expect(agentGroupColors("blue")).toEqual(["purple", "pink"]);
+    expect(agentGroupColors("turquoise")).toEqual(["purple", "pink"]);
+    expect(agentGroupColors("red")).toEqual(["purple", "pink"]);
+    expect(agentGroupColors("purple")).toEqual(["red", "orange"]);
+    expect(agentGroupColors("pink")).toEqual(["red", "orange"]);
   });
 
   it("a title without the marker (the user’s own group, or retyped) names no container", () => {

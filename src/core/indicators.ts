@@ -28,11 +28,17 @@ export const GROUP_COLOR: Readonly<Record<ContainerColor, ChromeGroupColor>> = {
 };
 
 /**
- * The colour a container's tab group takes while the agent works in it (Full): the agent's purple, or red when the container
- * is purple itself (the mark must differ from the group's own colour).
+ * The two colours a container's tab group alternates between while the agent works in it (Full): purple and pink, the
+ * agent's colours; red and orange when the container is itself purple or pink (the pulse must differ from the group's own
+ * colour). The title is never touched, so the chip keeps its width and the tabs do not jump.
  */
-export function agentGroupColor(current: ContainerColor): ChromeGroupColor {
-  return GROUP_COLOR[current] === "purple" ? "red" : "purple";
+export function agentGroupColors(
+  current: ContainerColor,
+): readonly [ChromeGroupColor, ChromeGroupColor] {
+  const own = GROUP_COLOR[current];
+  return own === "purple" || own === "pink"
+    ? ["red", "orange"]
+    : ["purple", "pink"];
 }
 
 /**
