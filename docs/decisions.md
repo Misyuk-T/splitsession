@@ -1748,11 +1748,29 @@ Goal: a container tab that is not in its container's tab group (dragged out, or 
   it, so a container name never starts with ⧉ 🟣 ⚪ ◉ ◎ ○. Everything but `⧉` sits behind `__FULL__`: the Lite bundle has none of
   them (checked after `build:lite`).
 - **Clean-up at the worker's start (groups with our marker).** A blink emoji or a `◉ ◎ ○` (0.1.5-dev) goes back to `⧉` (groups on:
-  `normalise`; groups off or a deleted container: `clearLeftoverMark`). For one release the colour too: a group of ours wearing
-  one of its container's 0.1.6 pulse colours (purple/pink, red/orange for a purple/pink container) that is not the container's
-  own goes back to the container's colour (`agentGroupColors` stays for this, to be removed after the next release).
+  `normalise`; groups off or a deleted container: `clearLeftoverMark`). The colour: see the scope fix below.
 - **Tests.** Unit: emoji prefix matching incl. U+FE0F and spaces, frames and wrap, blink order and timer, one title-only write per
   tick, echoes, rename and recolour while marked (recolours, purple and pink included, simply sync), both races, clean-up of
   legacy glyphs and stuck colours with groups on and off. e2e (`agent-activity.spec.ts`): the title alternates 🟣/⚪ on a collapsed
   group with the colour constant and the container unchanged, ⧉ after the fade; user recolour and rename while marked; a purple
   container keeps its colour; bridge or setting off restores at once; plain groups; clean-up after a worker restart.
+
+## Colour clean-up scope: never with groups off (2026-10-23)
+
+- **Review finding.** The clean-up that put the container's colour back on a group wearing one of the 0.1.6 pulse colours ran on
+  every worker start, also with groups off, and judged by palette membership. A palette colour cannot prove that 0.1.6's pulse
+  left it: a blue container with a purple group that the user chose was reset to blue on every start.
+- **Decision.** `clearLeftoverMark` (the path for groups SplitSession does not keep: groups off, or a deleted container) now only
+  turns a mark glyph back to `⧉`; it never writes a colour, and `agentGroupColors` is gone. The glyph cleanup stays on every
+  start (unambiguous).
+- **What about a group left in a pulse colour by 0.1.6?** With groups on, the take-over at the worker's start
+  (`adoptExisting` -> `normalise`) already sets every marker-bearing group to its container's colour (the container is the
+  truth: since the groups feature exists, a restored group is shown in the container's current form, and while the worker lives the
+  two-way sync keeps group and container equal). That puts a stuck pulse colour back, with no palette guess and no migration to
+  persist, so no `runtime.onInstalled` migration or done-flag was added: with groups on, a group's colour that differs from its
+  container's is reset at a worker start, whatever the colour (pre-existing behaviour, tested). With groups off nothing is
+  written to a colour, so a stuck 0.1.6 colour there stays until the user sets groups on (then it is set by the take-over) or
+  recolours it.
+- **Tests.** `tab-groups.test.ts`: a deliberate purple or pink on a marker-bearing group with groups off is untouched start after
+  start (only the glyph changes); with groups on a purple container's purple group is untouched start after start and a stuck
+  colour on a blue container is set to the container's colour by the take-over; groups without our marker are never touched.

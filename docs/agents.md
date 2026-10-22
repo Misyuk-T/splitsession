@@ -325,7 +325,8 @@ toolbar badge's colour dot).
   guard ignores them; a rename or a recolour the user makes while the mark is on still syncs to the container (the mark stays
   on the new name; a recolour simply wins, as the mark writes no colours). If the worker dies while the mark is on, the next
   start puts "⧉" back on our groups (the invisible marker says they are ours); it also turns back a "◉ ◎ ○" of a 0.1.5-dev
-  build and, for one release, the purple/pink (red/orange) colour that 0.1.6's colour pulse could leave behind. Plain groups,
+  build (this glyph cleanup runs on every start, also with groups off). The group colour is never touched by the mark or by
+  that cleanup; with groups on, taking a group over sets it to the container's colour, as for every restored group. Plain groups,
   groups SplitSession does not keep and plain tabs get no mark. Full edition only (`group-activity.ts`,
   `TabGroupProjection.setActivity`).
 - **While the bridge is on**, plain tabs show a small **purple dot** on the toolbar button (idle, steady); container tabs keep

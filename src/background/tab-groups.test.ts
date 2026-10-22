@@ -1234,12 +1234,13 @@ describe("TabGroupProjection", () => {
       ]);
     });
 
-    it("0.1.6's stuck pulse colour goes back to the container's colour at the next start (also red and orange for a purple or pink container)", async () => {
+    it("with groups on, taking a group over sets the container's colour: that puts back a colour 0.1.6's pulse left behind; a container whose own colour is purple or pink keeps it; groups without our marker are never touched", async () => {
       const { chrome } = await restarted([
-        { id: 50, title: groupTitle("Work", "work"), color: "purple" },
+        { id: 50, title: groupTitle("Work", "work"), color: "purple" }, // stuck (container is blue)
         { id: 51, title: groupTitle("Work", "work"), color: "pink" },
         { id: 52, title: groupTitle("Home", "home"), color: "purple" },
         { id: 53, title: "Mine", color: "purple" }, // the user's own: no marker
+        { id: 54, title: groupTitle("Work", "work"), color: "blue" },
       ]);
       expect(chrome.groups.get(50)!.color).toBe("blue");
       expect(chrome.groups.get(51)!.color).toBe("blue");
@@ -1248,31 +1249,59 @@ describe("TabGroupProjection", () => {
         title: "Mine",
         color: "purple",
       });
+      expect(chrome.groups.get(54)!.color).toBe("blue");
     });
 
-    it("the cleanup also runs with groups off: glyph back to ⧉, a pulse colour that is not the container's back; other colours, user groups and a deleted container's colour stay", async () => {
-      const { chrome } = await restarted(
-        [
-          { id: 50, title: leftover(ON, "Work", "work"), color: "purple" },
-          { id: 51, title: groupTitle("Work", "work"), color: "green" }, // not a pulse colour: the user's choice
-          { id: 52, title: leftover(OFF, "Old", "deleted"), color: "purple" }, // deleted container: title only
-          { id: 53, title: `${OFF} mine`, color: "pink" },
-        ],
-        false,
-      );
-      expect(chrome.groups.get(50)).toMatchObject({
-        title: groupTitle("Work", "work"),
-        color: "blue",
-      });
-      expect(chrome.groups.get(51)).toMatchObject({ color: "green" });
-      expect(chrome.groups.get(52)).toMatchObject({
-        title: groupTitle("Old", "deleted"),
+    it("a purple container's group that is purple is left alone, start after start", async () => {
+      containers.set("violet", {
+        id: "violet",
+        name: "Violet",
         color: "purple",
+        createdAt: 3,
       });
-      expect(chrome.groups.get(53)).toMatchObject({
-        title: `${OFF} mine`,
-        color: "pink",
-      });
+      try {
+        const first = await restarted([
+          { id: 50, title: groupTitle("Violet", "violet"), color: "purple" },
+        ]);
+        expect(first.chrome.groups.get(50)!.color).toBe("purple");
+        await first.startup.adoptExisting(); // the next start
+        expect(first.chrome.groups.get(50)!.color).toBe("purple");
+      } finally {
+        containers.delete("violet");
+      }
+    });
+
+    it("with groups off the colour of a group is never touched, however often the worker starts: a deliberate purple or pink stays; only the glyph goes back to ⧉", async () => {
+      const groups = [
+        { id: 50, title: groupTitle("Work", "work"), color: "purple" }, // deliberate, marker present, blue container
+        { id: 51, title: groupTitle("Work", "work"), color: "pink" },
+        { id: 52, title: leftover(ON, "Work", "work"), color: "purple" }, // a leftover glyph on a purple group
+        { id: 53, title: leftover(OFF, "Old", "deleted"), color: "purple" }, // deleted container
+        { id: 54, title: groupTitle("Work", "work"), color: "green" },
+        { id: 55, title: `${OFF} mine`, color: "pink" }, // no marker: the user's
+      ];
+      const { chrome, startup } = await restarted(groups, false);
+      for (let start = 0; start < 3; start++) {
+        expect(chrome.groups.get(50)).toMatchObject({
+          title: groupTitle("Work", "work"),
+          color: "purple",
+        });
+        expect(chrome.groups.get(51)).toMatchObject({ color: "pink" });
+        expect(chrome.groups.get(52)).toMatchObject({
+          title: groupTitle("Work", "work"),
+          color: "purple",
+        });
+        expect(chrome.groups.get(53)).toMatchObject({
+          title: groupTitle("Old", "deleted"),
+          color: "purple",
+        });
+        expect(chrome.groups.get(54)).toMatchObject({ color: "green" });
+        expect(chrome.groups.get(55)).toMatchObject({
+          title: `${OFF} mine`,
+          color: "pink",
+        });
+        await startup.adoptExisting(); // another worker start
+      }
     });
 
     it("the cleanup does not undo a mark that is live: the agent started before the adoption ran", async () => {

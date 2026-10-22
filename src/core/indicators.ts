@@ -28,20 +28,6 @@ export const GROUP_COLOR: Readonly<Record<ContainerColor, ChromeGroupColor>> = {
 };
 
 /**
- * The two colours 0.1.6 alternated a container's tab group between while the agent worked in it (purple and pink; red and
- * orange when the container is itself purple or pink). The mark no longer touches the colour; this is kept for one release
- * only, to put the container's colour back on a group that 0.1.6 left in one of them when its worker died.
- */
-export function agentGroupColors(
-  current: ContainerColor,
-): readonly [ChromeGroupColor, ChromeGroupColor] {
-  const own = GROUP_COLOR[current];
-  return own === "purple" || own === "pink"
-    ? ["red", "orange"]
-    : ["purple", "pink"];
-}
-
-/**
  * The container colour a Chrome group colour stands for (the user recoloured the group in Chrome's menu). The current
  * colour wins when it maps to that same group colour; null for a colour no container has (grey).
  */
