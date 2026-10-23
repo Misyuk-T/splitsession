@@ -1,5 +1,12 @@
 import { execFileSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, rmSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -7,6 +14,7 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import { type BrowserContext, chromium, type Page } from "@playwright/test";
 
+import { EXTENSION_ID } from "./env";
 import { apiOf, extensionArgs, isOurWorker, popupPage } from "./extension";
 import { expect, type Facet } from "./fixtures";
 
@@ -120,22 +128,43 @@ export async function openPopup(
   return { page, toggle: page.getByRole("switch", { name: /Agent bridge/ }) };
 }
 
-/** PIDs of the processes that have the bridge socket open (the host; clients only while connected). */
+/** The bridge sockets of this run: the shared one (protocol 1) and one per Chrome profile (`bridges/<key>.sock`, protocol 2). */
+export function bridgeSockets(facet: Facet): string[] {
+  const dir = path.join(path.dirname(facet.profile.socketPath), "bridges");
+  const found = existsSync(dir)
+    ? readdirSync(dir)
+        .filter((n) => n.endsWith(".sock"))
+        .map((n) => path.join(dir, n))
+    : [];
+  if (existsSync(facet.profile.socketPath))
+    found.push(facet.profile.socketPath);
+  return found;
+}
+
+/** PIDs of the processes that have a bridge socket of this run open (the hosts; clients only while connected). */
 export function hostPids(facet: Facet): number[] {
+  const sockets = bridgeSockets(facet);
+  if (sockets.length === 0) return [];
   try {
-    return execFileSync("lsof", ["-t", facet.profile.socketPath], {
-      encoding: "utf8",
-      stdio: ["ignore", "pipe", "ignore"],
-    })
-      .split("\n")
-      .filter(Boolean)
-      .map(Number);
-  } catch {
-    return [];
+    return [
+      ...new Set(
+        execFileSync("lsof", ["-t", ...sockets], {
+          encoding: "utf8",
+          stdio: ["ignore", "pipe", "ignore"],
+        })
+          .split("\n")
+          .filter(Boolean)
+          .map(Number),
+      ),
+    ];
+  } catch (error) {
+    // lsof exits 1 when one of the files is not open by anybody, but still prints the others.
+    const out = (error as { stdout?: string }).stdout ?? "";
+    return [...new Set(out.split("\n").filter(Boolean).map(Number))];
   }
 }
 
-/** A second Chrome profile with SplitSession loaded, its own host manifest, and the SAME bridge socket as `facet`'s profile. */
+/** A second Chrome profile with SplitSession loaded, its own host manifest, and the SAME bridge socket directory as `facet`'s profile. */
 export interface SecondProfile {
   ctx: BrowserContext;
   api<T = unknown>(method: string, ...args: unknown[]): Promise<T>;
@@ -187,4 +216,33 @@ export async function startSecondProfile(facet: Facet): Promise<SecondProfile> {
       rmSync(userDataDir, { recursive: true, force: true });
     },
   };
+}
+
+/**
+ * Registers a stand-in for the bridge program of 0.1.x (protocol 1) with this run's browser profile: it ignores the
+ * extension's `hello`, says `ready` with version 1, and stays until Chrome closes its stdin. Enough to see how a newer
+ * extension treats an older host.
+ */
+export function installOldHost(facet: Facet): void {
+  const script = path.join(facet.profile.userDataDir, "old-host.mjs");
+  writeFileSync(
+    script,
+    `#!${process.execPath}
+const frame = (m) => { const b = Buffer.from(JSON.stringify(m)); const h = Buffer.alloc(4); h.writeUInt32LE(b.length); process.stdout.write(Buffer.concat([h, b])); };
+frame({ type: "ready", version: 1, socket: "/nowhere/bridge.sock" });
+process.stdin.on("data", () => {});
+process.stdin.on("end", () => process.exit(0));
+`,
+    { mode: 0o755 },
+  );
+  writeFileSync(
+    path.join(facet.profile.nativeHostsDir, MANIFEST),
+    JSON.stringify({
+      name: "com.splitsession.bridge",
+      description: "old SplitSession bridge (test stand-in)",
+      path: script,
+      type: "stdio",
+      allowed_origins: [`chrome-extension://${EXTENSION_ID}/`],
+    }),
+  );
 }

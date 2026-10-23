@@ -47,6 +47,8 @@ export interface RouterDeps {
   sleep?: (ms: number) => Promise<void>;
   /** The profile label the user set in the options (empty: none), for `bridge_info`. */
   profileLabel?: () => Promise<string>;
+  /** This profile's bridge key (the name of its socket), for `bridge_info`. */
+  profileKey?: () => Promise<string>;
   /** Shows the user which tab the agent touches (glow, pill, favicon, badge). Absent: nothing is shown. */
   activity?: Pick<AgentActivity, "touch" | "hide" | "unhide">;
   /**

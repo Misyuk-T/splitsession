@@ -32,6 +32,11 @@ never your real config: `HOME=$(mktemp -d) node bridge/dist/splitsession-bridge.
 1. Set the version in `bridge/package.json` (semver; the bridge and the extension talk a versioned protocol,
    `PROTOCOL_VERSION` in `src/bridge/protocol.ts`: a protocol change needs a new major or minor of the package, and a
    note in the extension's release notes saying which package version it needs). Commit it.
+   Protocol history: 1 = bridge 0.1.x (one shared socket); 2 = bridge 0.2.0 (one socket per Chrome profile, `hello` with the
+   profile key, `__profile` / `__tabs`). Each side works with the other's older version (agents.md, "Several Chrome
+   profiles"), but several profiles at once need both: extension with protocol 2 and bridge 0.2.0+. After publishing a new
+   minor, users run `npx splitsession-bridge@latest install` (the switch card shows it when it sees an older host) and
+   restart their AI client.
 2. Build and look at the tarball (nothing is uploaded):
 
    ```sh

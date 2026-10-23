@@ -5,23 +5,32 @@ import type {
   BridgeState,
   RecentAction,
 } from "../../background/bridge/agent-bridge";
+import { UPDATE_COMMAND } from "../../bridge/protocol";
 import { IconChevron, IconSettings } from "../icons";
 import { useBridge } from "../useBridge";
 import { Button } from "./Button";
+import { CopyBlock } from "./CopyBlock";
 import { Switch, SwitchControl } from "./Toggle";
 
 import "./bridge-card.css";
 
 const actionsLabel = (n: number) => (n === 1 ? "1 action" : `${n} actions`);
 
+/** “Work”, quoted, or null when the profile has no name. */
+const quoted = (label: string | undefined) => (label ? `“${label}”` : null);
+
 function headline(state: BridgeState): string {
   switch (state.status) {
-    case "connected":
-      return "Agent connected — full access";
+    case "connected": {
+      const as = quoted(state.profileLabel);
+      return as
+        ? `Agent connected as ${as} — full access`
+        : "Agent connected — full access";
+    }
     case "host-missing":
       return "ON, but the agent host is not installed";
     case "busy":
-      return "Another Chrome profile holds the agent bridge — turn it off there first";
+      return "Another Chrome profile holds the agent bridge — update the bridge program to connect both";
     case "error":
       return "ON, but the connection failed";
     default:
@@ -110,8 +119,15 @@ function optionsStatus(
   switch (status) {
     case "off":
       return { text: "Off", detail: null };
-    case "connected":
-      return { text: "Connected", detail: null };
+    case "connected": {
+      const as = quoted(state?.profileLabel);
+      return {
+        text: as ? `Connected as ${as}` : "Connected",
+        detail: state?.hostOutdated
+          ? "One Chrome profile at a time: the bridge program is older than this extension."
+          : null,
+      };
+    }
     case "connecting":
       return { text: "Connecting…", detail: null };
     case "host-missing":
@@ -123,7 +139,7 @@ function optionsStatus(
       return {
         text: "Not connected",
         detail:
-          "Another Chrome profile holds the bridge. Turn it off there first.",
+          "Another Chrome profile holds the bridge. Its program is older than this extension: update it to connect several profiles at once.",
       };
     default:
       return {
@@ -172,11 +188,30 @@ export const BridgeStatusLine = ({
   );
 };
 
-/** The agent bridge switch (options page) as a plain row, with its status line. Setup steps are not here: they sit in "How to connect". */
-export const BridgeSwitchCard = ({ bridge }: { bridge: Bridge }) => {
+/**
+ * The agent bridge switch (options page) as a plain row, with its status line. Setup steps are not here: they sit in "How to
+ * connect". Two hints live here because they are about this switch: update an old bridge program (it serves one profile at a
+ * time), and name this profile once several profiles are connected.
+ */
+export const BridgeSwitchCard = ({
+  bridge,
+  onNameProfile,
+}: {
+  bridge: Bridge;
+  /** Opens "Advanced" with the profile name field focused. */
+  onNameProfile?(): void;
+}) => {
   const { view, error, busy, setEnabled } = bridge;
   const on = view?.enabled ?? false;
   const status = bridgeStatus(bridge);
+  const state = view?.state;
+  const outdated =
+    state?.hostOutdated === true &&
+    (status === "connected" || status === "busy");
+  const unnamed =
+    status === "connected" &&
+    (state?.profiles ?? 0) >= 2 &&
+    (state?.profileLabel ?? "") === "";
   return (
     <div
       class="opt-row"
@@ -197,6 +232,28 @@ export const BridgeSwitchCard = ({ bridge }: { bridge: Bridge }) => {
         role="status"
         data-testid="bridge-status"
       />
+      {outdated && (
+        <div class="fx-bridge__hint" data-testid="bridge-update">
+          <p class="fx-secondary">
+            To connect several Chrome profiles at once, update the bridge
+            program, then switch the bridge off and on:
+          </p>
+          <CopyBlock text={UPDATE_COMMAND} testId="bridge-update-command" />
+        </div>
+      )}
+      {unnamed && (
+        <div class="fx-bridge__hint" data-testid="bridge-name-hint">
+          <p class="fx-secondary">
+            {state?.profiles} Chrome profiles have the bridge on. Name this one
+            so the agent can tell them apart.
+          </p>
+          {onNameProfile && (
+            <Button small onClick={onNameProfile}>
+              Name this profile
+            </Button>
+          )}
+        </div>
+      )}
       {error && (
         <p class="fx-notice fx-notice--error" role="alert">
           {error}

@@ -252,3 +252,14 @@ button.fx-bridge__main:focus-visible {
 .fx-mcp__dot--on {
   background: var(--fx-accent);
 }
+/* Options page: a hint under the status line (update the bridge program; name this profile). */
+.fx-bridge__hint {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+  padding: 0 0 6px;
+}
+.fx-bridge__hint p {
+  margin: 0;
+}

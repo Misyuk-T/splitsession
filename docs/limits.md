@@ -515,12 +515,20 @@ full access to every tab, in containers or not (docs/agents.md, section 7). What
   never restart it (see decisions.md, "Smooth indicators").
 - **`assign_tab`** has the known gap of the popup's "Reopen in": the tab keeps a `window.opener` of its old document.
   `open_in_container` has no such gap. `navigate` can be answered by a domain rule that replaces the tab (new ID).
-- **One profile at a time, and the first one wins.** A second Chrome profile turning the bridge on does not take the
-  socket over: its host sees a live socket, reports "busy" and exits; its popup says "Another Chrome profile holds the
-  agent bridge — turn it off there first" and retries every 10 s (and on the 1-minute alarm), connecting when the first
-  lets go. There is no way to use two profiles at once. `bridge_info` and the optional profile name (options page) tell
-  the agent which profile it reached. Two hosts starting in the same instant are resolved by the socket bind (the loser
-  is "busy"); a leftover socket of a killed host is detected (connection refused) and replaced.
+- **Several profiles at once (bridge 0.2+).** Every Chrome profile whose switch is on has its own host and socket
+  (`bridges/<profile key>.sock`); one MCP server sees them all (agents.md, "Several Chrome profiles"). Limits: a tab ID is
+  unique only within one Chrome process, so the same ID in two browsers (or two `--user-data-dir` instances) needs
+  `profile`; a tool that opens a tab needs `profile` when several profiles are on; every tool on a tab checks live which
+  profile has it (one extra local round trip per profile), and a tab ID the agent saw in another profile or under an earlier
+  host session (the bridge restarted, e.g. after a service-worker restart or a Chrome restart) is refused as stale until the
+  agent lists the tabs again, even when it is in fact the same tab. With a host or an extension of 0.1.x, the shared `bridge.sock` still
+  serves one profile at a time and a second such profile is "busy" (retries every 10 s), as before. Copying a profile
+  directory copies its key: the copy finds its socket taken twice in a row and makes a new key.
+  Accepted residual risk (independent review, 2026-10-23): sequences that need the same tab or window ID to be reused
+  by another profile or a restarted host while the agent still holds the old ID (separate Chrome processes, a host
+  restart in the middle of a listing, a never-listed tab clicked before and after a restart, a bare `windowId` reused by
+  another profile) can still reach the new owner. Within one Chrome, where tab and window IDs are unique across
+  profiles and not reused during a session, these paths do not occur; the agent should re-list after any restart.
 - **Switching off mid-tool.** Tools check the switch before every step that changes something and stop waiting at once,
   so a received-but-not-started action is not performed; every debugger session is detached at the same moment. What cannot be recalled: a script already running in a page
   (`run_js`, including its timers), and a browser call already issued (a click that was dispatched, a navigation that

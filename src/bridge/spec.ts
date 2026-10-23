@@ -73,10 +73,10 @@ const wait: Schema = {
 export const TOOLS: readonly ToolSpec[] = [
   {
     name: "bridge_info",
-    title: "Which Chrome profile",
+    title: "Which Chrome profiles",
     readOnly: true,
     description:
-      "Which Chrome profile these tools are connected to: the profile label the user set in the SplitSession options (null when none), how many windows, tabs and containers it has, and the extension version. The user may have several Chrome profiles but only ONE holds the bridge at a time; when the tabs are not the ones you expected, check this and ask the user to switch the bridge off in the other profile.",
+      "The Chrome profiles these tools are connected to (several can have the bridge on at once): for each, its key, the name the user gave it in SplitSession (label; null when none), how many windows, tabs and containers it has, and the extension version. With one profile its fields are also at the top level. Use a label or key as `profile` in the other tools; when the tabs are not the ones you expected, check this (the profile you need may have the bridge off).",
     inputSchema: obj({}),
   },
   {
@@ -84,7 +84,7 @@ export const TOOLS: readonly ToolSpec[] = [
     title: "List containers",
     readOnly: true,
     description:
-      "List the SplitSession containers (several logged-in accounts of one site in one Chrome profile). Returns id, name, colour and number of open tabs for each.",
+      "List the SplitSession containers (several logged-in accounts of one site in one Chrome profile). Returns id, name, colour, number of open tabs and the Chrome profile ({key, label}) for each; every connected profile has its own containers.",
     inputSchema: obj({}),
   },
   {
@@ -92,7 +92,7 @@ export const TOOLS: readonly ToolSpec[] = [
     title: "List tabs",
     readOnly: true,
     description:
-      'List the open tabs of ALL Chrome windows with the SplitSession container each one belongs to (container is null for an ordinary tab). Titles of container tabs may carry a "[container] " prefix if the user enabled it. Use the returned tabId with every other tab tool.',
+      'List the open tabs of ALL Chrome windows of every connected Chrome profile, with the SplitSession container each one belongs to (container is null for an ordinary tab) and its profile ({key, label}). Titles of container tabs may carry a "[container] " prefix if the user enabled it. Use the returned tabId with every other tab tool: it finds the tab\'s profile by itself.',
     inputSchema: obj({
       windowId: {
         type: "integer",

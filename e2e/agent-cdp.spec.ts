@@ -1012,6 +1012,11 @@ test.describe("agent bridge: full hands (CDP)", () => {
         (globalThis as any).chrome.debugger.attach({ tabId: id }, "1.3"),
       tabId,
     );
+    // The bridge restarted (a new host): a tab ID listed before is refused as stale, untouched, until the agent lists again.
+    const stale = await mcp.call("click", { tabId, selector: "#trusted" });
+    expect(stale.isError).toBe(true);
+    expect(stale.text).toMatch(/stale tab id/);
+    await mcp.json("list_tabs");
     expect(await mcp.json("click", { tabId, selector: "#trusted" })).toEqual({
       clicked: "<button#trusted>",
     });

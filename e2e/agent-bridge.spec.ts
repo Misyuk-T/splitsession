@@ -4,6 +4,7 @@ import type { Page } from "@playwright/test";
 import {
   hostPids,
   installHost,
+  installOldHost,
   type Mcp,
   openPopup,
   type SecondProfile,
@@ -906,15 +907,11 @@ test.describe("agent bridge", () => {
     }
   });
 
-  test("a second Chrome profile does not take over a live bridge; it says so, and connects once the first lets go", async ({
+  test("two Chrome profiles at once: the agent sees both, a tab tool goes to the tab's profile, a new tab needs a profile, and a profile switched off is gone", async ({
     facet,
   }) => {
-    await facet.api("setBridgeProfileLabel", "First");
-    const { popup, card } = await turnOn(facet);
+    const { card } = await turnOn(facet);
     mcp = await startMcp(facet);
-    expect(
-      (await mcp.json<{ profileLabel: string }>("bridge_info")).profileLabel,
-    ).toBe("First");
     const [firstHost] = hostPids(facet);
     expect(firstHost).toBeGreaterThan(0);
 
@@ -923,40 +920,126 @@ test.describe("agent bridge", () => {
     await second.api("updateSettings", { agentBridge: true });
     const popup2 = await second.popup();
     const card2 = popup2.getByTestId("bridge-card");
-    await expect(card2).toHaveAttribute("data-status", "busy", {
+    await expect(card2).toHaveAttribute("data-status", "connected", {
       timeout: 20_000,
     });
     await expect(popup2.getByTestId("bridge-status")).toContainText(
-      "Another Chrome profile holds the agent bridge — turn it off there first",
+      "Agent connected as “Second”",
     );
-    await expect(card2).toContainText("in use elsewhere");
-
-    // The first profile still holds it, truthfully: same host, still connected, and the agent still reaches it.
+    // Nobody waits and nobody is taken over: both are connected, each with a host of its own.
     await expect(card).toHaveAttribute("data-status", "connected");
-    await expect(popup.getByTestId("bridge-status")).toContainText(
-      "Agent connected",
-    );
-    expect(hostPids(facet)).toEqual([firstHost]);
-    expect(
-      (await mcp.json<{ profileLabel: string }>("bridge_info")).profileLabel,
-    ).toBe("First");
-    expect(Array.isArray(await tabsOf(mcp))).toBe(true);
+    await expect.poll(() => hostPids(facet).length).toBe(2);
+    expect(hostPids(facet)).toContain(firstHost);
 
-    // The first profile lets go: the second one, which was waiting, connects by itself.
-    await popup.getByRole("switch", { name: /Agent bridge/ }).click();
-    await expect(card).toHaveCount(0);
-    await expect(card2).toHaveAttribute("data-status", "connected", {
-      timeout: 30_000,
+    // The first profile has no name yet: with two profiles on, its settings suggest one, and the button leads to the field.
+    const options = await facet.ctx.newPage();
+    await options.goto(ext("options.html"));
+    const hint = options.getByTestId("bridge-name-hint");
+    await expect(hint).toContainText("2 Chrome profiles have the bridge on", {
+      timeout: 10_000,
     });
-    expect(hostPids(facet)).toHaveLength(1);
-    expect(hostPids(facet)).not.toContain(firstHost);
-    const info = await mcp.json<{
-      profileLabel: string;
-      windows: number;
-      tabs: number;
-    }>("bridge_info");
-    expect(info.profileLabel).toBe("Second");
-    expect(info.windows).toBeGreaterThanOrEqual(1);
+    await hint.getByRole("button", { name: "Name this profile" }).click();
+    const field = options.getByRole("textbox", { name: "Profile name" });
+    await expect(field).toBeFocused();
+    await field.fill("First");
+    await field.press("Enter");
+    await expect(hint).toHaveCount(0);
+    await expect(options.getByTestId("bridge-status")).toContainText(
+      "Connected as “First”",
+    );
+    await options.close();
+
+    type Info = {
+      profiles: Array<{ profileKey: string; label: string | null }>;
+      profileLabel?: string;
+    };
+    const info = await mcp.json<Info>("bridge_info");
+    expect(info.profiles.map((p) => p.label).sort()).toEqual([
+      "First",
+      "Second",
+    ]);
+    expect(info.profileLabel).toBeUndefined(); // the one-profile shape is only for one profile
+
+    // A new tab with two profiles on: the agent must say where.
+    const ambiguous = await mcp.call("open_in_container", {
+      url: at("a.localhost", "/agent"),
+      container: "work",
+      createIfMissing: true,
+    });
+    expect(ambiguous.isError).toBe(true);
+    expect(ambiguous.text).toMatch(/Several Chrome profiles/);
+    expect(ambiguous.text).toContain('"First"');
+    expect(ambiguous.text).toContain('"Second"');
+    const { tabId } = await mcp.json<{ tabId: number }>("open_tab", {
+      url: at("a.localhost", "/agent"),
+      profile: "second",
+    });
+
+    type Row = TabRow & { profile: { key: string; label: string | null } };
+    const rows = await mcp.json<Row[]>("list_tabs");
+    expect(new Set(rows.map((r) => r.profile.label))).toEqual(
+      new Set(["First", "Second"]),
+    );
+    const mine = rows.filter((r) => r.tabId === tabId);
+    expect(mine.map((r) => r.profile.label)).toContain("Second");
+
+    // A click on that tab reaches the second profile. Two Chromium processes number their tabs independently, so the
+    // first profile may have a tab with the same ID: then the agent is told to name the profile.
+    let clicked = await mcp.call("click", { tabId, selector: "#go" });
+    if (mine.length > 1) {
+      expect(clicked.text).toMatch(/exists in several Chrome profiles/);
+      clicked = await mcp.call("click", {
+        tabId,
+        selector: "#go",
+        profile: "Second",
+      });
+    }
+    expect(clicked.isError, clicked.text).toBe(false);
+    const page2 = second.ctx.pages().find((p) => p.url().includes("/agent"));
+    expect(page2).toBeTruthy();
+    await expect(page2!.locator("body")).toContainText("clicked:");
+    expect(facet.ctx.pages().some((p) => p.url().includes("/agent"))).toBe(
+      false,
+    );
+
+    // The second profile switches off: it is gone from the agent's view, and the first is again the only one.
+    await popup2.getByRole("switch", { name: /Agent bridge/ }).click();
+    await expect(card2).toHaveCount(0);
+    await expect
+      .poll(async () =>
+        (await mcp!.json<Row[]>("list_tabs")).some(
+          (r) => r.profile.label === "Second",
+        ),
+      )
+      .toBe(false);
+    await expect.poll(() => hostPids(facet)).toEqual([firstHost]);
+    const alone = await mcp.json<Info>("bridge_info");
+    expect(alone.profiles).toHaveLength(1);
+    expect(alone.profileLabel).toBe("First");
+    // One profile: opening a tab needs no profile again.
+    const plain = await mcp.call("open_tab", { url: "about:blank" });
+    expect(plain.isError, plain.text).toBe(false);
+    await expect(card).toHaveAttribute("data-status", "connected");
+  });
+
+  test("with a bridge program older than the extension it still connects, and Settings asks for an update", async ({
+    facet,
+  }) => {
+    installOldHost(facet);
+    await facet.api("updateSettings", { agentBridge: true });
+    const options = await facet.ctx.newPage();
+    await options.goto(ext("options.html"));
+    const card = options.getByTestId("bridge-card");
+    await expect(card).toHaveAttribute("data-status", "connected", {
+      timeout: 15_000,
+    });
+    await expect(options.getByTestId("bridge-status")).toContainText(
+      "One Chrome profile at a time",
+    );
+    await expect(options.getByTestId("bridge-update-command")).toContainText(
+      "npx splitsession-bridge@latest install",
+    );
+    await options.close();
   });
 
   test("the profile name from the options page is what bridge_info reports", async ({

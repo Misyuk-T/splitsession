@@ -1798,3 +1798,102 @@ Goal: a container tab that is not in its container's tab group (dragged out, or 
   emoji and `◉ ◎ ○` cleaned to `⧉` with groups on and off, names never starting with any glyph. e2e (`agent-activity.spec.ts`): the
   title alternates ✦/✧ on a collapsed group with the colour constant and the container unchanged, ⧉ after the fade; recolour and
   rename while marked; bridge or setting off restores at once; clean-up after a worker restart (sparkle and legacy 🟣).
+
+## Several Chrome profiles on the agent bridge at once (2026-10-23)
+
+- **Need.** The owner runs three Chrome profiles and wants the bridge on in all of them, with one MCP server (one entry in the
+  AI client) seeing every tab. Until now one shared socket (`bridge.sock`) meant one profile at a time; a second one waited
+  ("busy").
+- **Decision: one socket per profile.** Chrome starts one host per profile anyway. The extension keeps a random profile key
+  (10 characters a-z0-9, `chrome.storage.local` `bridgeProfileKey`) and opens every connection with
+  `{type: "hello", version: 2, profileKey}`; the host listens on `<SplitSession>/bridges/<key>.sock` (0700 / 0600, removed on
+  exit, never a successor's: inode check) and answers `ready` v2. Protocol is now 2 (`PROTOCOL_VERSION`); npm package 0.2.0
+  (minor: protocol change; not published).
+  - *Why a key and not the label:* the label can change while connected and two profiles may share one (or none). The label
+    is read live (see below), not carried in the handshake: a deviation from the brief, which had the label in `hello`.
+  - *Why 10 characters:* a Unix socket path is at most 104 bytes on macOS; `~/Library/Application Support/SplitSession/bridges/`
+    is already about 70. The host refuses a path over 103 bytes with a clear error.
+  - *A copied profile directory* copies the key. The host for an already-served key says `busy` with `code: "same-profile"`;
+    the extension looks again after 1 s (normally the previous host leaving after a quick off/on) and, refused twice in a row,
+    makes a new key.
+- **MCP server: discovery per call.** Every tool call lists `bridges/*.sock` plus the legacy `bridge.sock` (a `readdir` and a
+  `stat` each: cheap), and keeps one presence connection per socket (re-synced every 5 s), so "agent present" still works per
+  profile. No `fs.watch`: a scan is cheaper to reason about and survives the directory being created later. A socket that
+  refuses connections and is older than 5 s is removed (younger ones may be a host between bind and listen).
+- **Routing.**
+  - `bridge_info`, `list_tabs`, `list_containers`: every profile (or `profile`), each item tagged `profile: {key, label}`.
+    `bridge_info` keeps its old top-level fields when exactly one profile is connected, so single-profile agents and scripts
+    see what they saw before, plus `profiles`.
+  - Tab tools: by `tabId`. Chrome's tab IDs come from one counter per browser process (`SessionID`), shared by all profiles of
+    that process, so within one Chrome a tab ID names one tab. Across processes (two browsers, a second `--user-data-dir`, and
+    the e2e suite, whose two profiles are two Chromium processes) they collide. So no composite ID: plain `tabId` stays (no
+    agent or doc changes for the normal case), the MCP server finds the owner (cache from the latest list, keyed by profile key
+    and socket inode so a restarted host never inherits stale entries; else ask every profile), an ID found in two profiles is
+    refused with a clear error, and an optional `profile` on every tool disambiguates. A cached route answered with "no tab" is
+    looked up once more (the tool did nothing).
+  - Opening tools (`open_tab`, `open_in_container`): `profile`, or the profile owning `windowId`, or the only profile.
+    Several profiles and no `profile`: an error that lists them. Never a guess: the wrong profile means the wrong account.
+  - `profile` is added to the schemas by the MCP server only and stripped before forwarding: the extension's schemas (which
+    refuse unknown arguments) are unchanged, so an extension of 0.1.x keeps working.
+- **Bookkeeping is not an agent action.** The first e2e run showed the popup counter at 4 for 2 agent calls: labels came from
+  `bridge_info` and lookups from `list_tabs`, which the extension counts and lists. Now the MCP server asks `__profile` (key,
+  label) and `__tabs` (tab and window IDs), which the extension answers itself (its `__` tools were already internal), never
+  counted, listed or logged. An extension of 0.1.x answers "pong" to them; the MCP server then falls back to `bridge_info` /
+  `list_tabs` for that profile.
+- **Compatibility.** Host and MCP server are one installed program (the AI client runs `<host copy> mcp`), so they always
+  match except while an old MCP process is still running (restart the AI client after updating).
+  - Old extension + new host: no `hello` within 1.5 s, so the host takes the shared `bridge.sock` with protocol 1 and the old
+    single-holder rules; the MCP server shows it with the key `legacy`. New-extension profiles keep their own sockets.
+  - New extension + old host: the old host ignores `hello` and answers `ready` v1; the extension connects (works for one
+    profile), sets `hostOutdated`, and the switch card shows "One Chrome profile at a time" with
+    `npx splitsession-bridge@latest install`. A code-less `busy` (only an old host sends one) is shown the same way.
+- **UI.** The "only one profile can hold the bridge" texts are gone. The status says "Connected as “<name>”"; the host
+  reports how many profiles are on (`profiles`, counted from the socket files every 3 s), and with two or more and no name the
+  card says so and has **Name this profile** (opens Advanced, focuses the field). The name stays under Advanced.
+- **Security.** Unchanged trust model: same macOS user only (0700 directories, 0600 sockets), the host's origin check, one
+  switch per profile, no network port. New input is the profile key from the extension: the host accepts only 6-16 letters
+  a-z/digits (never `legacy`), so it cannot name a path outside `bridges/`.
+- **Tests.** Unit: protocol and key (format, CSPRNG rejection sampling, stored once, malformed replaced, renewed), the
+  extension (hello on every connection, v1 host flagged, code-less busy, profile count, same-profile retry then new key,
+  `__profile`/`__tabs` uncounted), discovery and stale cleanup, the dispatcher (aggregation and tags, `profile` filter by
+  name/key, unknown and duplicate names, routing from cache and by lookup, restarted host, colliding IDs, ambiguous open,
+  windowId routing, a profile vanishing, old-extension fallbacks), the MCP tool schemas. Integration (`host.test.ts`): the real
+  host bundle with the test as the extension: per-profile socket and permissions, profile count, same-key busy, bad key, no
+  hello = shared socket and old busy, and the MCP dispatcher against two live hosts (route, refuse, switch off,
+  legacy + new together). e2e (`agent-bridge.spec.ts`): two Chromium profiles connected at once (both listed with names,
+  ambiguous open refused, a click on the second profile's tab lands there, name hint and button, switching one off removes
+  it), and a protocol-1 host stand-in (connects; Settings asks for the update).
+
+### Review fix: tab routing checks live and refuses stale IDs (2026-10-23)
+
+- **Review (Codex, GPT-6.1 Sol): two P1 routing blockers**, both reproduced against the dispatcher. (1) The cache was an
+  authority: after `list_tabs {profile: A}` with tab 7 in A and B, `close_tab {tabId: 7}` closed A's tab instead of refusing
+  as ambiguous; collisions that appeared later were missed too. (2) Stale IDs were redirected: A's tab 7 seen, A disconnected,
+  B got a tab 7, and `close_tab 7` closed B's unrelated tab (the one-profile shortcut skipped any check, and the "no tab" retry
+  looked for the ID elsewhere). A new socket inode likewise led to acting on a reused ID.
+- **Decision.** No routing cache any more. Every tool on a tab, with or without `profile`, with one profile or many, asks the
+  profiles live which tab IDs they have (`__tabs`; uncounted, `list_tabs` for an extension of 0.1.x) and acts only on exactly
+  one owner (with `profile`: that profile, which must have the tab). On top of that, an **affinity**: for each tab ID, where the
+  agent saw it (profile key + host session). Each host has a random session ID (`crypto.randomBytes(8)`) and stamps it on every
+  answer to the MCP server (`ClientResponse.session`; also in `ready`); a host of 0.1.x has none, so the socket inode stands in.
+  If the live owner is not a place where the agent saw the ID, the call is refused as stale and nothing is done. A full
+  `list_tabs` replaces the sightings (all of them, or that profile's with `profile`), a filtered one and ordinary answers add to
+  them, a tab the agent opens replaces them. The "no tab" retry is gone.
+- **Cost.** One more local round trip per profile per tab tool (the extension answers `__tabs` from `tabs.query`), also with a
+  single profile. And an ID listed before the bridge restarted is refused once even if it is the same tab (a worker restart
+  restarts the host): the agent lists again. Both are the price of never acting on the wrong tab.
+- **Tests.** Unit regressions for both repros (profile-filtered list then close; a later collision; disconnect and reuse),
+  same profile with a new session, a new inode without a session, explicit `profile` (must have the tab; stale until that
+  profile is listed), a tab moved between windows of one profile (fine), an ID never seen, one profile (same checks). Host
+  integration: every answer carries the session, the profile's next host has a new one, and a click on an ID seen under the
+  old host is refused until `list_tabs`.
+- **Second review: one gap left.** Work and Home both had tab 7; a full `list_tabs`, then `list_tabs {profile: Work}`, then Work
+  disconnected: an unqualified `close_tab 7` went to Home, because Home's older sighting still matched. Now an ID seen in more
+  than one profile since the last **complete** `list_tabs` (every connected profile answered an unfiltered list) is marked
+  colliding, and an unqualified call for it is refused ("exists in several Chrome profiles; pass profile") even when only one
+  profile has it now. `profile` (checked live and against the sightings of that profile and session) acts on it; only a
+  complete list that shows one owner clears the mark. A list of one profile, a filtered list, or a list some connected
+  profile did not answer never clears it. Regressions: the exact repro, a complete list after the disconnect (then the call
+  works), explicit `profile: Home` (works), scoped/filtered/incomplete lists (still refused), and an ID that becomes
+  colliding through a later filtered list.
+

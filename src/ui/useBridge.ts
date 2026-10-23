@@ -19,6 +19,10 @@ const OFF: BridgeState = {
   lastTool: null,
   lastAt: null,
   recent: [],
+  profileLabel: "",
+  profileKey: null,
+  profiles: null,
+  hostOutdated: false,
 };
 
 /** The agent bridge's setting and live state (polled while the page is open), with the switch and "check again". */

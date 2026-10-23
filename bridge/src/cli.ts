@@ -30,6 +30,7 @@ import {
   unregisterClient,
 } from "./clients";
 import {
+  bridgesDir,
   type BrowserKey,
   BROWSERS,
   browsersFor,
@@ -40,6 +41,7 @@ import {
   socketPath,
 } from "./paths";
 import { probeSocket } from "./probe";
+import { discoverEndpoints } from "./profiles";
 
 /** Name of the native messaging host and of the MCP server registration. */
 export const HOST_NAME = "com.splitsession.bridge";
@@ -606,9 +608,23 @@ export async function status(options: CliOptions, env: Env): Promise<number> {
     }
   }
 
-  const sock = socketPath(env.process ?? process.env, env.home ?? homedir());
+  const procEnv = env.process ?? process.env;
+  const sock = socketPath(procEnv, env.home ?? homedir());
   const state = await probeSocket(sock);
-  log(`\nsocket:        ${sock}\n               ${SOCKET_TEXT[state]}`);
+  log(
+    `\nsocket:        ${sock} (shared, SplitSession 0.1.x)\n               ${SOCKET_TEXT[state]}`,
+  );
+  // Protocol 2: one socket per Chrome profile whose bridge is on.
+  const profilesDir = bridgesDir(procEnv, env.home ?? homedir());
+  const profiles = discoverEndpoints(
+    profilesDir,
+    path.join(profilesDir, ".none"),
+  );
+  log(`profiles:      ${profilesDir}`);
+  if (profiles.length === 0)
+    log("               none (no Chrome profile has the bridge on)");
+  for (const p of profiles)
+    log(`               ${p.key}: ${SOCKET_TEXT[await probeSocket(p.socket)]}`);
   log("\nAI clients (is the MCP server registered?):");
   const ctx = clientCtx(env, env.node ?? process.execPath, host.entry);
   for (const client of options.clients ?? CLIENT_KEYS) {
