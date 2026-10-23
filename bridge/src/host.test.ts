@@ -197,6 +197,7 @@ describe("the host, one per Chrome profile", () => {
       version: 2,
       socket: sock,
       profileKey: "aaaaaaaaaa",
+      session: expect.stringMatching(/^[0-9a-f]{16}$/),
     });
     expect(statSync(sock).mode & 0o777).toBe(0o600);
     expect(statSync(path.join(dir, "bridges")).mode & 0o777).toBe(0o700);
@@ -317,6 +318,36 @@ describe("the MCP server's dispatcher against real hosts", () => {
     const none = await d.run("list_tabs", {});
     expect(none.isError).toBe(true);
     expect(t0(none)).toMatch(/not installed|is off/);
+  });
+
+  it("every answer carries the host's session; the profile's next host has a new one, and a tab ID seen under the old one is refused as stale", async () => {
+    const dir = tmp();
+    const env = {
+      FACET_BRIDGE_SOCKET: path.join(dir, "bridge.sock"),
+      FACET_BRIDGE_MANIFEST_DIRS: path.join(dir, "none"),
+    };
+    const first = start(env, tabsOf([7])).hello("aaaaaaaaaa");
+    const s1 = (await first.next("ready")).session;
+    const d = liveDispatcher(env);
+    await d.run("list_tabs", {});
+    expect(
+      (await d.run("click", { tabId: 7, ref: "e1" })).isError,
+    ).toBeUndefined();
+    await first.close();
+    // Chrome restarted: a new host for the same profile, and tab 7 is now another page.
+    const second = start(env, tabsOf([7])).hello("aaaaaaaaaa");
+    const s2 = (await second.next("ready")).session;
+    expect(s2).not.toBe(s1);
+    const r = await d.run("click", { tabId: 7, ref: "e1" });
+    expect(r.isError).toBe(true);
+    expect(t0(r)).toMatch(/stale tab id 7/);
+    expect(
+      second.messages.filter((m) => m.type === "request" && m.tool === "click"),
+    ).toHaveLength(0);
+    await d.run("list_tabs", {});
+    expect(
+      (await d.run("click", { tabId: 7, ref: "e1" })).isError,
+    ).toBeUndefined();
   });
 
   it("an old extension on the shared socket and a new one on its own socket are both reachable", async () => {

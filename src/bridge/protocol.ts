@@ -44,6 +44,8 @@ export type HostToExtension =
       socket: string;
       /** The key the host serves (protocol 2+): it is the name of its socket file. */
       profileKey?: string;
+      /** The host process's session ID (protocol 2+), also stamped on every answer to the MCP server. */
+      session?: string;
     }
   /** The host could not start (e.g. the socket directory is not writable) and is about to exit. */
   | { type: "fatal"; message: string }
@@ -73,10 +75,14 @@ export interface ClientRequest {
   args?: unknown;
 }
 
-/** host -> MCP server. `bridge` replies to `{id, tool: '__ping'}`. */
-export type ClientResponse =
+/**
+ * host -> MCP server. `bridge` replies to `{id, tool: '__ping'}`. `session` (bridge 0.2+): a random ID of the host process
+ * that answered, the same on every answer it gives; a new host (switch off and on, Chrome restarted) has a new one.
+ */
+export type ClientResponse = (
   | { id: number; ok: true; result: ToolResult }
-  | { id: number; ok: false; error: string };
+  | { id: number; ok: false; error: string }
+) & { session?: string };
 
 export const PING_TOOL = "__ping";
 /** Sent once by an MCP server over a connection it keeps open for as long as it runs: the host counts these as "agents present". */

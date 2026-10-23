@@ -1,3 +1,4 @@
+import { randomBytes } from "node:crypto";
 import {
   appendFileSync,
   chmodSync,
@@ -169,11 +170,13 @@ export async function runHost(args: string[]): Promise<void> {
   }
   const busyReason = profileKey !== null ? SAME_PROFILE_REASON : BUSY_REASON;
 
+  // This host process's session: the MCP server tells a tab ID it saw from the same number after a restart by it.
+  const session = randomBytes(8).toString("hex");
   const relay = new Relay({ sendToExtension: (m) => send(m) });
   const server = net.createServer((socket) => {
     const lines = new LineReader();
     const id = relay.addClient((response) => {
-      if (!socket.destroyed) socket.write(encodeLine(response));
+      if (!socket.destroyed) socket.write(encodeLine({ ...response, session }));
     });
     socket.setEncoding("utf8");
     socket.on("data", (chunk: string) => {
@@ -262,6 +265,7 @@ export async function runHost(args: string[]): Promise<void> {
       version: PROTOCOL_VERSION,
       socket: sockPath,
       profileKey,
+      session,
     });
     note(`ready on ${sockPath}`);
     // How many profiles have the bridge on: the extension suggests a profile name once there are several.

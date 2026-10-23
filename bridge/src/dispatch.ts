@@ -13,11 +13,12 @@ import { type Endpoint, LEGACY_KEY } from "./profiles";
  *
  * - `bridge_info`, `list_tabs`, `list_containers`: every profile (or the one `profile` names); every item carries
  *   `profile: {key, label}`.
- * - Tools on a tab (`tabId`): the profile that has that tab. Chrome numbers tabs once per browser process, so the profiles
+ * - Tools on a tab (`tabId`): checked live every time (`__tabs`, which the extension answers without counting it): exactly
+ *   one profile (or the one `profile` names) must have the tab, and it must be where the agent saw it (same profile, same
+ *   host session), else the ID is stale and nothing is done. Chrome numbers tabs once per browser process, so the profiles
  *   of one Chrome never share a tab ID; profiles of separate Chrome processes can, and then `profile` must say which.
  * - Tools that open a tab (`open_tab`, `open_in_container`): `profile`, or the profile of `windowId`, or the only profile;
  *   never a guess when several are connected.
- * - One profile connected: every call goes to it, exactly as before there were several.
  */
 
 /** Thrown by `Caller` when nothing listens on the socket (switched off, or a leftover file). */
@@ -53,8 +54,29 @@ export interface ProfileInfo {
 }
 
 type Outcome =
-  | { ok: true; ep: Endpoint; result: CallToolResult }
-  | { ok: false; ep: Endpoint; error: string };
+  | { ok: true; ep: Endpoint; session: string; result: CallToolResult }
+  | { ok: false; ep: Endpoint; session: string; error: string };
+
+/** Where the agent saw a tab ID: a profile and the host process (session) that served it then. */
+interface Sighting {
+  key: string;
+  session: string;
+}
+
+/**
+ * The host's session: a random ID per host process (bridge 0.2+ stamps it on every answer). A host of 0.1.x has none:
+ * then the socket file's inode stands for it (a new host makes a new socket file).
+ */
+const sessionOf = (ep: Endpoint, response: ClientResponse): string =>
+  typeof response.session === "string" && response.session !== ""
+    ? response.session
+    : `ino:${ep.ino}`;
+
+type TabList = {
+  ep: Endpoint;
+  session: string;
+  list: Array<{ tabId?: unknown; windowId?: unknown }>;
+};
 
 /** The tools that list or describe: asked of every profile. */
 const AGGREGATE = new Set(["bridge_info", "list_tabs", "list_containers"]);
@@ -84,18 +106,16 @@ function firstJson(result: CallToolResult): unknown {
   }
 }
 
-const NO_TAB = /^no tab with id \d+/;
-
 /** `"Work" (key k1abc23def)`, or `unnamed (key …)`. */
 const describe = (p: ProfileInfo) =>
   `${p.label === null ? "unnamed" : JSON.stringify(p.label)} (key ${p.profileKey})`;
 
 export class Dispatcher {
-  /** Which profile (and which host of it: the socket's inode) a tab ID was last seen in; `null`: in more than one. */
-  private readonly tabs = new Map<
-    number,
-    { key: string; ino: number } | null
-  >();
+  /**
+   * Where the agent last saw each tab ID (lists and tool answers): the affinity that keeps a stale ID from reaching a
+   * different tab. Never used to pick a profile on its own: every tab tool first checks, live, which profile has the tab.
+   */
+  private readonly seen = new Map<number, Sighting[]>();
 
   constructor(private readonly d: DispatchDeps) {}
 
@@ -105,57 +125,47 @@ export class Dispatcher {
     allArgs: Record<string, unknown>,
   ): Promise<CallToolResult> {
     const { profile, ...args } = allArgs;
-    let endpoints = this.d.discover();
+    const endpoints = this.d.discover();
     if (endpoints.length === 0) return failure(this.d.unreachable());
 
-    let targets = endpoints;
+    let chosen: Endpoint | undefined;
     if (typeof profile === "string") {
-      const chosen = await this.resolve(profile, endpoints);
-      if ("error" in chosen) return failure(chosen.error);
-      targets = [chosen.ep];
+      const found = await this.resolve(profile, endpoints);
+      if ("error" in found) return failure(found.error);
+      chosen = found.ep;
     }
 
-    if (AGGREGATE.has(name)) return this.aggregate(name, args, targets);
+    if (AGGREGATE.has(name))
+      return this.aggregate(name, args, chosen ? [chosen] : endpoints, !chosen);
 
-    let target: Endpoint | undefined =
-      targets.length === 1 ? targets[0] : undefined;
-    if (!target && typeof args.tabId === "number") {
-      const found = await this.findTab(args.tabId, endpoints);
+    let target: Endpoint | undefined;
+    if (typeof args.tabId === "number") {
+      // Every tool on a tab, with one profile or many, with `profile` or without: who has this tab NOW, and is it the tab
+      // the agent saw?
+      const found = await this.ownerOf(args.tabId, endpoints, chosen);
       if ("error" in found) return failure(found.error);
       target = found.ep;
-    }
-    if (!target && CREATE.has(name) && typeof args.windowId === "number") {
+    } else if (chosen) {
+      target = chosen;
+    } else if (CREATE.has(name) && typeof args.windowId === "number") {
       const found = await this.findWindow(args.windowId, endpoints);
       if ("error" in found) return failure(found.error);
       target = found.ep;
+    } else if (endpoints.length === 1) {
+      target = endpoints[0];
     }
     if (!target) {
-      endpoints = this.d.discover();
-      const infos = await this.labels(endpoints);
+      const infos = await this.labels(this.d.discover());
       return failure(
         `Several Chrome profiles have the SplitSession agent bridge on: ${infos.map(describe).join(", ")}. ` +
           `Say which one with profile: "<name or key>" (bridge_info lists them); a tool on a tab finds the tab's profile by itself.`,
       );
     }
 
-    let outcome = await this.callOne(target, name, args);
-    // The tab was in the cache but is not in that profile any more (closed, or Chrome restarted and reused the number):
-    // look for it once in every profile. Nothing was done: the tool stopped at "no tab".
-    if (
-      !outcome.ok &&
-      typeof profile !== "string" &&
-      typeof args.tabId === "number" &&
-      NO_TAB.test(outcome.error) &&
-      endpoints.length > 1
-    ) {
-      this.tabs.delete(args.tabId);
-      const found = await this.findTab(args.tabId, this.d.discover());
-      if ("error" in found) return failure(found.error);
-      if (found.ep.key !== target.key || found.ep.ino !== target.ino)
-        outcome = await this.callOne(found.ep, name, args);
-    }
+    const outcome = await this.callOne(target, name, args);
     if (!outcome.ok) return failure(outcome.error);
-    this.remember(outcome.ep, outcome.result);
+    // A new tab replaces whatever the agent saw under that number; any other answer adds to it.
+    this.sawIn(outcome, firstJson(outcome.result), !CREATE.has(name));
     return outcome.result;
   }
 
@@ -167,15 +177,24 @@ export class Dispatcher {
   ): Promise<Outcome> {
     try {
       const response = await this.d.call(ep, name, args);
-      if (!response.ok) return { ok: false, ep, error: response.error };
-      return { ok: true, ep, result: response.result as CallToolResult };
+      const session = sessionOf(ep, response);
+      if (!response.ok)
+        return { ok: false, ep, session, error: response.error };
+      return {
+        ok: true,
+        ep,
+        session,
+        result: response.result as CallToolResult,
+      };
     } catch (error) {
+      const session = `ino:${ep.ino}`;
       if (error instanceof Unreachable) {
         this.d.gone?.(ep);
         const left = this.d.discover().filter((e) => e.socket !== ep.socket);
         return {
           ok: false,
           ep,
+          session,
           error:
             left.length === 0
               ? this.d.unreachable()
@@ -185,6 +204,7 @@ export class Dispatcher {
       return {
         ok: false,
         ep,
+        session,
         error: error instanceof Error ? error.message : String(error),
       };
     }
@@ -200,9 +220,15 @@ export class Dispatcher {
       endpoints.map(async (ep): Promise<Outcome | null> => {
         try {
           const response = await this.d.call(ep, name, args);
+          const session = sessionOf(ep, response);
           return response.ok
-            ? { ok: true, ep, result: response.result as CallToolResult }
-            : { ok: false, ep, error: response.error };
+            ? {
+                ok: true,
+                ep,
+                session,
+                result: response.result as CallToolResult,
+              }
+            : { ok: false, ep, session, error: response.error };
         } catch (error) {
           if (error instanceof Unreachable) {
             this.d.gone?.(ep);
@@ -211,6 +237,7 @@ export class Dispatcher {
           return {
             ok: false,
             ep,
+            session: `ino:${ep.ino}`,
             error: error instanceof Error ? error.message : String(error),
           };
         }
@@ -288,30 +315,24 @@ export class Dispatcher {
   }
 
   /**
-   * Every profile's tab and window IDs, through the extension's own `__tabs` (not an agent action either); `list_tabs` for
-   * an extension of 0.1.x.
+   * Every profile's tab and window IDs, live, through the extension's own `__tabs` (not an agent action); `list_tabs` for
+   * an extension of 0.1.x. Each list comes with the session of the host that answered.
    */
-  private async tabIndex(endpoints: Endpoint[]): Promise<
-    Array<{
-      ep: Endpoint;
-      list: Array<{ tabId?: unknown; windowId?: unknown }>;
-    }>
-  > {
+  private async tabIndex(endpoints: Endpoint[]): Promise<TabList[]> {
     const outcomes = await this.callAll(endpoints, TABS_TOOL, {});
-    const lists: Array<{
-      ep: Endpoint;
-      list: Array<{ tabId?: unknown; windowId?: unknown }>;
-    }> = [];
+    const lists: TabList[] = [];
     const old: Endpoint[] = [];
     for (const o of outcomes) {
       const v = o.ok ? firstJson(o.result) : undefined;
-      if (Array.isArray(v)) lists.push({ ep: o.ep, list: v });
+      if (Array.isArray(v))
+        lists.push({ ep: o.ep, session: o.session, list: v });
       else old.push(o.ep);
     }
     if (old.length > 0) {
       for (const o of await this.callAll(old, "list_tabs", {})) {
         const v = o.ok ? firstJson(o.result) : undefined;
-        if (Array.isArray(v)) lists.push({ ep: o.ep, list: v });
+        if (Array.isArray(v))
+          lists.push({ ep: o.ep, session: o.session, list: v });
       }
     }
     return lists;
@@ -342,32 +363,56 @@ export class Dispatcher {
     };
   }
 
-  /** The profile that has `tabId`: the cache, else every profile's list_tabs. */
-  private async findTab(
+  /**
+   * The one profile that has `tabId` right now (or, with `profile`, that profile, which must have it), checked live. Then
+   * the affinity: if the agent saw this ID in another profile, or in the same profile under an earlier host session (the
+   * bridge restarted; Chrome may have restarted and numbered tabs again), the ID is stale and nothing is done.
+   */
+  private async ownerOf(
     tabId: number,
     endpoints: Endpoint[],
+    chosen: Endpoint | undefined,
   ): Promise<{ ep: Endpoint } | { error: string }> {
-    const cached = this.tabs.get(tabId);
-    if (cached) {
-      const ep = endpoints.find(
-        (e) => e.key === cached.key && e.ino === cached.ino,
-      );
-      if (ep) return { ep };
-    }
-    const lists = await this.tabIndex(endpoints);
-    const owners = lists
-      .filter(({ list }) => list.some((t) => t?.tabId === tabId))
-      .map(({ ep }) => ep);
-    this.refresh(lists);
-    if (owners.length === 1) return { ep: owners[0]! };
-    if (owners.length === 0)
+    const lists = await this.tabIndex(chosen ? [chosen] : endpoints);
+    const owners = lists.filter(({ list }) =>
+      list.some((t) => t?.tabId === tabId),
+    );
+    if (owners.length === 0) {
+      if (chosen) {
+        const [info] = await this.labels([chosen]);
+        return {
+          error: `no tab with id ${tabId} in the Chrome profile ${info ? describe(info) : `with key ${chosen.key}`} (it may have been closed; call list_tabs)`,
+        };
+      }
       return {
         error: `no tab with id ${tabId} in any connected Chrome profile (it may have been closed; call list_tabs)`,
       };
-    const infos = await this.labels(owners);
-    return {
-      error: `tab id ${tabId} exists in several Chrome profiles (${infos.map(describe).join(", ")}): separate Chrome processes number their tabs independently. Pass profile: "<name or key>" with the tab ID.`,
-    };
+    }
+    if (owners.length > 1) {
+      const infos = await this.labels(owners.map((o) => o.ep));
+      return {
+        error: `tab id ${tabId} exists in several Chrome profiles (${infos.map(describe).join(", ")}): separate Chrome processes number their tabs independently. Pass profile: "<name or key>" with the tab ID.`,
+      };
+    }
+    const owner = owners[0]!;
+    const seen = this.seen.get(tabId);
+    if (
+      seen &&
+      !seen.some((s) => s.key === owner.ep.key && s.session === owner.session)
+    ) {
+      const infos = await this.labels(endpoints);
+      const where = [...new Set(seen.map((s) => s.key))]
+        .map((key) => {
+          const info = infos.find((p) => p.profileKey === key);
+          return info ? describe(info) : `key ${key} (not connected now)`;
+        })
+        .join(", ");
+      const restarted = seen.some((s) => s.key === owner.ep.key);
+      return {
+        error: `stale tab id ${tabId}: the tab you saw in the Chrome profile ${where} is gone${restarted ? " (that profile's bridge has restarted since, and tab IDs may have been reused)" : ""}; nothing was done. Call list_tabs again.`,
+      };
+    }
+    return { ep: owner.ep };
   }
 
   /** The profile that has window `windowId` (window IDs are numbered like tab IDs). */
@@ -393,6 +438,7 @@ export class Dispatcher {
     name: string,
     args: Record<string, unknown>,
     endpoints: Endpoint[],
+    everyProfile: boolean,
   ): Promise<CallToolResult> {
     if (name === "bridge_info") {
       const profiles = await this.infos(endpoints);
@@ -409,7 +455,7 @@ export class Dispatcher {
     const notes: string[] = [];
     let answered = 0;
     let firstError: string | null = null;
-    const lists: Array<{ ep: Endpoint; list: unknown[] }> = [];
+    const lists: Array<{ o: Outcome; list: unknown[] }> = [];
     for (const o of outcomes) {
       const tag = { key: o.ep.key, label: labels.get(o.ep.key) ?? null };
       if (!o.ok) {
@@ -436,13 +482,7 @@ export class Dispatcher {
         continue;
       }
       answered += 1;
-      // Filtered lists say nothing about the tabs that were left out.
-      if (
-        name === "list_tabs" &&
-        args.windowId === undefined &&
-        args.containerId === undefined
-      )
-        lists.push({ ep: o.ep, list });
+      if (name === "list_tabs") lists.push({ o, list });
       for (const item of list)
         items.push(
           item && typeof item === "object"
@@ -451,56 +491,47 @@ export class Dispatcher {
         );
     }
     if (answered === 0) return failure(firstError ?? this.d.unreachable());
-    if (lists.length > 0) this.refresh(lists);
-    else if (name === "list_tabs") this.rememberFiltered(outcomes);
+    if (name === "list_tabs") {
+      // A full list is a fresh look: what the agent saw before is replaced (for every profile, or for the one it asked).
+      // A list filtered by window or container says nothing about the tabs it left out: it only adds.
+      const full =
+        args.windowId === undefined && args.containerId === undefined;
+      if (full && everyProfile) this.seen.clear();
+      else if (full) for (const ep of endpoints) this.forgetProfile(ep.key);
+      for (const { o, list } of lists) this.sawIn(o, list, true);
+    }
     return jsonResult(items, notes);
   }
 
+  /** The agent's view of one profile is replaced by a new full list of it. */
+  private forgetProfile(key: string): void {
+    for (const [id, sightings] of this.seen) {
+      const rest = sightings.filter((s) => s.key !== key);
+      if (rest.length === 0) this.seen.delete(id);
+      else this.seen.set(id, rest);
+    }
+  }
+
   /**
-   * What every listed profile has now. An ID that is in more than one list (separate Chrome processes) is kept as `null`:
-   * it is routed only with `profile`. When every connected profile was listed, older entries go.
+   * Tab IDs in an answer (a list, or one tab: a new tab, a tab a domain rule replaced) were seen in that profile under that
+   * host session. `add`: on top of what else the agent saw under that number (two Chrome processes may both have it);
+   * otherwise (a tab the agent just opened) instead of it.
    */
-  private refresh(lists: Array<{ ep: Endpoint; list: unknown[] }>): void {
-    const listed = new Set(lists.map((l) => l.ep.socket));
-    const all = this.d.discover().every((e) => listed.has(e.socket));
-    if (all) this.tabs.clear();
-    const where = new Map<number, Endpoint | null>();
-    for (const { ep, list } of lists) {
-      for (const t of list) {
-        const id = (t as { tabId?: unknown })?.tabId;
-        if (typeof id !== "number") continue;
-        const seen = where.get(id);
-        where.set(id, seen === undefined || seen === ep ? ep : null);
-      }
-    }
-    for (const [id, ep] of where) {
-      // Known to be in several profiles, and not every profile was asked this time: still ambiguous.
-      if (!all && this.tabs.get(id) === null) continue;
-      this.tabs.set(id, ep ? { key: ep.key, ino: ep.ino } : null);
-    }
-  }
-
-  /** A filtered list_tabs: its tabs are where it says, unless an ID is already known to be in several profiles. */
-  private rememberFiltered(outcomes: Outcome[]): void {
-    for (const o of outcomes) if (o.ok) this.remember(o.ep, o.result);
-  }
-
-  /** A tab ID in the answer of a tool that ran in `ep` (a new tab, a tab a domain rule replaced) belongs to `ep`. */
-  private remember(ep: Endpoint, result: CallToolResult): void {
-    const v = firstJson(result);
+  private sawIn(o: Outcome, value: unknown, add: boolean): void {
     const ids: number[] = [];
-    if (Array.isArray(v)) {
-      for (const t of v) {
-        const id = (t as { tabId?: unknown })?.tabId;
-        if (typeof id === "number") ids.push(id);
-      }
-    } else if (v && typeof v === "object") {
-      const id = (v as { tabId?: unknown }).tabId;
+    for (const t of Array.isArray(value) ? value : [value]) {
+      const id = (t as { tabId?: unknown } | null)?.tabId;
       if (typeof id === "number") ids.push(id);
     }
+    const here: Sighting = { key: o.ep.key, session: o.session };
     for (const id of ids) {
-      if (this.tabs.get(id) === null) continue; // known to be in several profiles
-      this.tabs.set(id, { key: ep.key, ino: ep.ino });
+      const before = add ? (this.seen.get(id) ?? []) : [];
+      this.seen.set(id, [
+        ...before.filter(
+          (s) => s.key !== here.key || s.session !== here.session,
+        ),
+        here,
+      ]);
     }
   }
 }
