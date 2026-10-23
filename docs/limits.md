@@ -524,6 +524,11 @@ full access to every tab, in containers or not (docs/agents.md, section 7). What
   agent lists the tabs again, even when it is in fact the same tab. With a host or an extension of 0.1.x, the shared `bridge.sock` still
   serves one profile at a time and a second such profile is "busy" (retries every 10 s), as before. Copying a profile
   directory copies its key: the copy finds its socket taken twice in a row and makes a new key.
+  Accepted residual risk (independent review, 2026-10-23): sequences that need the same tab or window ID to be reused
+  by another profile or a restarted host while the agent still holds the old ID (separate Chrome processes, a host
+  restart in the middle of a listing, a never-listed tab clicked before and after a restart, a bare `windowId` reused by
+  another profile) can still reach the new owner. Within one Chrome, where tab and window IDs are unique across
+  profiles and not reused during a session, these paths do not occur; the agent should re-list after any restart.
 - **Switching off mid-tool.** Tools check the switch before every step that changes something and stop waiting at once,
   so a received-but-not-started action is not performed; every debugger session is detached at the same moment. What cannot be recalled: a script already running in a page
   (`run_js`, including its timers), and a browser call already issued (a click that was dispatched, a navigation that
