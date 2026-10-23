@@ -490,5 +490,79 @@ describe("Dispatcher: one MCP server, several Chrome profiles", () => {
         "click",
       ]);
     });
+
+    it("review repro: both have 7, full list, list of Work alone, Work disconnects: an unqualified close_tab(7) is refused, Home's tab untouched", async () => {
+      const work = { ...profile("aaaaaaaaaa", "Work", [7]), session: "sw" };
+      const home = { ...profile("bbbbbbbbbb", "Home", [7]), session: "sh" };
+      const { d } = world([work, home]);
+      await d.run("list_tabs", {});
+      await d.run("list_tabs", { profile: "Work" }); // a scoped list does not resolve the collision
+      work.down = true;
+      const r = await d.run("close_tab", { tabId: 7 });
+      expect(r.isError).toBe(true);
+      expect(err(r)).toMatch(
+        /^tab id 7 exists in several Chrome profiles \(you saw it in .*; nothing was done\. Pass profile/,
+      );
+      expect(err(r)).toContain("key aaaaaaaaaa (not connected now)");
+      expect(err(r)).toContain('"Home" (key bbbbbbbbbb)');
+      expect(did(home, "close_tab")).toBe(0);
+      // Saying which one works (Home's 7 was seen under Home's session).
+      expect(
+        json(await d.run("close_tab", { tabId: 7, profile: "Home" })),
+      ).toMatchObject({ by: "bbbbbbbbbb" });
+    });
+
+    it("a complete list after the disconnect shows one owner: the collision is cleared and an unqualified call works", async () => {
+      const work = { ...profile("aaaaaaaaaa", "Work", [7]), session: "sw" };
+      const home = { ...profile("bbbbbbbbbb", "Home", [7]), session: "sh" };
+      const { d } = world([work, home]);
+      await d.run("list_tabs", {});
+      work.down = true;
+      expect((await d.run("close_tab", { tabId: 7 })).isError).toBe(true);
+      await d.run("list_tabs", {});
+      expect(json(await d.run("close_tab", { tabId: 7 }))).toMatchObject({
+        by: "bbbbbbbbbb",
+      });
+    });
+
+    it("a scoped list or a filtered list never clears a collision; a list where a profile did not answer is not complete", async () => {
+      const work = { ...profile("aaaaaaaaaa", "Work", [7]), session: "sw" };
+      const home = { ...profile("bbbbbbbbbb", "Home", [7]), session: "sh" };
+      const { d } = world([work, home]);
+      await d.run("list_tabs", {});
+      work.tabs = [];
+      await d.run("list_tabs", { profile: "Work" });
+      await d.run("list_tabs", { profile: "Home" });
+      await d.run("list_tabs", { windowId: 1 });
+      expect(err(await d.run("click", { tabId: 7, ref: "e1" }))).toMatch(
+        /exists in several Chrome profiles/,
+      );
+      // Work still connected (socket there) but not answering: the list is not complete.
+      const real = [work.ep, home.ep];
+      work.down = true;
+      (d as unknown as { d: { discover: () => Endpoint[] } }).d.discover = () =>
+        real;
+      await d.run("list_tabs", {});
+      expect(err(await d.run("click", { tabId: 7, ref: "e1" }))).toMatch(
+        /exists in several Chrome profiles/,
+      );
+      expect(did(home, "click")).toBe(0);
+    });
+
+    it("an ID first seen in one profile and later in another (a filtered list) becomes colliding", async () => {
+      const work = { ...profile("aaaaaaaaaa", "Work", [7], 1), session: "sw" };
+      const home = { ...profile("bbbbbbbbbb", "Home", [], 2), session: "sh" };
+      const { d } = world([work, home]);
+      await d.run("list_tabs", {});
+      home.tabs.push({ tabId: 7, windowId: 2, title: "home 7" });
+      await d.run("list_tabs", { windowId: 2 });
+      work.tabs = [];
+      expect(err(await d.run("click", { tabId: 7, ref: "e1" }))).toMatch(
+        /exists in several Chrome profiles/,
+      );
+      expect(
+        json(await d.run("click", { tabId: 7, ref: "e1", profile: "Home" })),
+      ).toMatchObject({ by: "bbbbbbbbbb" });
+    });
   });
 });

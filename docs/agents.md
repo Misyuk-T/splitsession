@@ -304,7 +304,8 @@ entry in your AI client) sees all of them.
   is not where the agent saw it (that profile went away and another one has the number, or the same profile's bridge restarted
   and Chrome may have numbered tabs again), the tool does nothing and says "stale tab id …: call list_tabs again". A full
   `list_tabs` replaces what the agent saw (for every profile, or for the one in `profile`); a tab the agent opens is seen where
-  it opened it. IDs the agent never saw (none listed in this MCP session) are only checked for a single owner.
+  it opened it. An ID the agent has seen in two profiles needs `profile` until a complete `list_tabs` (every connected
+  profile, unfiltered) shows it in one profile only, even if one of the two profiles has gone meanwhile. IDs the agent never saw (none listed in this MCP session) are only checked for a single owner.
 - **Tools that open a tab** (`open_tab`, `open_in_container`) need `profile` when several profiles are connected (or a `windowId`,
   which belongs to one profile). Without it the tool fails and lists the profiles; SplitSession never guesses which account the
   agent meant. With one profile connected nothing changes: no `profile` needed anywhere.

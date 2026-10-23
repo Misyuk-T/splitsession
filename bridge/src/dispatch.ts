@@ -116,6 +116,13 @@ export class Dispatcher {
    * different tab. Never used to pick a profile on its own: every tab tool first checks, live, which profile has the tab.
    */
   private readonly seen = new Map<number, Sighting[]>();
+  /**
+   * Tab IDs the agent has seen in more than one profile since the last complete `list_tabs` (every connected profile,
+   * unfiltered, every one answering). Such an ID is never acted on without `profile`, even when one profile alone has it
+   * now: a sighting in one of them cannot tell which tab the agent meant. Only a complete list that shows one owner clears
+   * it; a list of one profile does not.
+   */
+  private readonly colliding = new Set<number>();
 
   constructor(private readonly d: DispatchDeps) {}
 
@@ -395,6 +402,18 @@ export class Dispatcher {
       };
     }
     const owner = owners[0]!;
+    if (!chosen && this.colliding.has(tabId)) {
+      const infos = await this.labels(endpoints);
+      const where = [...new Set((this.seen.get(tabId) ?? []).map((s) => s.key))]
+        .map((key) => {
+          const info = infos.find((p) => p.profileKey === key);
+          return info ? describe(info) : `key ${key} (not connected now)`;
+        })
+        .join(", ");
+      return {
+        error: `tab id ${tabId} exists in several Chrome profiles (you saw it in ${where || "more than one"}); nothing was done. Pass profile: "<name or key>" with the tab ID, or call list_tabs again.`,
+      };
+    }
     const seen = this.seen.get(tabId);
     if (
       seen &&
@@ -496,8 +515,17 @@ export class Dispatcher {
       // A list filtered by window or container says nothing about the tabs it left out: it only adds.
       const full =
         args.windowId === undefined && args.containerId === undefined;
-      if (full && everyProfile) this.seen.clear();
-      else if (full) for (const ep of endpoints) this.forgetProfile(ep.key);
+      // Complete: every connected profile answered an unfiltered list. Only that resets the collision marks.
+      const complete =
+        full &&
+        everyProfile &&
+        this.d
+          .discover()
+          .every((e) => lists.some(({ o }) => o.ep.socket === e.socket));
+      if (complete) {
+        this.seen.clear();
+        this.colliding.clear();
+      } else if (full) for (const { o } of lists) this.forgetProfile(o.ep.key);
       for (const { o, list } of lists) this.sawIn(o, list, true);
     }
     return jsonResult(items, notes);
@@ -526,12 +554,14 @@ export class Dispatcher {
     const here: Sighting = { key: o.ep.key, session: o.session };
     for (const id of ids) {
       const before = add ? (this.seen.get(id) ?? []) : [];
-      this.seen.set(id, [
+      const now = [
         ...before.filter(
           (s) => s.key !== here.key || s.session !== here.session,
         ),
         here,
-      ]);
+      ];
+      this.seen.set(id, now);
+      if (new Set(now.map((s) => s.key)).size > 1) this.colliding.add(id);
     }
   }
 }

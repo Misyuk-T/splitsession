@@ -1887,4 +1887,13 @@ Goal: a container tab that is not in its container's tab group (dragged out, or 
   profile is listed), a tab moved between windows of one profile (fine), an ID never seen, one profile (same checks). Host
   integration: every answer carries the session, the profile's next host has a new one, and a click on an ID seen under the
   old host is refused until `list_tabs`.
+- **Second review: one gap left.** Work and Home both had tab 7; a full `list_tabs`, then `list_tabs {profile: Work}`, then Work
+  disconnected: an unqualified `close_tab 7` went to Home, because Home's older sighting still matched. Now an ID seen in more
+  than one profile since the last **complete** `list_tabs` (every connected profile answered an unfiltered list) is marked
+  colliding, and an unqualified call for it is refused ("exists in several Chrome profiles; pass profile") even when only one
+  profile has it now. `profile` (checked live and against the sightings of that profile and session) acts on it; only a
+  complete list that shows one owner clears the mark. A list of one profile, a filtered list, or a list some connected
+  profile did not answer never clears it. Regressions: the exact repro, a complete list after the disconnect (then the call
+  works), explicit `profile: Home` (works), scoped/filtered/incomplete lists (still refused), and an ID that becomes
+  colliding through a later filtered list.
 
