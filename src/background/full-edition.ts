@@ -6,6 +6,7 @@ import { AgentBridge } from "./bridge/agent-bridge";
 import { type BridgeApi, createBridgeApi } from "./bridge/bridge-api";
 import { CdpSessions, type DebuggerApi } from "./bridge/cdp";
 import { GroupActivityMark } from "./bridge/group-activity";
+import { readProfileKey, renewProfileKey } from "./bridge/profile-key";
 import { readProfileLabel } from "./bridge/profile-label";
 import { BridgeRouter } from "./bridge/router";
 import type { Extras } from "./extras";
@@ -30,10 +31,16 @@ export function createAgentSide(
   extras: Extras,
   b: typeof browser = browser,
 ): AgentSide {
+  const local = b.storage.local as unknown as StorageAreaLike;
   const bridge = new AgentBridge(
     b,
     b.storage.session as unknown as StorageAreaLike,
     facet.log,
+    {
+      key: () => readProfileKey(local),
+      renewKey: () => renewProfileKey(local),
+      label: () => readProfileLabel(local),
+    },
   );
   return {
     bridgeApi: createBridgeApi(bridge, b),
@@ -84,8 +91,8 @@ export function createAgentSide(
         activity,
         cdp,
         isMac,
-        profileLabel: () =>
-          readProfileLabel(b.storage.local as unknown as StorageAreaLike),
+        profileLabel: () => readProfileLabel(local),
+        profileKey: () => readProfileKey(local),
       });
       bridge.setRunner(router);
       b.tabs.onRemoved.addListener((tabId) => {

@@ -8,6 +8,7 @@ import {
   BridgeSwitchCard,
 } from "../components/BridgeCard";
 import { Button } from "../components/Button";
+import { CopyBlock } from "../components/CopyBlock";
 import { Disclosure } from "../components/Disclosure";
 import { More } from "../components/More";
 import { TextField } from "../components/TextField";
@@ -24,7 +25,7 @@ const LABEL_MAX = 40;
 const cleanLabel = (raw: string) => raw.replace(/[\u0000-\u001f\u007f]/g, "");
 
 /** The name of this Chrome profile, which the agent reads through `bridge_info` to tell profiles apart. */
-const ProfileLabel = () => {
+const ProfileLabel = ({ focus = false }: { focus?: boolean }) => {
   const [saved, setSaved] = useState<string | null>(null);
   const [value, setValue] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -38,6 +39,12 @@ const ProfileLabel = () => {
       (e) => setError(describeError(e)),
     );
   }, []);
+
+  // "Name this profile" in the switch card opened this: the field takes focus once it is enabled (the name has loaded).
+  useEffect(() => {
+    if (focus && saved !== null)
+      document.getElementById("bridge-profile-name")?.focus();
+  }, [focus, saved]);
 
   const save = async () => {
     if (saved === null || value.trim() === saved) return;
@@ -60,7 +67,8 @@ const ProfileLabel = () => {
         sanitize={cleanLabel}
         max={LABEL_MAX}
         placeholder="for example Work"
-        hint="Only one Chrome profile can hold the bridge. The agent reads this name to tell them apart."
+        hint="The agent sees this name on this profile's tabs. Name each Chrome profile that has the bridge on."
+        id="bridge-profile-name"
         error={error}
         disabled={saved === null}
         onEnter={() => void save()}
@@ -155,38 +163,6 @@ const AgentSwitches = () => {
   );
 };
 
-/** A command on its own line with a Copy button (the command stays selectable if the clipboard is blocked). */
-const CopyBlock = ({
-  text,
-  copyable = true,
-  testId,
-}: {
-  text: string;
-  copyable?: boolean;
-  testId?: string;
-}) => {
-  const [copied, setCopied] = useState(false);
-  const copy = async () => {
-    try {
-      await navigator.clipboard.writeText(text);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
-    } catch {
-      /* clipboard blocked */
-    }
-  };
-  return (
-    <div class="fx-bridge__cmd" data-testid={testId}>
-      <code>{text}</code>
-      {copyable && (
-        <Button small onClick={() => void copy()}>
-          {copied ? "Copied" : "Copy"}
-        </Button>
-      )}
-    </div>
-  );
-};
-
 /** The setup steps, behind a disclosure: only people who want an agent ever open it. */
 const ConnectGuide = ({ bridge }: { bridge: ReturnType<typeof useBridge> }) => {
   const status = bridgeStatus(bridge);
@@ -240,11 +216,19 @@ const ConnectGuide = ({ bridge }: { bridge: ReturnType<typeof useBridge> }) => {
 /** Settings, "For AI agents": the switches, "How to connect", and what turning it on means. Low-key: one list of rows, the long text behind disclosures. */
 export const BridgeSection = () => {
   const bridge = useBridge();
+  const [advanced, setAdvanced] = useState(false);
+  const [focusName, setFocusName] = useState(false);
+  const nameProfile = () => {
+    setAdvanced(true);
+    setFocusName(true);
+    // Already open: the field is there, focus it now.
+    document.getElementById("bridge-profile-name")?.focus();
+  };
   return (
     <section class="opt-section" aria-labelledby="agent-title" id="agent">
       <h2 id="agent-title">For AI agents</h2>
       <div class="opt-card opt-card--rows">
-        <BridgeSwitchCard bridge={bridge} />
+        <BridgeSwitchCard bridge={bridge} onNameProfile={nameProfile} />
         <AgentSwitches />
         <div class="opt-row">
           <ConnectGuide bridge={bridge} />
@@ -302,9 +286,14 @@ export const BridgeSection = () => {
             id="agent-advanced"
             title="Advanced"
             testId="bridge-advanced"
+            open={advanced}
+            onToggle={(next) => {
+              setAdvanced(next);
+              if (!next) setFocusName(false);
+            }}
           >
             <div class="opt-sub">
-              <ProfileLabel />
+              <ProfileLabel focus={focusName} />
             </div>
           </Disclosure>
         </div>

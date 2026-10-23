@@ -6,6 +6,7 @@ import {
   AgentBridge,
   BRIDGE_ALARM,
   BRIDGE_STATE_KEY,
+  type ProfileIdentity,
   RELEASE_GRACE_MS,
 } from "./agent-bridge";
 
@@ -23,8 +24,12 @@ class FakePort {
     addListener: (l: () => void) => void this.disconnectListeners.push(l),
   };
 
+  /** The `hello` the extension opens every connection with (kept apart from the answers). */
+  hello: any = null;
+
   postMessage(m: unknown) {
-    this.sent.push(m);
+    if ((m as { type?: string }).type === "hello") this.hello = m;
+    else this.sent.push(m);
   }
 
   disconnect() {
@@ -41,7 +46,7 @@ class FakePort {
   }
 }
 
-function setup() {
+function setup(identity?: ProfileIdentity) {
   const ports: FakePort[] = [];
   const state = { lastError: undefined as { message: string } | undefined };
   const alarms = { create: vi.fn(), clear: vi.fn(async () => true) };
@@ -62,7 +67,7 @@ function setup() {
   const log = createLogger(50);
   vi.spyOn(console, "debug").mockImplementation(() => {});
   vi.spyOn(console, "warn").mockImplementation(() => {});
-  const bridge = new AgentBridge(b as never, area, log);
+  const bridge = new AgentBridge(b as never, area, log, identity);
   const run = vi.fn(
     async (
       tool: string,
@@ -472,5 +477,144 @@ describe("AgentBridge", () => {
     await bridge.sync(false);
     await vi.advanceTimersByTimeAsync(RELEASE_GRACE_MS * 2);
     expect(release).toHaveBeenCalledTimes(1);
+  });
+
+  describe("several Chrome profiles (protocol 2)", () => {
+    const identity = (keys: string[], label = "") => {
+      let i = 0;
+      const id = {
+        key: vi.fn(async () => keys[i]!),
+        renewKey: vi.fn(async () => keys[++i]!),
+        label: vi.fn(async () => label),
+      };
+      return id;
+    };
+
+    it("opens every connection with hello and this profile's key, the same key each time", async () => {
+      const { bridge, ports } = setup(identity(["k1abc23def"], "Work"));
+      await bridge.sync(true, true);
+      expect(ports[0]!.hello).toEqual({
+        type: "hello",
+        version: 2,
+        profileKey: "k1abc23def",
+      });
+      ports[0]!.receive({
+        type: "ready",
+        version: 2,
+        socket: "/b/k1abc23def.sock",
+        profileKey: "k1abc23def",
+      });
+      expect(bridge.state()).toMatchObject({
+        status: "connected",
+        hostOutdated: false,
+        profileKey: "k1abc23def",
+        profileLabel: "Work",
+      });
+      ports[0]!.die();
+      await vi.advanceTimersByTimeAsync(1_001);
+      expect(ports[1]!.hello.profileKey).toBe("k1abc23def");
+    });
+
+    it("an older host (protocol 1) works but is flagged for an update; a newer one is not", async () => {
+      const { bridge, ports } = setup();
+      await bridge.sync(true, true);
+      ports[0]!.receive({ type: "ready", version: 1, socket: "/s" });
+      expect(bridge.state()).toMatchObject({
+        status: "connected",
+        hostOutdated: true,
+        profiles: null,
+      });
+      await bridge.sync(false);
+      expect(bridge.state().hostOutdated).toBe(false);
+      await bridge.sync(true, true);
+      ports[1]!.receive({ type: "ready", version: 2, socket: "/b/x.sock" });
+      expect(bridge.state().hostOutdated).toBe(false);
+    });
+
+    it('an older host\'s "busy" (one socket for every profile) asks for an update', async () => {
+      const { bridge, ports } = setup();
+      await bridge.sync(true, true);
+      ports[0]!.receive({
+        type: "busy",
+        reason: "another Chrome profile is connected",
+      });
+      expect(bridge.state()).toMatchObject({
+        status: "busy",
+        hostOutdated: true,
+      });
+    });
+
+    it("publishes how many profiles have the bridge on, and forgets it when switched off", async () => {
+      const { bridge, ports } = setup();
+      await bridge.sync(true, true);
+      ports[0]!.receive({ type: "ready", version: 2, socket: "/b/x.sock" });
+      ports[0]!.receive({ type: "profiles", count: 3 });
+      expect(bridge.state().profiles).toBe(3);
+      ports[0]!.receive({ type: "profiles", count: 2 });
+      expect(bridge.state().profiles).toBe(2);
+      await bridge.sync(false);
+      expect(bridge.state().profiles).toBeNull();
+    });
+
+    it("its own socket held: looks again after a second; held again, the key is taken by another profile and is renewed", async () => {
+      const id = identity(["k1abc23def", "n2ewkey456"]);
+      const { bridge, b, ports, state } = setup(id);
+      await bridge.sync(true, true);
+      state.lastError = { message: "Native host has exited." };
+      ports[0]!.receive({
+        type: "busy",
+        code: "same-profile",
+        reason: "a bridge host for this Chrome profile is already running",
+      });
+      ports[0]!.die();
+      expect(bridge.state().status).toBe("connecting"); // nothing for the user to do yet
+      await vi.advanceTimersByTimeAsync(999);
+      expect(b.runtime.connectNative).toHaveBeenCalledTimes(1);
+      await vi.advanceTimersByTimeAsync(2);
+      expect(b.runtime.connectNative).toHaveBeenCalledTimes(2);
+      expect(ports[1]!.hello.profileKey).toBe("k1abc23def");
+      expect(id.renewKey).not.toHaveBeenCalled();
+      ports[1]!.receive({ type: "busy", code: "same-profile", reason: "x" });
+      ports[1]!.die();
+      await vi.advanceTimersByTimeAsync(0);
+      expect(id.renewKey).toHaveBeenCalledTimes(1);
+      expect(b.runtime.connectNative).toHaveBeenCalledTimes(3);
+      expect(ports[2]!.hello.profileKey).toBe("n2ewkey456");
+      ports[2]!.receive({
+        type: "ready",
+        version: 2,
+        socket: "/b/n2ewkey456.sock",
+      });
+      expect(bridge.state()).toMatchObject({
+        status: "connected",
+        profileKey: "n2ewkey456",
+      });
+    });
+
+    it("a quick off and on whose old host left in time keeps the key", async () => {
+      const id = identity(["k1abc23def", "unused0000"]);
+      const { bridge, ports } = setup(id);
+      await bridge.sync(true, true);
+      ports[0]!.receive({ type: "busy", code: "same-profile", reason: "x" });
+      ports[0]!.die();
+      await vi.advanceTimersByTimeAsync(1_001);
+      ports[1]!.receive({ type: "ready", version: 2, socket: "/b/k.sock" });
+      // A later single "busy" starts counting from zero again.
+      ports[1]!.die();
+      await vi.advanceTimersByTimeAsync(1_001);
+      ports[2]!.receive({ type: "busy", code: "same-profile", reason: "x" });
+      ports[2]!.die();
+      await vi.advanceTimersByTimeAsync(1_001);
+      expect(id.renewKey).not.toHaveBeenCalled();
+      expect(ports[3]!.hello.profileKey).toBe("k1abc23def");
+    });
+
+    it("a new profile name shows at once", async () => {
+      const { bridge } = setup(identity(["k1abc23def"], "Old"));
+      await bridge.sync(true, true);
+      expect(bridge.state().profileLabel).toBe("Old");
+      bridge.labelChanged("New");
+      expect(bridge.state().profileLabel).toBe("New");
+    });
   });
 });

@@ -21,12 +21,14 @@ const CLOSE_PAUSE_MS = 600;
 /** Which Chrome profile the agent is talking to: the user's label plus the size of the profile. */
 const bridgeInfo: ToolHandler = async (c) => {
   const label = ((await c.d.profileLabel?.()) ?? "").trim();
-  const [windows, tabs] = await Promise.all([
+  const [windows, tabs, key] = await Promise.all([
     c.b.windows.getAll(),
     c.b.tabs.query({}),
+    c.d.profileKey?.().catch(() => null) ?? null,
   ]);
   return json({
     profileLabel: label === "" ? null : label,
+    ...(key ? { profileKey: key } : {}),
     windows: windows.length,
     tabs: tabs.length,
     containers: c.d.facet.listContainers().length,

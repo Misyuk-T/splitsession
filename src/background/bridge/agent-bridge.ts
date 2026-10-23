@@ -4,6 +4,7 @@ import {
   type ExtensionToHost,
   HOST_NAME,
   type HostToExtension,
+  MULTI_PROFILE_PROTOCOL,
   PING_TOOL,
   PROTOCOL_VERSION,
   SESSION_TOOL,
@@ -12,6 +13,7 @@ import {
 } from "../../bridge/protocol";
 import type { StorageAreaLike } from "../../engine/storage/storage-area";
 import type { Logger } from "../log";
+import { newProfileKey } from "./profile-key";
 import type { ActionMeta } from "./router";
 
 type Browser = typeof browser;
@@ -42,10 +44,43 @@ export interface BridgeState {
   lastAt: number | null;
   /** The latest actions, newest first (at most `RECENT_ACTIONS`). */
   recent: RecentAction[];
+  /** The name the user gave this Chrome profile (empty: none): "Connected as …". */
+  profileLabel: string;
+  /** This profile's bridge key (the name of its socket; the agent can address the profile by it). */
+  profileKey: string | null;
+  /** How many Chrome profiles have the bridge on (this one included), as the host counts them; null: unknown (older host). */
+  profiles: number | null;
+  /**
+   * The host is older than this extension (protocol 1, npm 0.1.x): it works, but for one Chrome profile at a time. Also set
+   * when such a host said "busy" (another profile holds its one socket).
+   */
+  hostOutdated: boolean;
 }
 
 export const BRIDGE_STATE_KEY = "bridgeState";
 export const BRIDGE_ALARM = "facet-bridge-retry";
+
+/** This Chrome profile's identity for the bridge (`chrome.storage.local`). */
+export interface ProfileIdentity {
+  /** The stored key; made and stored on first use. */
+  key(): Promise<string>;
+  /** A new key, stored: another profile carries the same one. */
+  renewKey(): Promise<string>;
+  label(): Promise<string>;
+}
+
+/** Tests and a missing storage: a key for this worker's life, no label. */
+const memoryIdentity = (): ProfileIdentity => {
+  let key = newProfileKey();
+  return {
+    key: async () => key,
+    renewKey: async () => {
+      key = newProfileKey();
+      return key;
+    },
+    label: async () => "",
+  };
+};
 
 /** What the connection needs from the router. */
 export interface ToolRunner {
@@ -65,6 +100,12 @@ const CONNECT_TIMEOUT_MS = 10_000;
 const MAX_BACKOFF_MS = 30_000;
 /** How often a profile that found the bridge held by another profile looks again (it is cheap: the host answers and exits). */
 const BUSY_RETRY_MS = 10_000;
+/**
+ * A host for this profile key is still running: normally the previous one, leaving after a quick off and on, so look again
+ * soon. Found twice in a row, the key is taken by another profile (a copied profile directory): make a new one.
+ */
+const SAME_PROFILE_RETRY_MS = 1_000;
+const SAME_PROFILE_TRIES = 2;
 /** After the last MCP client has gone, how long the agent's leftovers (viewport overrides, debugger sessions) stay. */
 export const RELEASE_GRACE_MS = 10_000;
 
@@ -81,6 +122,10 @@ const IDLE: BridgeState = {
   lastTool: null,
   lastAt: null,
   recent: [],
+  profileLabel: "",
+  profileKey: null,
+  profiles: null,
+  hostOutdated: false,
 };
 
 /**
@@ -100,6 +145,10 @@ export class AgentBridge {
   private lastFatal: string | null = null;
   /** Set when the host said another Chrome profile holds the socket; read when its port closes. */
   private lastBusy: string | null = null;
+  /** The host said a host for this very key is running (protocol 2); counts consecutive times. */
+  private sameProfile = 0;
+  private sameProfilePending = false;
+  private profileKey: string | null = null;
   /** Aborted when the switch goes off or the connection is dropped: tools still running stop before their next step. */
   private abort = new AbortController();
   private releaseTimer: ReturnType<typeof setTimeout> | null = null;
@@ -109,8 +158,14 @@ export class AgentBridge {
     private readonly b: Browser,
     private readonly area: StorageAreaLike,
     private readonly log: Logger,
+    private readonly identity: ProfileIdentity = memoryIdentity(),
   ) {
     this.loaded = this.load();
+  }
+
+  /** The user renamed this profile (options page): "Connected as …" follows at once. */
+  labelChanged(label: string): void {
+    this.publish({ profileLabel: label });
   }
 
   setRunner(runner: ToolRunner): void {
@@ -141,6 +196,16 @@ export class AgentBridge {
     } catch {
       /* session storage unavailable: counters start from zero */
     }
+    try {
+      this.profileKey = await this.identity.key();
+      this.current = {
+        ...this.current,
+        profileKey: this.profileKey,
+        profileLabel: await this.identity.label(),
+      };
+    } catch (error) {
+      this.log("warn", "agent bridge: no profile key", String(error));
+    }
   }
 
   private publish(patch: Partial<BridgeState>): void {
@@ -160,8 +225,14 @@ export class AgentBridge {
       this.abort.abort();
       this.teardown();
       this.attempt = 0;
+      this.sameProfile = 0;
       void this.b.alarms.clear(BRIDGE_ALARM);
-      this.publish({ status: "off", error: null });
+      this.publish({
+        status: "off",
+        error: null,
+        profiles: null,
+        hostOutdated: false,
+      });
       this.log("info", "agent bridge off");
       return;
     }
@@ -201,6 +272,19 @@ export class AgentBridge {
     this.port = port;
     port.onMessage.addListener((message) => this.onMessage(port, message));
     port.onDisconnect.addListener(() => this.onDisconnect(port));
+    // Protocol 2: the first message names this profile, and the host serves it on a socket of its own. A 0.1.x host
+    // ignores it and takes the one shared socket (then `ready` says version 1).
+    if (this.profileKey) {
+      try {
+        port.postMessage({
+          type: "hello",
+          version: PROTOCOL_VERSION,
+          profileKey: this.profileKey,
+        } satisfies ExtensionToHost);
+      } catch {
+        /* the port is already gone: onDisconnect tells */
+      }
+    }
     // Chrome opens the port even when the host does not exist; "not found" arrives as a disconnect. A host that starts
     // but never says ready is given up on.
     this.connectTimer = setTimeout(() => {
@@ -217,20 +301,44 @@ export class AgentBridge {
     if (message.type === "ready") {
       this.clearTimers();
       this.attempt = 0;
-      this.publish({ status: "connected", error: null });
+      this.sameProfile = 0;
+      const version = typeof message.version === "number" ? message.version : 1;
+      this.publish({
+        status: "connected",
+        error: null,
+        hostOutdated: version < MULTI_PROFILE_PROTOCOL,
+        profiles:
+          version < MULTI_PROFILE_PROTOCOL ? null : this.current.profiles,
+      });
       this.log("info", "agent bridge connected", {
         protocol:
-          message.version === PROTOCOL_VERSION
-            ? "ok"
-            : `host speaks ${message.version}`,
+          version === PROTOCOL_VERSION ? "ok" : `host speaks ${version}`,
       });
     } else if (message.type === "fatal") {
       this.lastFatal = String(message.message).slice(0, 300);
+    } else if (message.type === "busy" && message.code === "same-profile") {
+      // Protocol 2: our own socket is held. Usually the previous host of this profile on its way out.
+      this.clearTimers();
+      this.sameProfile += 1;
+      this.sameProfilePending = true;
+      this.log("warn", "agent bridge: this profile's socket is in use", {
+        tries: this.sameProfile,
+      });
     } else if (message.type === "busy") {
+      // Only a 0.1.x host says "busy" without a code: it has one socket for every profile.
       this.clearTimers();
       this.lastBusy = String(message.reason).slice(0, 200);
-      this.publish({ status: "busy", error: this.lastBusy });
+      this.publish({
+        status: "busy",
+        error: this.lastBusy,
+        hostOutdated: true,
+      });
       this.log("warn", "agent bridge busy", this.lastBusy);
+    } else if (
+      message.type === "profiles" &&
+      typeof message.count === "number"
+    ) {
+      this.publish({ profiles: message.count });
     } else if (
       message.type === "clients" &&
       typeof message.count === "number"
@@ -347,6 +455,28 @@ export class AgentBridge {
     this.abort.abort();
     this.abort = new AbortController();
     if (!this.enabled) return;
+    if (this.sameProfilePending) {
+      this.sameProfilePending = false;
+      if (this.sameProfile >= SAME_PROFILE_TRIES) {
+        // Still held after a pause: another profile has this key. This profile takes a new one.
+        this.sameProfile = 0;
+        void this.identity.renewKey().then(
+          (key) => {
+            this.profileKey = key;
+            this.publish({ profileKey: key });
+            this.log(
+              "warn",
+              "agent bridge: profile key was in use elsewhere; made a new one",
+            );
+            if (this.enabled && !this.port) this.connect();
+          },
+          (error) => this.fail(String(error)),
+        );
+        return;
+      }
+      this.retryTimer = setTimeout(() => this.retry(), SAME_PROFILE_RETRY_MS);
+      return;
+    }
     if (this.lastBusy) {
       this.lastBusy = null;
       this.retryTimer = setTimeout(() => this.retry(), BUSY_RETRY_MS);
@@ -376,6 +506,7 @@ export class AgentBridge {
   private teardown(): void {
     this.clearTimers();
     this.lastBusy = null;
+    this.sameProfilePending = false;
     const port = this.port;
     this.port = null;
     if (!port) return;

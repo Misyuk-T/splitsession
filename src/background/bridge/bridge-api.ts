@@ -35,7 +35,13 @@ export function createBridgeApi(
     },
     getBridgeProfileLabel: () =>
       readProfileLabel(b.storage.local as unknown as StorageAreaLike),
-    setBridgeProfileLabel: (label) =>
-      writeProfileLabel(b.storage.local as unknown as StorageAreaLike, label),
+    setBridgeProfileLabel: async (label) => {
+      const stored = await writeProfileLabel(
+        b.storage.local as unknown as StorageAreaLike,
+        label,
+      );
+      bridge.labelChanged(stored);
+      return stored;
+    },
   };
 }
