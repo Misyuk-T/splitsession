@@ -14,22 +14,24 @@ import {
   type ClientResponse,
   HOST_TIMEOUT_MS,
   SESSION_TOOL,
-  type ToolResult,
 } from "../../src/bridge/protocol";
+import { HOST_MARGIN_MS, TOOLS, toolTimeoutMs } from "../../src/bridge/spec";
+import { type Schema, validateArgs } from "../../src/bridge/validate";
+import { Dispatcher, Unreachable } from "./dispatch";
 import {
-  HOST_MARGIN_MS,
-  toolByName,
-  TOOLS,
-  toolTimeoutMs,
-} from "../../src/bridge/spec";
-import { validateArgs } from "../../src/bridge/validate";
-import { HOST_MANIFEST_FILE, manifestSearchDirs, socketPath } from "./paths";
+  bridgesDir,
+  HOST_MANIFEST_FILE,
+  manifestSearchDirs,
+  socketPath,
+} from "./paths";
+import { discoverEndpoints, type Endpoint, removeIfStale } from "./profiles";
 
 declare const __VERSION__: string;
 
 const INSTRUCTIONS =
   "Tools to see and operate the user's Chrome tabs across all windows, with SplitSession containers (several logged-in accounts of one site side by side). " +
-  'Start with list_tabs (bridge_info says which Chrome profile you are connected to). A tab\'s "container" says which account it is. ' +
+  'Start with list_tabs. A tab\'s "container" says which account it is, its "profile" which Chrome profile (several can be connected at once; bridge_info lists them). ' +
+  "Tools on a tab find the tab's profile by its tabId; to open a new tab while several profiles are connected, pass profile (its name or key). " +
   "To work with a page: snapshot (accessibility tree with refs), then click / type / press_key / select_option by ref; snapshot again after the page changes. Screenshots for what the tree cannot tell. " +
   "These tools act inside the user's real, logged-in browser: do only what the user asked for.";
 
@@ -46,7 +48,7 @@ export function unreachableMessage(
     : 'SplitSession agent bridge host is not installed — run `npx splitsession-bridge install` (from a source checkout: `pnpm bridge:install`), then turn on the "Agent bridge" switch in SplitSession Settings → For AI agents.';
 }
 
-class Unreachable extends Error {}
+export { Unreachable };
 
 const isFile = (p: string): boolean => {
   try {
@@ -155,20 +157,118 @@ export function keepPresence(sock: string = socketPath()): {
   };
 }
 
+/** One presence connection per connected profile, following the profiles as they are switched on and off. */
+export function presenceFor(discover: () => Endpoint[]): {
+  sync(): void;
+  stop(): void;
+} {
+  const live = new Map<string, ReturnType<typeof keepPresence>>();
+  const sync = () => {
+    const now = new Set<string>();
+    for (const ep of discover()) {
+      now.add(ep.socket);
+      const known = live.get(ep.socket);
+      if (known) known.ensure();
+      else live.set(ep.socket, keepPresence(ep.socket));
+    }
+    for (const [sock, p] of live) {
+      if (now.has(sock)) continue;
+      p.stop();
+      live.delete(sock);
+    }
+  };
+  const timer = setInterval(sync, 5_000);
+  timer.unref();
+  sync();
+  return {
+    sync,
+    stop() {
+      clearInterval(timer);
+      for (const p of live.values()) p.stop();
+      live.clear();
+    },
+  };
+}
+
+const PROFILE_PARAM: Record<"list" | "open" | "tab", Schema> = {
+  list: {
+    type: "string",
+    minLength: 1,
+    maxLength: 64,
+    description:
+      "Only this Chrome profile: its name or key, from bridge_info. Default: every connected profile.",
+  },
+  open: {
+    type: "string",
+    minLength: 1,
+    maxLength: 64,
+    description:
+      "The Chrome profile to open it in: its name or key, from bridge_info. Needed when several profiles are connected (unless windowId says it).",
+  },
+  tab: {
+    type: "string",
+    minLength: 1,
+    maxLength: 64,
+    description:
+      "The Chrome profile of the tab (name or key). Normally not needed: the tabId finds its profile.",
+  },
+};
+
+/** The tools as the MCP server offers them: the extension's tools plus `profile`, which only the MCP server reads. */
+export const MCP_TOOLS = TOOLS.map((tool) => {
+  const kind = ["bridge_info", "list_tabs", "list_containers"].includes(
+    tool.name,
+  )
+    ? "list"
+    : ["open_tab", "open_in_container"].includes(tool.name)
+      ? "open"
+      : "tab";
+  return {
+    ...tool,
+    inputSchema: {
+      ...tool.inputSchema,
+      properties: {
+        ...tool.inputSchema.properties,
+        profile: PROFILE_PARAM[kind],
+      },
+    },
+  };
+});
+const mcpToolByName = (name: string) => MCP_TOOLS.find((t) => t.name === name);
+
+/** The dispatcher of the real server: sockets on disk, one connection per call. */
+export function liveDispatcher(
+  env: NodeJS.ProcessEnv = process.env,
+): Dispatcher {
+  return new Dispatcher({
+    discover: () => discoverEndpoints(bridgesDir(env), socketPath(env)),
+    call: (ep, tool, args) =>
+      callHost(
+        tool,
+        args,
+        toolTimeoutMs(tool) + HOST_MARGIN_MS + 2_000,
+        ep.socket,
+      ),
+    unreachable: () => unreachableMessage(env),
+    gone: (ep) => void removeIfStale(ep),
+  });
+}
+
 const failure = (text: string): CallToolResult => ({
   isError: true,
   content: [{ type: "text", text }],
 });
 
 export async function runMcp(): Promise<void> {
-  const presence = keepPresence();
+  const presence = presenceFor(() => discoverEndpoints());
+  const dispatcher = liveDispatcher();
   const server = new Server(
     { name: "splitsession", version: __VERSION__ },
     { capabilities: { tools: {} }, instructions: INSTRUCTIONS },
   );
 
   server.setRequestHandler(ListToolsRequestSchema, async () => ({
-    tools: TOOLS.map((tool) => ({
+    tools: MCP_TOOLS.map((tool) => ({
       name: tool.name,
       title: tool.title,
       description: tool.description,
@@ -186,8 +286,8 @@ export async function runMcp(): Promise<void> {
     CallToolRequestSchema,
     async (request): Promise<CallToolResult> => {
       const { name, arguments: rawArgs } = request.params;
-      presence.ensure();
-      const spec = toolByName(name);
+      presence.sync();
+      const spec = mcpToolByName(name);
       if (!spec) return failure(`unknown tool "${name}"`);
       const checked = validateArgs(spec.inputSchema, rawArgs);
       if (!checked.ok) return failure(`${name}: ${checked.error}`);
@@ -201,15 +301,8 @@ export async function runMcp(): Promise<void> {
               `upload_file: ${missing} is not a file on this computer`,
             );
         }
-        const response = await callHost(
-          name,
-          checked.value,
-          toolTimeoutMs(name) + HOST_MARGIN_MS + 2_000,
-        );
-        if (!response.ok) return failure(response.error);
-        return response.result as ToolResult as CallToolResult;
+        return await dispatcher.run(name, checked.value);
       } catch (error) {
-        if (error instanceof Unreachable) return failure(unreachableMessage());
         return failure(error instanceof Error ? error.message : String(error));
       }
     },

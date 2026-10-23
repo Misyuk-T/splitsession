@@ -2,7 +2,12 @@ import { homedir, platform } from "node:os";
 import path from "node:path";
 
 export const HOST_MANIFEST_FILE = "com.splitsession.bridge.json";
+/** The legacy (protocol 1) socket's path (tests). The per-profile directory sits next to it unless BRIDGE_DIR_ENV says otherwise. */
 export const SOCKET_ENV = "FACET_BRIDGE_SOCKET";
+/** The directory of the per-profile sockets (tests). */
+export const BRIDGE_DIR_ENV = "FACET_BRIDGE_DIR";
+/** The longest Unix socket path macOS accepts (`sun_path` is 104 bytes with the terminating NUL); Linux allows 107. */
+export const SOCKET_PATH_MAX = 103;
 /** Colon-separated directories searched for the host manifest (tests; default: every supported browser). */
 export const MANIFEST_DIRS_ENV = "FACET_BRIDGE_MANIFEST_DIRS";
 
@@ -63,6 +68,30 @@ export function socketPath(
   home: string = homedir(),
 ): string {
   return env[SOCKET_ENV] || path.join(socketDir(home), "bridge.sock");
+}
+
+/**
+ * The directory of the per-profile sockets (protocol 2): `<SplitSession>/bridges/<profileKey>.sock`, one per Chrome profile
+ * whose bridge is on. 0700 like its parent.
+ */
+export function bridgesDir(
+  env: NodeJS.ProcessEnv = process.env,
+  home: string = homedir(),
+): string {
+  return (
+    env[BRIDGE_DIR_ENV] ||
+    path.join(path.dirname(socketPath(env, home)), "bridges")
+  );
+}
+
+export const SOCKET_SUFFIX = ".sock";
+
+export function profileSocketPath(
+  profileKey: string,
+  env: NodeJS.ProcessEnv = process.env,
+  home: string = homedir(),
+): string {
+  return path.join(bridgesDir(env, home), `${profileKey}${SOCKET_SUFFIX}`);
 }
 
 /** `NativeMessagingHosts` directory of a browser, for the current user. */

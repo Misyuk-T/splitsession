@@ -5,7 +5,8 @@ import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 
 import { encodeLine, LineReader } from "../../src/bridge/framing";
-import { callHost, unreachableMessage } from "./mcp";
+import { TOOLS } from "../../src/bridge/spec";
+import { callHost, MCP_TOOLS, unreachableMessage } from "./mcp";
 import { MANIFEST_DIRS_ENV, SOCKET_ENV, socketPath } from "./paths";
 
 const dirs: string[] = [];
@@ -97,5 +98,22 @@ describe("mcp side of the bridge", () => {
       /did not answer x within 0 seconds|did not answer x/,
     );
     s2.close();
+  });
+
+  it("offers every tool with an optional profile argument the extension never sees", () => {
+    expect(MCP_TOOLS.map((t) => t.name)).toEqual(TOOLS.map((t) => t.name));
+    for (const t of MCP_TOOLS) {
+      expect(t.inputSchema.properties.profile).toMatchObject({
+        type: "string",
+      });
+      expect(t.inputSchema.required ?? []).not.toContain("profile");
+    }
+    // The extension's own schemas are untouched (it refuses unknown arguments).
+    for (const t of TOOLS)
+      expect(t.inputSchema.properties.profile).toBeUndefined();
+    const open = MCP_TOOLS.find((t) => t.name === "open_tab")!;
+    expect(open.inputSchema.properties.profile!.description).toMatch(
+      /Needed when several/,
+    );
   });
 });

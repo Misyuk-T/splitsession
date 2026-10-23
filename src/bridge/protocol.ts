@@ -4,7 +4,20 @@ export const HOST_NAME = "com.splitsession.bridge";
 /** Fixed by the manifest key (docs/development.md); pinned in the host manifest's `allowed_origins`. */
 export const EXTENSION_ID = "hapfikidacgfgnnajkgnaednpgnhmffk";
 export const EXTENSION_ORIGIN = `chrome-extension://${EXTENSION_ID}/`;
-export const PROTOCOL_VERSION = 1;
+/**
+ * 2: several Chrome profiles at once. The extension opens with `hello` (its profile key); the host listens on a socket of
+ * its own per profile. 1: one socket for everybody (0.1.x). A host that gets no `hello` speaks 1 (an older extension).
+ */
+export const PROTOCOL_VERSION = 2;
+/** The first protocol in which the extension says `hello` and every profile has a socket of its own. */
+export const MULTI_PROFILE_PROTOCOL = 2;
+
+/**
+ * A profile key: generated once per Chrome profile by the extension (`chrome.storage.local`), the name of that profile's
+ * socket file. Short on purpose: a Unix socket path is at most 104 bytes on macOS.
+ */
+export const PROFILE_KEY_RE = /^[a-z0-9]{6,16}$/;
+export const PROFILE_KEY_LENGTH = 10;
 
 /** Per-tool deadline inside the extension. */
 export const TOOL_TIMEOUT_MS = 15_000;
@@ -25,17 +38,31 @@ export interface ToolResult {
 
 /** host -> extension (stdout of the host). Chrome limits one such message to 1 MiB. */
 export type HostToExtension =
-  | { type: "ready"; version: number; socket: string }
+  | {
+      type: "ready";
+      version: number;
+      socket: string;
+      /** The key the host serves (protocol 2+): it is the name of its socket file. */
+      profileKey?: string;
+    }
   /** The host could not start (e.g. the socket directory is not writable) and is about to exit. */
   | { type: "fatal"; message: string }
-  /** A live host (of another Chrome profile) already holds the socket: this one does not take it over and exits. */
-  | { type: "busy"; reason: string }
+  /**
+   * A live host already holds the socket this one wanted, so it does not take it over and exits. Protocol 1: another Chrome
+   * profile has the one shared socket. Protocol 2 (`code: "same-profile"`): a host for this very profile key is still running
+   * (a quick off and on), or another profile carries the same key (a copied profile directory).
+   */
+  | { type: "busy"; reason: string; code?: "same-profile" }
+  /** How many Chrome profiles have the bridge on now (sockets in the directory, this one included); sent when it changes. */
+  | { type: "profiles"; count: number }
   /** How many MCP clients are connected to the host now (sent whenever it changes); 0: the agent is gone. */
   | { type: "clients"; count: number }
   | { type: "request"; id: number; tool: string; args: unknown };
 
 /** extension -> host (stdin of the host). */
 export type ExtensionToHost =
+  /** The first message, posted right after `connectNative` (protocol 2+). A 0.1.x host ignores it. */
+  | { type: "hello"; version: number; profileKey: string }
   | { type: "response"; id: number; ok: true; result: ToolResult }
   | { type: "response"; id: number; ok: false; error: string };
 
@@ -57,3 +84,9 @@ export const SESSION_TOOL = "__session";
 
 /** Sent by a host that found the socket held by a live host; shown in the popup next to the explanation. */
 export const BUSY_REASON = "another Chrome profile is connected";
+/** Protocol 2: the per-profile socket is held by a live host with the same key. */
+export const SAME_PROFILE_REASON =
+  "a bridge host for this Chrome profile is already running";
+
+/** What the user runs to get a host that speaks the current protocol. */
+export const UPDATE_COMMAND = "npx splitsession-bridge@latest install";
