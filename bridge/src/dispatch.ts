@@ -1,6 +1,10 @@
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 
-import type { ClientResponse } from "../../src/bridge/protocol";
+import {
+  type ClientResponse,
+  PROFILE_TOOL,
+  TABS_TOOL,
+} from "../../src/bridge/protocol";
 import { type Endpoint, LEGACY_KEY } from "./profiles";
 
 /**
@@ -127,7 +131,7 @@ export class Dispatcher {
     }
     if (!target) {
       endpoints = this.d.discover();
-      const infos = await this.infos(endpoints);
+      const infos = await this.labels(endpoints);
       return failure(
         `Several Chrome profiles have the SplitSession agent bridge on: ${infos.map(describe).join(", ")}. ` +
           `Say which one with profile: "<name or key>" (bridge_info lists them); a tool on a tab finds the tab's profile by itself.`,
@@ -253,6 +257,66 @@ export class Dispatcher {
     });
   }
 
+  /**
+   * Each profile's key and name, through the extension's `__profile`: answered by the extension itself, so it is not an
+   * agent action (not counted, not in the popup's list). An extension of 0.1.x answers "pong" to it: `bridge_info` then.
+   */
+  async labels(endpoints: Endpoint[]): Promise<ProfileInfo[]> {
+    const outcomes = await this.callAll(endpoints, PROFILE_TOOL, {});
+    const found = new Map<string, ProfileInfo>();
+    const old: Endpoint[] = [];
+    for (const o of outcomes) {
+      const v = o.ok
+        ? (firstJson(o.result) as { profileLabel?: unknown } | undefined)
+        : undefined;
+      if (v && typeof v === "object" && "profileLabel" in v)
+        found.set(o.ep.socket, {
+          profileKey: o.ep.key,
+          label:
+            typeof v.profileLabel === "string" && v.profileLabel !== ""
+              ? v.profileLabel
+              : null,
+          ...(o.ep.legacy ? { legacy: true as const } : {}),
+        });
+      else old.push(o.ep);
+    }
+    for (const info of await this.infos(old)) {
+      const ep = old.find((e) => e.key === info.profileKey);
+      if (ep) found.set(ep.socket, info);
+    }
+    return endpoints.flatMap((e) => found.get(e.socket) ?? []);
+  }
+
+  /**
+   * Every profile's tab and window IDs, through the extension's own `__tabs` (not an agent action either); `list_tabs` for
+   * an extension of 0.1.x.
+   */
+  private async tabIndex(endpoints: Endpoint[]): Promise<
+    Array<{
+      ep: Endpoint;
+      list: Array<{ tabId?: unknown; windowId?: unknown }>;
+    }>
+  > {
+    const outcomes = await this.callAll(endpoints, TABS_TOOL, {});
+    const lists: Array<{
+      ep: Endpoint;
+      list: Array<{ tabId?: unknown; windowId?: unknown }>;
+    }> = [];
+    const old: Endpoint[] = [];
+    for (const o of outcomes) {
+      const v = o.ok ? firstJson(o.result) : undefined;
+      if (Array.isArray(v)) lists.push({ ep: o.ep, list: v });
+      else old.push(o.ep);
+    }
+    if (old.length > 0) {
+      for (const o of await this.callAll(old, "list_tabs", {})) {
+        const v = o.ok ? firstJson(o.result) : undefined;
+        if (Array.isArray(v)) lists.push({ ep: o.ep, list: v });
+      }
+    }
+    return lists;
+  }
+
   /** `profile` is a key (exact) or a name (case-insensitive) of a connected profile. */
   private async resolve(
     profile: string,
@@ -262,7 +326,7 @@ export class Dispatcher {
       (e) => e.key.toLowerCase() === profile.toLowerCase(),
     );
     if (byKey) return { ep: byKey };
-    const infos = await this.infos(endpoints);
+    const infos = await this.labels(endpoints);
     const wanted = profile.trim().toLowerCase();
     const named = infos.filter((p) => p.label?.toLowerCase() === wanted);
     if (named.length === 1) {
@@ -290,24 +354,17 @@ export class Dispatcher {
       );
       if (ep) return { ep };
     }
-    const outcomes = await this.callAll(endpoints, "list_tabs", {});
-    const owners: Endpoint[] = [];
-    const lists: Array<{ ep: Endpoint; list: unknown[] }> = [];
-    for (const o of outcomes) {
-      if (!o.ok) continue;
-      const list = firstJson(o.result);
-      if (!Array.isArray(list)) continue;
-      lists.push({ ep: o.ep, list });
-      if (list.some((t) => (t as { tabId?: unknown })?.tabId === tabId))
-        owners.push(o.ep);
-    }
+    const lists = await this.tabIndex(endpoints);
+    const owners = lists
+      .filter(({ list }) => list.some((t) => t?.tabId === tabId))
+      .map(({ ep }) => ep);
     this.refresh(lists);
     if (owners.length === 1) return { ep: owners[0]! };
     if (owners.length === 0)
       return {
         error: `no tab with id ${tabId} in any connected Chrome profile (it may have been closed; call list_tabs)`,
       };
-    const infos = await this.infos(owners);
+    const infos = await this.labels(owners);
     return {
       error: `tab id ${tabId} exists in several Chrome profiles (${infos.map(describe).join(", ")}): separate Chrome processes number their tabs independently. Pass profile: "<name or key>" with the tab ID.`,
     };
@@ -318,18 +375,15 @@ export class Dispatcher {
     windowId: number,
     endpoints: Endpoint[],
   ): Promise<{ ep: Endpoint } | { error: string }> {
-    const outcomes = await this.callAll(endpoints, "list_tabs", { windowId });
-    const owners = outcomes.filter((o) => {
-      if (!o.ok) return false;
-      const list = firstJson(o.result);
-      return Array.isArray(list) && list.length > 0;
-    });
+    const owners = (await this.tabIndex(endpoints)).filter(({ list }) =>
+      list.some((t) => t?.windowId === windowId),
+    );
     if (owners.length === 1) return { ep: owners[0]!.ep };
     if (owners.length === 0)
       return {
         error: `no window with id ${windowId} in any connected Chrome profile (call list_tabs)`,
       };
-    const infos = await this.infos(owners.map((o) => o.ep));
+    const infos = await this.labels(owners.map((o) => o.ep));
     return {
       error: `window id ${windowId} exists in several Chrome profiles (${infos.map(describe).join(", ")}). Pass profile: "<name or key>".`,
     };
@@ -347,7 +401,7 @@ export class Dispatcher {
     }
     const [outcomes, infos] = await Promise.all([
       this.callAll(endpoints, name, args),
-      this.infos(endpoints),
+      this.labels(endpoints),
     ]);
     if (outcomes.length === 0) return failure(this.d.unreachable());
     const labels = new Map(infos.map((p) => [p.profileKey, p.label]));

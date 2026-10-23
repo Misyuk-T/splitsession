@@ -62,6 +62,12 @@ function setup(identity?: ProfileIdentity) {
       },
     },
     alarms,
+    tabs: {
+      query: vi.fn(async () => [
+        { id: 3, windowId: 1, title: "secret", url: "https://a.test/" },
+        { windowId: 1 },
+      ]),
+    },
   };
   const area = new MemoryStorageArea();
   const log = createLogger(50);
@@ -615,6 +621,25 @@ describe("AgentBridge", () => {
       expect(bridge.state().profileLabel).toBe("Old");
       bridge.labelChanged("New");
       expect(bridge.state().profileLabel).toBe("New");
+    });
+
+    it("answers the MCP server's __profile and __tabs itself: IDs and the name only, never counted or listed", async () => {
+      const { bridge, ports, run } = setup(identity(["k1abc23def"], "Work"));
+      await bridge.sync(true, true);
+      const port = ports[0]!;
+      port.receive({ type: "ready", version: 2, socket: "/b/k.sock" });
+      port.receive({ type: "request", id: 1, tool: "__profile", args: {} });
+      port.receive({ type: "request", id: 2, tool: "__tabs", args: {} });
+      await vi.advanceTimersByTimeAsync(0);
+      const text = (id: number) =>
+        port.sent.find((m) => m.id === id)?.result.content[0].text;
+      expect(JSON.parse(text(1))).toEqual({
+        profileKey: "k1abc23def",
+        profileLabel: "Work",
+      });
+      expect(JSON.parse(text(2))).toEqual([{ tabId: 3, windowId: 1 }]);
+      expect(run).not.toHaveBeenCalled();
+      expect(bridge.state()).toMatchObject({ actions: 0, recent: [] });
     });
   });
 });

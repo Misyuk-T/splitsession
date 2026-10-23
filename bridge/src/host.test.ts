@@ -156,9 +156,14 @@ const start = (env: NodeJS.ProcessEnv, handler?: Handler) => {
   return h;
 };
 
-/** A profile's tabs, as its extension would list them. */
+/** A profile's tabs, as its extension would list them (`old`: an extension of 0.1.x, which says "pong" to `__` tools). */
 const tabsOf =
-  (ids: number[]) => (tool: string, args: Record<string, unknown>) => {
+  (ids: number[], old = false) =>
+  (tool: string, args: Record<string, unknown>) => {
+    if (tool.startsWith("__") && old) return "pong";
+    if (tool === "__profile")
+      return { profileKey: "k", profileLabel: `label-${ids[0]}` };
+    if (tool === "__tabs") return ids.map((tabId) => ({ tabId, windowId: 1 }));
     if (tool === "bridge_info")
       return {
         profileLabel: `label-${ids[0]}`,
@@ -321,7 +326,7 @@ describe("the MCP server's dispatcher against real hosts", () => {
       FACET_BRIDGE_MANIFEST_DIRS: path.join(dir, "none"),
     };
     const fresh = start(env, tabsOf([10])).hello("aaaaaaaaaa");
-    const old = start(env, tabsOf([20]));
+    const old = start(env, tabsOf([20], true));
     await fresh.next("ready");
     await old.next("ready", 6_000);
     const d = liveDispatcher(env);

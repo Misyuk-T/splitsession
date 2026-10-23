@@ -81,6 +81,13 @@ export type ClientResponse =
 export const PING_TOOL = "__ping";
 /** Sent once by an MCP server over a connection it keeps open for as long as it runs: the host counts these as "agents present". */
 export const SESSION_TOOL = "__session";
+/**
+ * Asked by the MCP server, answered by the extension itself (protocol 2): never an agent action, so never counted or listed.
+ * `__profile`: `{profileKey, profileLabel}`. `__tabs`: `[{tabId, windowId}]` of every tab, to find which profile has a tab.
+ * An extension of 0.1.x answers "pong" to both (it treats every `__` tool as internal).
+ */
+export const PROFILE_TOOL = "__profile";
+export const TABS_TOOL = "__tabs";
 
 /** Sent by a host that found the socket held by a live host; shown in the popup next to the explanation. */
 export const BUSY_REASON = "another Chrome profile is connected";

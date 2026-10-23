@@ -6,9 +6,11 @@ import {
   type HostToExtension,
   MULTI_PROFILE_PROTOCOL,
   PING_TOOL,
+  PROFILE_TOOL,
   PROTOCOL_VERSION,
   SESSION_TOOL,
   SWITCHED_OFF,
+  TABS_TOOL,
   type ToolResult,
 } from "../../bridge/protocol";
 import type { StorageAreaLike } from "../../engine/storage/storage-area";
@@ -358,12 +360,18 @@ export class AgentBridge {
     args: unknown,
   ): Promise<void> {
     if (isInternalTool(tool)) {
+      let text = "pong";
+      try {
+        text = await this.internal(String(tool));
+      } catch {
+        /* an internal answer is best effort: the MCP server falls back to the public tools */
+      }
       try {
         port.postMessage({
           type: "response",
           id,
           ok: true,
-          result: { content: [{ type: "text", text: "pong" }] },
+          result: { content: [{ type: "text", text }] },
         } satisfies ExtensionToHost);
       } catch {
         /* the host is gone: nothing to answer */
@@ -419,6 +427,28 @@ export class AgentBridge {
     } catch (error) {
       this.log("warn", "agent bridge: could not send a reply", String(error));
     }
+  }
+
+  /**
+   * The MCP server's own questions (protocol 2), answered here, not by the router: they are bookkeeping, never an agent
+   * action, so they are not counted, listed or logged. Never page content: the key, the name, tab and window IDs.
+   */
+  private async internal(tool: string): Promise<string> {
+    if (tool === PROFILE_TOOL)
+      return JSON.stringify({
+        profileKey: this.profileKey,
+        profileLabel:
+          this.current.profileLabel === "" ? null : this.current.profileLabel,
+      });
+    if (tool === TABS_TOOL) {
+      const tabs = await this.b.tabs.query({});
+      return JSON.stringify(
+        tabs
+          .filter((t) => t.id !== undefined)
+          .map((t) => ({ tabId: t.id, windowId: t.windowId })),
+      );
+    }
+    return "pong";
   }
 
   /** Every MCP client has gone: after a short grace (a restarting client comes back), the runner lets go of what the agent left. */

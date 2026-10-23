@@ -12,6 +12,8 @@ interface FakeProfile {
   containers: Array<{ id: string; name: string }>;
   calls: Array<{ tool: string; args: Record<string, unknown> }>;
   down?: boolean;
+  /** An extension of 0.1.x: no `__profile` / `__tabs`. */
+  old?: boolean;
 }
 
 const ep = (key: string, ino = 1, legacy = false): Endpoint => ({
@@ -38,6 +40,19 @@ function world(profiles: FakeProfile[]) {
       const p = profiles.find((x) => x.ep.socket === e.socket);
       if (!p || p.down) throw new Unreachable("ECONNREFUSED");
       p.calls.push({ tool, args });
+      // An extension of 0.1.x treats every "__" tool as internal and answers "pong".
+      if (tool.startsWith("__") && p.old)
+        return {
+          id: 1,
+          ok: true,
+          result: { content: [{ type: "text", text: "pong" }] },
+        };
+      if (tool === "__profile")
+        return text({ profileKey: p.ep.key, profileLabel: p.label });
+      if (tool === "__tabs")
+        return text(
+          p.tabs.map((t) => ({ tabId: t.tabId, windowId: t.windowId })),
+        );
       if (tool === "bridge_info")
         return text({
           profileLabel: p.label,
@@ -206,7 +221,7 @@ describe("Dispatcher: one MCP server, several Chrome profiles", () => {
     expect(json(await d.run("click", { tabId: 7, ref: "e1" }))).toMatchObject({
       by: "bbbbbbbbbb",
     });
-    expect(a.calls.map((c) => c.tool)).toEqual(["list_tabs"]);
+    expect(a.calls.map((c) => c.tool)).toEqual(["__tabs"]); // not an agent action in that profile
     // Now cached: no more lookups.
     a.calls.length = 0;
     b.calls.length = 0;
@@ -245,7 +260,7 @@ describe("Dispatcher: one MCP server, several Chrome profiles", () => {
     expect(json(await d.run("click", { tabId: 7, ref: "e1" }))).toMatchObject({
       by: "bbbbbbbbbb",
     });
-    expect(a.calls.map((c) => c.tool)).toEqual(["list_tabs"]); // asked, not clicked
+    expect(a.calls.map((c) => c.tool)).toEqual(["__tabs"]); // asked, not clicked
   });
 
   it("the same tab ID in two profiles (separate Chrome processes) needs profile, and then goes where it says", async () => {
@@ -341,5 +356,36 @@ describe("Dispatcher: one MCP server, several Chrome profiles", () => {
     ]);
     expect(out).toMatchObject({ profileKey: "legacy", profileLabel: null });
     expect(out.legacyNote).toMatch(/0\.1\.x/);
+  });
+
+  it("names and lookups use the extension's uncounted tools; an extension of 0.1.x is asked bridge_info and list_tabs instead", async () => {
+    const a = profile("aaaaaaaaaa", "Work", [1]);
+    const b = { ...profile("bbbbbbbbbb", "Old", [2]), old: true };
+    const { d } = world([a, b]);
+    const tabs = json(await d.run("list_tabs", {}));
+    expect(
+      tabs.map((t: { profile: { label: string } }) => t.profile.label),
+    ).toEqual(["Work", "Old"]);
+    expect(a.calls.map((c) => c.tool).sort()).toEqual([
+      "__profile",
+      "list_tabs",
+    ]);
+    expect(b.calls.map((c) => c.tool).sort()).toEqual([
+      "__profile",
+      "bridge_info",
+      "list_tabs",
+    ]);
+    a.calls.length = 0;
+    b.calls.length = 0;
+    (d as unknown as { tabs: Map<number, unknown> }).tabs.clear(); // forget: look it up again
+    expect(json(await d.run("click", { tabId: 2, ref: "e1" }))).toMatchObject({
+      by: "bbbbbbbbbb",
+    });
+    expect(a.calls.map((c) => c.tool)).toEqual(["__tabs"]);
+    expect(b.calls.map((c) => c.tool)).toEqual([
+      "__tabs",
+      "list_tabs",
+      "click",
+    ]);
   });
 });
