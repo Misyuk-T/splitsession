@@ -64,8 +64,8 @@ Use it when you cannot navigate to an extension address. Differences from `open.
 ## 3. Read the situation: the bridge tools
 
 With the agent bridge on (section 7), ask SplitSession instead of reading a page: `list_containers` returns every container
-(id, name, colour, tab count), `list_tabs` returns every tab with its container, and `bridge_info` returns the extension ID
-and the profile name. Without the bridge, a tab's container is visible to the person as the toolbar badge and the tab group;
+(id, name, colour, tab count), `list_tabs` returns every tab with its container and Chrome profile, and `bridge_info` returns the connected
+profiles (key, name, size, extension version). Without the bridge, a tab's container is visible to the person as the toolbar badge and the tab group;
 to a page it is visible only through the opt-in signals in section 4.
 
 ## 4. Telling accounts apart in a tab
@@ -222,10 +222,16 @@ Claude Code --stdio--> splitsession-bridge.mjs mcp --Unix socket--> splitsession
 - **Native Messaging** is Chrome's own mechanism for an extension to talk to a local program. The host manifest pins
   `allowed_origins` to this extension's fixed ID (`chrome-extension://hapfikidacgfgnnajkgnaednpgnhmffk/`): no other
   extension and no web page can start the host or talk to it through Chrome. The host also refuses any other origin.
-- **No network port.** The MCP server reaches the host through a Unix socket at
-  `~/Library/Application Support/SplitSession/bridge.sock` in a directory with mode 0700; the socket is 0600. A web page cannot
-  connect to it (a localhost TCP port could be tried by any page). Other macOS users cannot either; **programs running
-  as you can**, while the switch is on.
+- **No network port.** The MCP server reaches each profile's host through a Unix socket:
+  `~/Library/Application Support/SplitSession/bridges/<profile key>.sock` (one per Chrome profile whose switch is on; the
+  shared `~/Library/Application Support/SplitSession/bridge.sock` only for an extension or host of 0.1.x). The directories are
+  0700, the sockets 0600. A web page cannot connect to them (a localhost TCP port could be tried by any page). Other macOS
+  users cannot either; **programs running as you can**, in every profile whose switch is on.
+- **Several profiles do not widen the trust model.** Each profile has its own switch, its own host process and its own
+  0600 socket; a profile whose switch is off has no socket and cannot be reached. The host still refuses any caller but the
+  allowed extension origin, and checks the profile key the extension sends (6-16 letters a-z or digits, so it can only name a
+  file inside `bridges/`). The key is not a secret: it only says which socket is which. The MCP server only removes a socket
+  file that refuses connections and is older than 5 s, and a host only removes its own socket (same inode).
 - The host copy lives in `~/Library/Application Support/SplitSession/host/`, not in your repository: macOS blocks or prompts
   when a program started by Chrome runs from `~/Documents`, and the host must start silently. Re-run
   `npx splitsession-bridge install` after you change the bridge or switch Node versions (the launcher pins the Node that installed it).
@@ -275,13 +281,43 @@ Claude Code --stdio--> splitsession-bridge.mjs mcp --Unix socket--> splitsession
 
 ### Several Chrome profiles
 
-Only **one** Chrome profile holds the bridge at a time. A profile that switches it on while another one is connected is
-**not** allowed to take the socket over: its host finds the socket alive, tells its extension "busy" and exits. That
-profile's popup shows "Another Chrome profile holds the agent bridge — turn it off there first", keeps looking every
-10 s, and connects by itself once the other profile lets go (or press "Check again"). The profile that holds it keeps
-saying "Agent connected", and that stays true. To tell the profiles apart, give each a name under **Options > AI agent
-bridge > Name of this Chrome profile**; the agent reads it with `bridge_info`. A killed host's leftover socket is not a
-live one and is cleaned up as before.
+Each Chrome profile has its own switch, and **any number of profiles can have it on at the same time**. One MCP server (one
+entry in your AI client) sees all of them.
+
+- **How.** Chrome starts one host per profile. The extension keeps a random **profile key** (10 letters and digits, made once,
+  in that profile's `chrome.storage.local`) and opens every connection with `hello` and that key; the host then listens on
+  `bridges/<key>.sock`. The key is not the profile's name: the name can change and two profiles may share one. Switching a
+  profile off removes its socket; a socket left by a killed host is removed by the next host of that profile or by the MCP
+  server (a socket that refuses connections and is older than 5 s).
+- **What the agent sees.** `bridge_info` lists the connected profiles: `profileKey`, `label` (the name set in Settings, or
+  `null`), `windows`, `tabs`, `containers`, `extensionVersion`. With exactly one profile its fields are also at the top level,
+  as before. `list_tabs` and `list_containers` put every profile's items together, each with `profile: {key, label}`; they take
+  an optional `profile` (a name, case-insensitive, or a key) to ask one profile only.
+- **Tools on a tab** (`tabId`) find the tab's profile by themselves: from the latest list, else by asking every profile. All
+  profiles of one Chrome share one tab numbering (tab IDs are numbered per browser process), so a tab ID names one tab. Profiles
+  of **separate** Chrome processes (two browsers, or a second `--user-data-dir`) number their tabs independently: an ID found in
+  two of them is refused with "exists in several Chrome profiles", and `profile` says which.
+- **Tools that open a tab** (`open_tab`, `open_in_container`) need `profile` when several profiles are connected (or a `windowId`,
+  which belongs to one profile). Without it the tool fails and lists the profiles; SplitSession never guesses which account the
+  agent meant. With one profile connected nothing changes: no `profile` needed anywhere.
+- **Names.** Give each profile a name under **Settings, "For AI agents" > Advanced > Profile name**. The switch's status says
+  "Connected as “Work”"; when two or more profiles are on and this one has no name, the card says so and its **Name this
+  profile** button opens the field.
+- **Bookkeeping is not an agent action.** To label and route, the MCP server asks each extension `__profile` (key and name) and
+  `__tabs` (tab and window IDs): the extension answers those itself, so they are not counted, listed in the popup or logged.
+- **Mixed versions.** A host of 0.1.x (npm `splitsession-bridge@0.1.0`) still works with this extension, one profile at a time on
+  the shared socket; the switch card says "One Chrome profile at a time" and shows `npx splitsession-bridge@latest install`.
+  An extension of 0.1.x with the new host works too: it sends no `hello`, so after 1.5 s the host takes the shared socket for
+  it, and the MCP server shows that profile with the key `legacy`. Only one profile can use the shared socket; a second such
+  profile is told "Another Chrome profile holds the agent bridge", as before. After updating the bridge program, restart your
+  AI client so it starts the new MCP server.
+
+| Extension | Host + MCP server (installed together) | Result |
+| --- | --- | --- |
+| 0.1.x | 0.1.x | One profile at a time (shared socket), as before. |
+| 0.1.x | 0.2+ | Works; that profile uses the shared socket (`legacy` key), others with a new extension use their own. |
+| new | 0.1.x | Works for one profile; the card asks to update the bridge; a second profile waits ("busy"). |
+| new | 0.2+ | Every profile at once. |
 
 ### Seeing what the agent touches ("Show agent activity", on by default)
 
@@ -351,6 +387,10 @@ be recalled.
 
 The way to work with a page: **`snapshot`, then act by ref, then `snapshot` again** when the page has changed.
 
+Every tool also takes an optional `profile` (a profile's name or key, from `bridge_info`). The MCP server reads it and never
+passes it to the extension. Tools on a tab need it only when the same tab ID exists in two Chrome processes (see "Several
+Chrome profiles").
+
 ```text
 snapshot {tabId: 812}
   {"tabId":812,"url":"https://example.com/signup","title":"Sign up","refs":9,"truncated":false}
@@ -390,11 +430,11 @@ name looks wrong, `get_tab_html` with a `selector` shows the source.
 
 | Tool | What it does |
 | --- | --- |
-| `bridge_info` | Which Chrome profile this is: `profileLabel` (the name the user set, or `null`), `windows`, `tabs`, `containers`, `extensionVersion`. Call it when the tabs are not the ones you expected. |
-| `list_containers` | Containers: id, name, colour, number of tabs. |
-| `list_tabs` (`windowId?`, `containerId?`) | Every tab of every window: `tabId`, `windowId`, `index`, `active`, `pinned`, `title`, `url`, `status`, `groupId`, `container` (`{id, name}` or `null`). Start here. |
-| `open_in_container` (`url`, `container`, `createIfMissing?`, `active?`, `windowId?`, `wait?`) | New tab in a container through SplitSession's own open path: assigned before the first request, so the page loads with that container's cookies. Unknown container is an error unless `createIfMissing`. Opens in the background unless `active`. |
-| `open_tab` (`url`, `active?`, `windowId?`, `wait?`) | New plain tab (http(s), `about:blank`, `chrome://`). |
+| `bridge_info` (`profile?`) | The connected Chrome profiles: `profiles: [{profileKey, label, windows, tabs, containers, extensionVersion}]` (`label`: the name the user set, or `null`). With one profile also `profileKey`, `profileLabel`, `windows`, `tabs`, `containers`, `extensionVersion` at the top level. Call it when the tabs are not the ones you expected. |
+| `list_containers` (`profile?`) | Containers of every connected profile: id, name, colour, number of tabs, `profile` (`{key, label}`). |
+| `list_tabs` (`windowId?`, `containerId?`, `profile?`) | Every tab of every window of every connected profile: `tabId`, `windowId`, `index`, `active`, `pinned`, `title`, `url`, `status`, `groupId`, `container` (`{id, name}` or `null`), `profile` (`{key, label}`). Start here. |
+| `open_in_container` (`url`, `container`, `createIfMissing?`, `active?`, `windowId?`, `wait?`, `profile?`) | New tab in a container through SplitSession's own open path: assigned before the first request, so the page loads with that container's cookies. Unknown container is an error unless `createIfMissing`. Opens in the background unless `active`. `profile` is required when several profiles are connected (unless `windowId` says it). |
+| `open_tab` (`url`, `active?`, `windowId?`, `wait?`, `profile?`) | New plain tab (http(s), `about:blank`, `chrome://`). `profile` as for `open_in_container`. |
 | `navigate` (`tabId`, `url`, `wait?`) | Navigate a tab, keeping its container. A domain rule can still replace the tab (new `tabId`). |
 | `navigate_back`, `navigate_forward` (`tabId`, `wait?`) | The previous / next entry of the tab's history (exactly that entry, through the debugger; Chrome's Back button would skip pages nobody interacted with, which is every page the agent just opened). Container tabs get SplitSession's service-worker check first. |
 | `reload` (`tabId`, `bypassCache?`, `wait?`) | Reload, keeping the container. |

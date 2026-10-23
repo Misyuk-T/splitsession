@@ -70,7 +70,7 @@ To build from source, see *Development* below.
 
 <br>
 
-The Full edition has an optional local MCP server that lets your own agent (Claude Code, Codex, Cursor and others) list your Chrome tabs with their containers and operate them: snapshots, trusted clicks and typing, screenshots, console and network, opening pages in a container. It is **off by default** and one all-or-nothing switch in Settings.
+The Full edition has an optional local MCP server that lets your own agent (Claude Code, Codex, Cursor and others) list your Chrome tabs with their containers and operate them: snapshots, trusted clicks and typing, screenshots, console and network, opening pages in a container. It is **off by default** and one all-or-nothing switch in Settings. Several Chrome profiles can have it on at once; one MCP server sees them all, each tab tagged with its profile.
 
 ```sh
 npx splitsession-bridge install   # then switch on "Agent bridge" in Settings > "For AI agents"

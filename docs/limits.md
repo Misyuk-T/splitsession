@@ -515,12 +515,13 @@ full access to every tab, in containers or not (docs/agents.md, section 7). What
   never restart it (see decisions.md, "Smooth indicators").
 - **`assign_tab`** has the known gap of the popup's "Reopen in": the tab keeps a `window.opener` of its old document.
   `open_in_container` has no such gap. `navigate` can be answered by a domain rule that replaces the tab (new ID).
-- **One profile at a time, and the first one wins.** A second Chrome profile turning the bridge on does not take the
-  socket over: its host sees a live socket, reports "busy" and exits; its popup says "Another Chrome profile holds the
-  agent bridge — turn it off there first" and retries every 10 s (and on the 1-minute alarm), connecting when the first
-  lets go. There is no way to use two profiles at once. `bridge_info` and the optional profile name (options page) tell
-  the agent which profile it reached. Two hosts starting in the same instant are resolved by the socket bind (the loser
-  is "busy"); a leftover socket of a killed host is detected (connection refused) and replaced.
+- **Several profiles at once (bridge 0.2+).** Every Chrome profile whose switch is on has its own host and socket
+  (`bridges/<profile key>.sock`); one MCP server sees them all (agents.md, "Several Chrome profiles"). Limits: a tab ID is
+  unique only within one Chrome process, so the same ID in two browsers (or two `--user-data-dir` instances) needs
+  `profile`; a tool that opens a tab needs `profile` when several profiles are on; the routing cache is the latest list,
+  and a cached tab that the profile no longer has is looked up again once ("no tab"). With a host or an extension of 0.1.x, the shared `bridge.sock` still
+  serves one profile at a time and a second such profile is "busy" (retries every 10 s), as before. Copying a profile
+  directory copies its key: the copy finds its socket taken twice in a row and makes a new key.
 - **Switching off mid-tool.** Tools check the switch before every step that changes something and stop waiting at once,
   so a received-but-not-started action is not performed; every debugger session is detached at the same moment. What cannot be recalled: a script already running in a page
   (`run_js`, including its timers), and a browser call already issued (a click that was dispatched, a navigation that
