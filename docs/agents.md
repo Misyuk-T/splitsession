@@ -293,10 +293,18 @@ entry in your AI client) sees all of them.
   `null`), `windows`, `tabs`, `containers`, `extensionVersion`. With exactly one profile its fields are also at the top level,
   as before. `list_tabs` and `list_containers` put every profile's items together, each with `profile: {key, label}`; they take
   an optional `profile` (a name, case-insensitive, or a key) to ask one profile only.
-- **Tools on a tab** (`tabId`) find the tab's profile by themselves: from the latest list, else by asking every profile. All
-  profiles of one Chrome share one tab numbering (tab IDs are numbered per browser process), so a tab ID names one tab. Profiles
-  of **separate** Chrome processes (two browsers, or a second `--user-data-dir`) number their tabs independently: an ID found in
-  two of them is refused with "exists in several Chrome profiles", and `profile` says which.
+- **Tools on a tab** (`tabId`) find the tab's profile by themselves, **live on every call**: the MCP server asks each
+  connected profile which tab IDs it has (`__tabs`, answered by the extension without counting it) and acts only if exactly
+  one has this one; none: "no tab with id …"; several: "exists in several Chrome profiles", and `profile` says which. All
+  profiles of one Chrome share one tab numbering (tab IDs are numbered per browser process), so this only happens across
+  **separate** Chrome processes (two browsers, or a second `--user-data-dir`). With `profile`, only that profile is asked and
+  it must have the tab. One profile connected: the same check.
+- **Stale tab IDs are refused, never redirected.** The MCP server remembers where the agent saw each tab ID (the profile and
+  the host process that served it: every host has a random session ID on its answers). If the only profile that has the ID now
+  is not where the agent saw it (that profile went away and another one has the number, or the same profile's bridge restarted
+  and Chrome may have numbered tabs again), the tool does nothing and says "stale tab id …: call list_tabs again". A full
+  `list_tabs` replaces what the agent saw (for every profile, or for the one in `profile`); a tab the agent opens is seen where
+  it opened it. IDs the agent never saw (none listed in this MCP session) are only checked for a single owner.
 - **Tools that open a tab** (`open_tab`, `open_in_container`) need `profile` when several profiles are connected (or a `windowId`,
   which belongs to one profile). Without it the tool fails and lists the profiles; SplitSession never guesses which account the
   agent meant. With one profile connected nothing changes: no `profile` needed anywhere.

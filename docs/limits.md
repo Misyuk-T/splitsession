@@ -518,8 +518,10 @@ full access to every tab, in containers or not (docs/agents.md, section 7). What
 - **Several profiles at once (bridge 0.2+).** Every Chrome profile whose switch is on has its own host and socket
   (`bridges/<profile key>.sock`); one MCP server sees them all (agents.md, "Several Chrome profiles"). Limits: a tab ID is
   unique only within one Chrome process, so the same ID in two browsers (or two `--user-data-dir` instances) needs
-  `profile`; a tool that opens a tab needs `profile` when several profiles are on; the routing cache is the latest list,
-  and a cached tab that the profile no longer has is looked up again once ("no tab"). With a host or an extension of 0.1.x, the shared `bridge.sock` still
+  `profile`; a tool that opens a tab needs `profile` when several profiles are on; every tool on a tab checks live which
+  profile has it (one extra local round trip per profile), and a tab ID the agent saw in another profile or under an earlier
+  host session (the bridge restarted, e.g. after a service-worker restart or a Chrome restart) is refused as stale until the
+  agent lists the tabs again, even when it is in fact the same tab. With a host or an extension of 0.1.x, the shared `bridge.sock` still
   serves one profile at a time and a second such profile is "busy" (retries every 10 s), as before. Copying a profile
   directory copies its key: the copy finds its socket taken twice in a row and makes a new key.
 - **Switching off mid-tool.** Tools check the switch before every step that changes something and stop waiting at once,

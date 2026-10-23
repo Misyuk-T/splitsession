@@ -1864,3 +1864,27 @@ Goal: a container tab that is not in its container's tab group (dragged out, or 
   ambiguous open refused, a click on the second profile's tab lands there, name hint and button, switching one off removes
   it), and a protocol-1 host stand-in (connects; Settings asks for the update).
 
+### Review fix: tab routing checks live and refuses stale IDs (2026-10-23)
+
+- **Review (Codex, GPT-6.1 Sol): two P1 routing blockers**, both reproduced against the dispatcher. (1) The cache was an
+  authority: after `list_tabs {profile: A}` with tab 7 in A and B, `close_tab {tabId: 7}` closed A's tab instead of refusing
+  as ambiguous; collisions that appeared later were missed too. (2) Stale IDs were redirected: A's tab 7 seen, A disconnected,
+  B got a tab 7, and `close_tab 7` closed B's unrelated tab (the one-profile shortcut skipped any check, and the "no tab" retry
+  looked for the ID elsewhere). A new socket inode likewise led to acting on a reused ID.
+- **Decision.** No routing cache any more. Every tool on a tab, with or without `profile`, with one profile or many, asks the
+  profiles live which tab IDs they have (`__tabs`; uncounted, `list_tabs` for an extension of 0.1.x) and acts only on exactly
+  one owner (with `profile`: that profile, which must have the tab). On top of that, an **affinity**: for each tab ID, where the
+  agent saw it (profile key + host session). Each host has a random session ID (`crypto.randomBytes(8)`) and stamps it on every
+  answer to the MCP server (`ClientResponse.session`; also in `ready`); a host of 0.1.x has none, so the socket inode stands in.
+  If the live owner is not a place where the agent saw the ID, the call is refused as stale and nothing is done. A full
+  `list_tabs` replaces the sightings (all of them, or that profile's with `profile`), a filtered one and ordinary answers add to
+  them, a tab the agent opens replaces them. The "no tab" retry is gone.
+- **Cost.** One more local round trip per profile per tab tool (the extension answers `__tabs` from `tabs.query`), also with a
+  single profile. And an ID listed before the bridge restarted is refused once even if it is the same tab (a worker restart
+  restarts the host): the agent lists again. Both are the price of never acting on the wrong tab.
+- **Tests.** Unit regressions for both repros (profile-filtered list then close; a later collision; disconnect and reuse),
+  same profile with a new session, a new inode without a session, explicit `profile` (must have the tab; stale until that
+  profile is listed), a tab moved between windows of one profile (fine), an ID never seen, one profile (same checks). Host
+  integration: every answer carries the session, the profile's next host has a new one, and a click on an ID seen under the
+  old host is refused until `list_tabs`.
+
