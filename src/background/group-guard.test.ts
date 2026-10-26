@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
 import {
+  chooseAddress,
   GroupGuard,
   type GuardTab,
   SETTLE_MS,
@@ -121,6 +122,44 @@ describe("GroupGuard", () => {
       action: "reopened",
       newTabId: 500,
     });
+  });
+
+  it("a website tab created inside the group (a duplicate) is reopened at the address it was created with, not where the unisolated copy was redirected to", async () => {
+    const { guard, tab, tabs, calls, state } = setup();
+    tab(1, 10, null, {
+      url: "https://threads.example/@me",
+      pendingUrl: "https://threads.example/@me",
+    });
+    const created = { ...tabs.get(1)! };
+    // The logged-out real profile is sent to the sign-in page while the guard waits.
+    state.onDelay = () => {
+      tabs.set(1, {
+        id: 1,
+        groupId: 10,
+        url: "https://threads.example/login?next=%2F%40me",
+      });
+    };
+    await guard.tabCreated(created);
+    expect(calls[0]).toBe("move 1 -> 500 reddit https://threads.example/@me");
+    // The remembered address is gone with the check: a later drag of another tab with that ID uses where it stands.
+    tab(2, 10, null, { url: "https://threads.example/other" });
+    await guard.groupChanged(2, 10);
+    expect(calls[2]).toBe("move 2 -> 501 reddit https://threads.example/other");
+  });
+
+  it("chooseAddress: the creation address first, then the pending one, then where the tab stands; never a non-website", () => {
+    const stand = { groupId: 10, url: "https://a.example/now" };
+    expect(chooseAddress(stand, "https://a.example/then")).toBe(
+      "https://a.example/then",
+    );
+    expect(chooseAddress(stand)).toBe("https://a.example/now");
+    expect(
+      chooseAddress({ ...stand, pendingUrl: "https://a.example/next" }),
+    ).toBe("https://a.example/next");
+    expect(chooseAddress(stand, "chrome://newtab/")).toBe(
+      "https://a.example/now",
+    );
+    expect(chooseAddress({ groupId: 10, url: "chrome://newtab/" })).toBeNull();
   });
 
   it("reopens a container tab dragged from one container group into another", async () => {

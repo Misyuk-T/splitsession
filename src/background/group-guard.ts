@@ -70,6 +70,20 @@ const RATE_LIMIT = 10;
 const dragRefusal = (error: unknown): boolean =>
   /cannot be edited|dragging/i.test(String((error as Error)?.message ?? error));
 
+/**
+ * The address a loaded website is reopened at: the one the tab was created with when the guard saw it being created (a
+ * duplicate, a link or an address opened next to a grouped tab; the page may have been redirected since), otherwise where
+ * the tab stands now (a tab dragged in).
+ */
+export function chooseAddress(
+  tab: GuardTab,
+  createdWith?: string,
+): string | null {
+  if (createdWith !== undefined && isHttpUrl(createdWith)) return createdWith;
+  if (isHttpUrl(tab.pendingUrl)) return tab.pendingUrl;
+  return isHttpUrl(tab.url) ? tab.url : null;
+}
+
 type Action =
   | "reopened"
   | "assigned in place"
@@ -125,6 +139,12 @@ export class GroupGuard {
    * does not, until the tab is fixed, closed, or out of the container groups, so the sweep never mistakes it for a foreign tab.
    */
   private readonly pendingOwn = new Set<number>();
+  /**
+   * The address a tab Chrome created inside a group was created with (`pendingUrl`), kept until its check is over. By the
+   * time the check reopens it, the unisolated page may have been redirected (a logged-out site sends it to its sign-in
+   * page): the container tab opens the address it was asked for, not wherever that redirect led.
+   */
+  private readonly createdWith = new Map<number, string>();
   private readonly delay: (ms: number) => Promise<void>;
   private readonly now: () => number;
 
@@ -136,6 +156,8 @@ export class GroupGuard {
   /** `tabs.onCreated`: a tab Chrome put into a group as it created it. */
   tabCreated(tab: GuardTab): Promise<void> {
     if (tab.id === undefined || !(tab.groupId >= 0)) return Promise.resolve();
+    const address = tab.pendingUrl || tab.url;
+    if (isHttpUrl(address)) this.createdWith.set(tab.id, address);
     return this.check(
       tab.id,
       "created in the group",
@@ -228,6 +250,7 @@ export class GroupGuard {
           );
         }
         if (!entry.next) {
+          this.createdWith.delete(tabId);
           this.running.delete(tabId); // synchronously with the check above: no request falls between them
           return;
         }
@@ -323,11 +346,7 @@ export class GroupGuard {
       );
       return "done";
     }
-    const address = isHttpUrl(tab.pendingUrl)
-      ? tab.pendingUrl
-      : isHttpUrl(tab.url)
-        ? tab.url
-        : null;
+    const address = chooseAddress(tab, this.createdWith.get(tabId));
     if (
       this.deps.isWaiting(tabId) ||
       tab.status === "unloaded" ||
