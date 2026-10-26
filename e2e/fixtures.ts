@@ -122,6 +122,8 @@ export const test = base.extend<
           env: {
             ...(process.env as Record<string, string>),
             FACET_BRIDGE_SOCKET: profile.socketPath,
+            // No per-site pacing here: specs click and navigate on one test site back to back. The pacing spec runs a second profile without this.
+            SPLITSESSION_SITE_GAP_MS: "0",
           },
         },
       );
@@ -327,6 +329,7 @@ export const test = base.extend<
       showNameToPages: true,
       agentBridge: false,
       agentActivity: true,
+      agentWindow: false, // existing specs open agent tabs in the window they use; the agents-window specs switch it on
       restoreTabs: true,
       markOutsideGroup: true,
       rememberTabs: true,

@@ -24,15 +24,24 @@ import { type Endpoint, LEGACY_KEY } from "./profiles";
 /** Thrown by `Caller` when nothing listens on the socket (switched off, or a leftover file). */
 export class Unreachable extends Error {}
 
+/** What the host needs besides the arguments (bridge 0.3+): who is asking, and whether it takes over a tab another session holds. */
+export interface CallContext {
+  session?: string;
+  takeOver?: boolean;
+}
+
 export type Caller = (
   ep: Endpoint,
   tool: string,
   args: Record<string, unknown>,
+  ctx?: CallContext,
 ) => Promise<ClientResponse>;
 
 export interface DispatchDeps {
   discover(): Endpoint[];
   call: Caller;
+  /** This MCP server's session name (tab leases). Without one nothing is announced and the host leases nothing. */
+  session?(): string | undefined;
   /** What to say when no profile is reachable at all (off, or not installed). */
   unreachable(): string;
   /** A socket that refused: remove it if it is a leftover. */
@@ -126,12 +135,26 @@ export class Dispatcher {
 
   constructor(private readonly d: DispatchDeps) {}
 
-  /** `args` are already validated; `profile` is ours and never reaches the extension. */
+  private context(takeOver: boolean): CallContext | undefined {
+    const session = this.d.session?.();
+    return session ? { session, ...(takeOver ? { takeOver } : {}) } : undefined;
+  }
+
+  private invoke(
+    ep: Endpoint,
+    name: string,
+    args: Record<string, unknown>,
+    ctx: CallContext | undefined,
+  ): Promise<ClientResponse> {
+    return ctx ? this.d.call(ep, name, args, ctx) : this.d.call(ep, name, args);
+  }
+
+  /** `args` are already validated; `profile` and `takeOver` are ours (the host reads takeOver) and never reach the extension. */
   async run(
     name: string,
     allArgs: Record<string, unknown>,
   ): Promise<CallToolResult> {
-    const { profile, ...args } = allArgs;
+    const { profile, takeOver, ...args } = allArgs;
     const endpoints = this.d.discover();
     if (endpoints.length === 0) return failure(this.d.unreachable());
 
@@ -169,7 +192,12 @@ export class Dispatcher {
       );
     }
 
-    const outcome = await this.callOne(target, name, args);
+    const outcome = await this.callOne(
+      target,
+      name,
+      args,
+      this.context(takeOver === true),
+    );
     if (!outcome.ok) return failure(outcome.error);
     // A new tab replaces whatever the agent saw under that number; any other answer adds to it.
     this.sawIn(outcome, firstJson(outcome.result), !CREATE.has(name));
@@ -181,9 +209,10 @@ export class Dispatcher {
     ep: Endpoint,
     name: string,
     args: Record<string, unknown>,
+    ctx?: CallContext,
   ): Promise<Outcome> {
     try {
-      const response = await this.d.call(ep, name, args);
+      const response = await this.invoke(ep, name, args, ctx);
       const session = sessionOf(ep, response);
       if (!response.ok)
         return { ok: false, ep, session, error: response.error };
@@ -222,11 +251,12 @@ export class Dispatcher {
     endpoints: Endpoint[],
     name: string,
     args: Record<string, unknown>,
+    ctx?: CallContext,
   ): Promise<Outcome[]> {
     const outcomes = await Promise.all(
       endpoints.map(async (ep): Promise<Outcome | null> => {
         try {
-          const response = await this.d.call(ep, name, args);
+          const response = await this.invoke(ep, name, args, ctx);
           const session = sessionOf(ep, response);
           return response.ok
             ? {
@@ -465,7 +495,7 @@ export class Dispatcher {
       return jsonResult(bridgeInfo(profiles));
     }
     const [outcomes, infos] = await Promise.all([
-      this.callAll(endpoints, name, args),
+      this.callAll(endpoints, name, args, this.context(false)),
       this.labels(endpoints),
     ]);
     if (outcomes.length === 0) return failure(this.d.unreachable());

@@ -63,6 +63,10 @@ function setup(identity?: ProfileIdentity) {
     },
     alarms,
     tabs: {
+      get: vi.fn(async (id: number) => {
+        if (id !== 3) throw new Error("No tab with id");
+        return { id, windowId: 1, url: "https://www.reddit.com/r/x" };
+      }),
       query: vi.fn(async () => [
         { id: 3, windowId: 1, title: "secret", url: "https://a.test/" },
         { windowId: 1 },
@@ -78,7 +82,12 @@ function setup(identity?: ProfileIdentity) {
     async (
       tool: string,
       _args: unknown,
-      meta: { tabId?: number; host?: string; signal?: AbortSignal },
+      meta: {
+        tabId?: number;
+        host?: string;
+        session?: string;
+        signal?: AbortSignal;
+      },
     ) => {
       meta.tabId = 5;
       meta.host = "a.test";
@@ -116,6 +125,71 @@ describe("AgentBridge", () => {
     });
     ports[0]!.receive({ type: "ready", version: 1, socket: "/s" });
     expect(bridge.state().status).toBe("connected");
+  });
+
+  it("hands the host's session name (cleaned) to the tool and records it in the action log", async () => {
+    const { bridge, ports, run, log } = setup();
+    await bridge.sync(true, true);
+    const port = ports[0]!;
+    port.receive({ type: "ready", version: 2, socket: "/s" });
+    port.receive({
+      type: "request",
+      id: 1,
+      tool: "get_tab_text",
+      args: { tabId: 5 },
+      session: "claude-code-a1b2",
+    });
+    port.receive({
+      type: "request",
+      id: 2,
+      tool: "get_tab_text",
+      args: { tabId: 5 },
+      session: "<img src=x onerror=alert(1)>",
+    });
+    port.receive({ type: "request", id: 3, tool: "get_tab_text", args: {} });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(run.mock.calls.map((c) => c[2].session)).toEqual([
+      "claude-code-a1b2",
+      "img srcx onerroralert1",
+      undefined,
+    ]);
+    const logged = log
+      .entries()
+      .filter((e) => e.message === "agent action")
+      .map((e) => (e.data as { session?: string }).session);
+    expect(logged).toEqual([
+      "claude-code-a1b2",
+      "img srcx onerroralert1",
+      undefined,
+    ]);
+  });
+
+  it("answers the host's __tab_url (per-site pacing) with the address only, never counted", async () => {
+    const { bridge, ports, run } = setup();
+    await bridge.sync(true, true);
+    const port = ports[0]!;
+    port.receive({ type: "ready", version: 2, socket: "/s" });
+    port.receive({
+      type: "request",
+      id: 1,
+      tool: "__tab_url",
+      args: { tabId: 3 },
+    });
+    port.receive({
+      type: "request",
+      id: 2,
+      tool: "__tab_url",
+      args: { tabId: 9 },
+    });
+    port.receive({ type: "request", id: 3, tool: "__tab_url", args: {} });
+    await vi.advanceTimersByTimeAsync(0);
+    const text = (id: number) =>
+      port.sent.find((m) => m.id === id)?.result.content[0].text;
+    expect(JSON.parse(text(1))).toEqual({ url: "https://www.reddit.com/r/x" });
+    expect(JSON.parse(text(2))).toEqual({ url: null });
+    expect(text(3)).toBe("pong");
+    expect(run).not.toHaveBeenCalled();
+    expect(bridge.state()).toMatchObject({ actions: 0, recent: [] });
   });
 
   it("answers requests through the router, counts and logs them without page content", async () => {

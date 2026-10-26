@@ -57,6 +57,13 @@ interface GlowLayer {
   size: number;
 }
 
+/**
+ * The pill's text for `label`: the MCP server names its session after the MCP client plus a random suffix ("facet-e2e-a1b2"),
+ * and the page shows "<session>: <label>" (an old host, which names none, shows "Agent: <label>").
+ */
+const agentText = (label: string) =>
+  expect.stringMatching(new RegExp(`^facet-e2e-[0-9a-f]{4}: ${label}$`));
+
 const overlayOf = (facet: Facet, tabId: number): Promise<Overlay> =>
   facet.inWorker(async (id: number) => {
     const c = (globalThis as any).chrome;
@@ -371,6 +378,7 @@ test.describe("visible agent activity", () => {
     await facet.api("updateSettings", {
       agentBridge: false,
       agentActivity: true,
+      agentWindow: false,
     });
     await facet.inWorker(async () => {
       const c = (globalThis as any).chrome;
@@ -382,6 +390,38 @@ test.describe("visible agent activity", () => {
       await c.tabs.remove(stray.map((t) => t.id));
     }, undefined);
     await expect.poll(() => hostPids(facet), { timeout: 10_000 }).toEqual([]);
+  });
+
+  test("the pill names the agent session (cleaned, cut to 24 characters) and the action log records it", async ({
+    facet,
+  }) => {
+    await turnOn(facet);
+    mcp = await startMcp(facet, facet.profile.nativeHostsDir, {
+      CLAUDE_SESSION_NAME: "Night <b>shift</b> agent-with-a-very-long-name",
+    });
+    const page = await facet.plain(at("a.localhost", "/agent"));
+    const tabId = await facet.tabIdOf(page);
+    await mcp.call("get_tab_text", { tabId });
+    expect(await overlayOf(facet, tabId)).toMatchObject({
+      present: true,
+      text: "Night bshiftb agent-wit…: reading",
+    });
+    // The page cannot see the name (the overlay is in a closed shadow root), and nothing but text reaches it.
+    expect(await pageSees(page)).toMatchObject({
+      bodyText: expect.not.stringContaining("Night"),
+    });
+    const log =
+      await facet.api<
+        Array<{ message: string; data?: Record<string, unknown> }>
+      >("getLog");
+    const mine = log.filter(
+      (e) => e.message === "agent action" && e.data!.tool === "get_tab_text",
+    );
+    expect(mine.at(-1)!.data).toMatchObject({
+      session: expect.stringMatching(
+        /^Night bshiftb agent-with-a-very-long-nam-[0-9a-f]{4}$/,
+      ),
+    });
   });
 
   test("a read shows the glow, the pill and the blinking dot in the target tab, never touches the title, and the glow lasts the session and then fades", async ({
@@ -411,7 +451,7 @@ test.describe("visible agent activity", () => {
     const shown = await overlayOf(facet, tabId);
     expect(shown).toMatchObject({
       present: true,
-      text: "Agent: reading",
+      text: agentText("reading"),
       kind: "read",
       glow: true,
       boosted: true,
@@ -456,7 +496,7 @@ test.describe("visible agent activity", () => {
       shadowRoot: null,
       inBody: false,
     });
-    expect(seen.bodyText).not.toContain("Agent: reading");
+    expect(seen.bodyText).not.toMatch(/(Agent|facet-e2e-[0-9a-f]{4}): reading/);
     // Nothing the page can click or hover is covered: the overlay has no pointer events.
     expect(
       await page.evaluate(
@@ -577,7 +617,7 @@ test.describe("visible agent activity", () => {
     const afterType = await overlayOf(facet, tabId);
     expect(afterType).toMatchObject({
       present: true,
-      text: "Agent: typing",
+      text: agentText("typing"),
       kind: "act",
       pulses: 1,
     });
@@ -589,7 +629,10 @@ test.describe("visible agent activity", () => {
       clicked: "<button#go>",
     });
     const afterClick = await overlayOf(facet, tabId);
-    expect(afterClick).toMatchObject({ text: "Agent: clicking", pulses: 2 });
+    expect(afterClick).toMatchObject({
+      text: agentText("clicking"),
+      pulses: 2,
+    });
     const button = await page.locator("#go").boundingBox();
     expect(afterClick.lastRect!.x).toBeCloseTo(button!.x, 0);
     expect(afterClick.lastRect!.h).toBeCloseTo(button!.height, 0);
@@ -597,18 +640,18 @@ test.describe("visible agent activity", () => {
     // Reads do not pulse; scrolling and scripts say what they do.
     await mcp.call("get_tab_text", { tabId });
     expect(await overlayOf(facet, tabId)).toMatchObject({
-      text: "Agent: reading",
+      text: agentText("reading"),
       pulses: 2,
       kind: "read",
     });
     await mcp.call("run_js", { tabId, code: "return 1" });
     expect(await overlayOf(facet, tabId)).toMatchObject({
-      text: "Agent: running script",
+      text: agentText("running script"),
       kind: "act",
     });
     await mcp.call("scroll", { tabId, to: "bottom" });
     expect(await overlayOf(facet, tabId)).toMatchObject({
-      text: "Agent: scrolling",
+      text: agentText("scrolling"),
     });
     await expect
       .poll(() => overlayOf(facet, tabId).then((o) => o.present), {
@@ -644,7 +687,9 @@ test.describe("visible agent activity", () => {
     expect(text.texts[1]).not.toContain("Agent:");
     expect(text.texts[1]).toContain("Agent page");
     const html = await mcp.call("get_tab_html", { tabId });
-    expect(html.texts[1]).not.toMatch(/facet-agent|Agent: /);
+    expect(html.texts[1]).not.toMatch(
+      /facet-agent|Agent: |facet-e2e-[0-9a-f]{4}: /,
+    );
     expect(html.texts[1]).toContain("<title>Agent page</title>");
     expect(JSON.parse(html.texts[0]!).title).toBe("Agent page");
 
@@ -1278,7 +1323,7 @@ test.describe("visible agent activity", () => {
     // Actions do not change the icon (no glyph tile any more): the pill carries the eye and the pointer.
     await mcp.json("click", { tabId, selector: "h1" });
     expect(await overlayOf(facet, tabId)).toMatchObject({
-      text: "Agent: clicking",
+      text: agentText("clicking"),
       kind: "act",
     });
     for (let i = 0; i < 6; i++) {

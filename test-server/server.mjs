@@ -157,6 +157,27 @@ const server = createServer(async (req, res) => {
           `<pre id="user">${esc(userOf() ?? "anonymous")}</pre><pre id="cookies">${esc(cookieHeader)}</pre>`,
         ),
       );
+    case "/private": {
+      // A page that needs the `who` cookie: without it the visitor is sent to /signin?next=<this address> (a logged-out site).
+      if (cookies.who)
+        return send(
+          res,
+          200,
+          page("private", `<pre id="user">${esc(cookies.who)}</pre>`),
+        );
+      return send(res, 302, "", {
+        location: `/signin?next=${encodeURIComponent(url.pathname + url.search)}`,
+      });
+    }
+    case "/signin":
+      return send(
+        res,
+        200,
+        page(
+          `${host} sign in`,
+          `<pre id="user">signed out</pre><pre id="next">${esc(url.searchParams.get("next") ?? "")}</pre>`,
+        ),
+      );
     case "/login": {
       // 302 login: HttpOnly session cookie on the redirect itself.
       const user = url.searchParams.get("user") ?? "anon";

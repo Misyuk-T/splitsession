@@ -7,7 +7,7 @@ import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 
 import { encodeFrame, FrameReader } from "../../src/bridge/framing";
 import { EXTENSION_ORIGIN } from "../../src/bridge/protocol";
-import { liveDispatcher } from "./mcp";
+import { keepPresence, liveDispatcher } from "./mcp";
 
 const t0 = (r: { content?: unknown[] }) =>
   (r.content![0] as { text: string }).text;
@@ -372,4 +372,103 @@ describe("the MCP server's dispatcher against real hosts", () => {
     const r = await d.run("get_tab_text", { tabId: 20 });
     expect(JSON.parse(t0(r))).toMatchObject({ in: 20 });
   }, 15_000);
+});
+
+describe("tab leases: two MCP sessions against one real host", () => {
+  const setup = async () => {
+    const dir = tmp();
+    const env = {
+      FACET_BRIDGE_SOCKET: path.join(dir, "bridge.sock"),
+      FACET_BRIDGE_MANIFEST_DIRS: path.join(dir, "none"),
+    };
+    const ext = start(env, tabsOf([7, 8])).hello("aaaaaaaaaa");
+    await ext.next("ready");
+    const sock = path.join(dir, "bridges", "aaaaaaaaaa.sock");
+    const idA = { name: "agent-a" };
+    const idB = { name: "agent-b" };
+    const presenceA = keepPresence(sock, idA);
+    const presenceB = keepPresence(sock, idB);
+    const stops = [presenceA, presenceB];
+    afterEachStops.push(...stops);
+    // Both presence connections are registered at the host (it tells the extension how many agents there are).
+    for (let i = 0; i < 100; i++) {
+      if (ext.messages.some((m) => m.type === "clients" && m.count === 2))
+        break;
+      await new Promise((r) => setTimeout(r, 50));
+    }
+    return {
+      ext,
+      presenceA,
+      presenceB,
+      a: liveDispatcher(env, idA),
+      b: liveDispatcher(env, idB),
+    };
+  };
+  const afterEachStops: Array<{ stop(): void }> = [];
+  afterEach(() => {
+    for (const p of afterEachStops.splice(0)) p.stop();
+  });
+  const until = async (fn: () => Promise<boolean>) => {
+    for (let i = 0; i < 60; i++) {
+      if (await fn()) return true;
+      await new Promise((r) => setTimeout(r, 50));
+    }
+    return false;
+  };
+
+  it("B's click on A's tab is refused, reads and takeOver work, takeOver never reaches the extension", async () => {
+    const { ext, a, b } = await setup();
+    expect(
+      (await a.run("click", { tabId: 7, ref: "e1" })).isError,
+    ).toBeUndefined();
+
+    const refused = await b.run("click", { tabId: 7, ref: "e2" });
+    expect(refused.isError).toBe(true);
+    expect(t0(refused)).toMatch(
+      /^tab 7 is in use by another agent session \(agent-a, last action \d+s ago\)/,
+    );
+    const clicks = () =>
+      ext.messages.filter((m) => m.type === "request" && m.tool === "click");
+    expect(clicks()).toHaveLength(1);
+
+    // reads and an unleased tab are fine
+    expect((await b.run("snapshot", { tabId: 7 })).isError).toBeUndefined();
+    expect(
+      (await b.run("click", { tabId: 8, ref: "e1" })).isError,
+    ).toBeUndefined();
+
+    // list_tabs shows who holds what
+    const seenByB = JSON.parse(t0(await b.run("list_tabs", {})));
+    expect(seenByB.find((t: any) => t.tabId === 7)).toMatchObject({
+      inUseBy: "agent-a",
+    });
+    expect(seenByB.find((t: any) => t.tabId === 8)).toMatchObject({
+      yours: true,
+    });
+
+    // takeOver
+    expect(
+      (await b.run("click", { tabId: 7, ref: "e2", takeOver: true })).isError,
+    ).toBeUndefined();
+    for (const m of clicks()) {
+      expect(JSON.stringify(m)).not.toMatch(/takeOver/);
+      expect((m as { session?: string }).session).toMatch(/^agent-/);
+    }
+    expect(t0(await a.run("click", { tabId: 7, ref: "e1" }))).toMatch(
+      /agent-b/,
+    );
+  }, 20_000);
+
+  it("A disconnecting frees its tab for B", async () => {
+    const { a, b, presenceA } = await setup();
+    await a.run("click", { tabId: 7, ref: "e1" });
+    expect((await b.run("click", { tabId: 7, ref: "e2" })).isError).toBe(true);
+    presenceA.stop();
+    expect(
+      await until(
+        async () =>
+          (await b.run("click", { tabId: 7, ref: "e2" })).isError !== true,
+      ),
+    ).toBe(true);
+  }, 20_000);
 });

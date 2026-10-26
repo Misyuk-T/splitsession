@@ -105,7 +105,9 @@ container (GET only):
   SplitSession has seen the tab and reopened it (a fresh tab of the group's container, the old one closed); in that time the
   site's scripts run with the real profile's cookies and storage, can read them, and can write cookies and localStorage
   there. Anything written stays in the real profile after the old tab is closed. Unless the restore gate blocks that
-  address, the site sees the real profile at least once. A new tab page opened inside a group ("New tab to the right", "New
+  address, the site sees the real profile at least once. The container tab opens the address the tab was created with, so
+  after "Duplicate" the copy shows the same page as the original, logged in as the container, and not the sign-in page a
+  logged-out site sent the unisolated copy to (the copy may flash that page for a moment before it is replaced). A new tab page opened inside a group ("New tab to the right", "New
   tab in group") makes no request and is put in the container at once, so an address typed there is isolated from its first
   request.
 
@@ -488,6 +490,19 @@ full access to every tab, in containers or not (docs/agents.md, section 7). What
   while it runs; when it closes and no other is open, SplitSession clears overrides and detaches every tab). A client that
   exited without closing its connection (a frozen process) is not noticed; the 30-minute cap still applies. With plain Chromium, clearing restores the real size; under Playwright (whose own viewport emulation sits on
   the same tab) the page kept the emulated width after clearing, so the e2e test checks the release, not the size.
+- **Pacing is per site and best effort.** The host spaces the actions that reach a site (navigate, reload, history, open with a
+  URL, click, select, upload, Enter) at least 1.5 s apart per registrable domain across every session of the profile, and
+  answers "site busy" past 30 s of queue (docs/agents.md, "Per-site pacing"). It is a brake against bursts (the 2026-10-22
+  Reddit 429), not a guarantee: `type`, `run_js` and the reading tools are not paced, a single click can still fire many
+  requests, an action on a tab whose address the host cannot learn (an older extension) waits for nothing, and a site's
+  other traffic (your own browsing, other devices) shares its limits unseen.
+- **The agents' window is a convention, not a boundary.** Tabs an agent opens go to one separate window (setting on by
+  default), but the agent can still act in any tab of any window, including the one you are using, and an explicit `windowId`
+  puts a tab wherever it names. Chrome has no window title API, so nothing on the window itself says "agents"; closing it
+  just makes the next open build a new one.
+- **The session name on the pill is only as good as the name.** It comes from `CLAUDE_SESSION_NAME` or the MCP client's own
+  name plus a random suffix, so it says which session acted, not who is behind it; two sessions with the same variable still
+  get different suffixes. It is stripped to letters, digits, space and `-_.` and cut to 24 characters on the pill.
 - **Agent activity in the page and the tab strip.** For the whole agent session on a tab (a tool touched it in the last
   ~8 s, or the debugger is held on it by a `watch`, a viewport pin or an open dialog) SplitSession draws a soft purple vignette
   along the viewport edges, made of gradients only (one `<facet-agent-overlay>` on `<html>`;

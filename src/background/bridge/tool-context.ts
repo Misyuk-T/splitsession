@@ -7,6 +7,7 @@ import { withoutAgentMark } from "../../core/indicators";
 import type { Facet } from "../facet";
 import type { FullApi } from "../full-api";
 import type { AgentActivity } from "./activity";
+import type { AgentWindow } from "./agent-window";
 import {
   CdpError,
   type CdpSessions,
@@ -49,6 +50,11 @@ export interface RouterDeps {
   profileLabel?: () => Promise<string>;
   /** This profile's bridge key (the name of its socket), for `bridge_info`. */
   profileKey?: () => Promise<string>;
+  /** The agents' window for tabs the agent opens itself (setting "Open agent tabs in a separate window"). Absent: the current window. */
+  agentWindow?: Pick<
+    AgentWindow,
+    "resolve" | "opened" | "isAgentWindow" | "userWindow"
+  >;
   /** Shows the user which tab the agent touches (glow, pill, favicon, badge). Absent: nothing is shown. */
   activity?: Pick<AgentActivity, "touch" | "hide" | "unhide">;
   /**
@@ -83,11 +89,21 @@ export class ToolContext {
     return this.d.b;
   }
 
-  /** Shows the user which tab the agent works on (and where), when activity is on. */
+  /** Shows the user which tab the agent works on (and where), when activity is on; `meta` names the agent session on the label. */
   touch(
-    ...args: Parameters<AgentActivity["touch"]>
+    tabId: number,
+    tool: string,
+    rect: Parameters<AgentActivity["touch"]>[2] = null,
+    meta?: ActionMeta,
   ): Promise<void> | undefined {
-    return this.d.activity?.touch(...args);
+    return this.d.activity?.touch(tabId, tool, rect, meta?.session);
+  }
+
+  /** The window a tab the agent opens goes to: its own `windowId` if it gave one, else the agents' window, else undefined (current window). */
+  agentWindowFor(explicit: number | undefined): Promise<number | undefined> {
+    return this.d.agentWindow
+      ? this.d.agentWindow.resolve(explicit)
+      : Promise.resolve(explicit);
   }
 
   /** Runs screenshots one after another (each may flip the active tab of a window). */
@@ -137,7 +153,8 @@ export class ToolContext {
     }
     live(meta); // the lookup can be slow; the action that follows must not run after "off"
     // Show the user which tab this is, before anything is done to it (never fails, never moves focus).
-    if (meta?.tool) await this.d.activity?.touch(tabId, meta.tool);
+    if (meta?.tool)
+      await this.d.activity?.touch(tabId, meta.tool, null, meta.session);
     live(meta);
     return found;
   }

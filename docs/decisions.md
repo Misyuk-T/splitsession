@@ -1897,3 +1897,80 @@ Goal: a container tab that is not in its container's tab group (dragged out, or 
   works), explicit `profile: Home` (works), scoped/filtered/incomplete lists (still refused), and an ID that becomes
   colliding through a later filtered list.
 
+
+## Tab leases: several agent sessions in one profile (2026-10-26)
+
+- **The incident.** Two agent sessions worked through the bridge at the same time. One navigated in the tab where the other was
+  running a publishing queue, and its actions landed between the other's steps. Nothing marked a tab as busy.
+- **Decision.** The host keeps a lease per tab (bridge 0.3.0, Full only): the session that opened a tab or last changed it holds
+  it; another session's changing action on it is refused with the holder's name and idle time, unless it passes `takeOver: true`.
+  Reads, `hover`, `scroll` and the list tools are never refused and take nothing. A lease ends when the holder's MCP server
+  disconnects, the tab is closed, or after 120 s without an action by the holder. Unleased tabs (the user's own) stay free; the
+  first changing action takes them. `list_tabs` gets `inUseBy` / `yours`. Details: `docs/agents.md`, "Several agents at once".
+- **Why in the host.** Every MCP server is a separate process per AI-client session, so they cannot see each other; the only
+  place all sessions of one Chrome profile meet is the host (`bridge/src/relay.ts`), and that covers every client, including ones
+  we do not know. Doing it in the extension would have meant a protocol bump and an extension release for a guard that has
+  nothing to do with the browser; in the host it also works with the 0.1.8 extension. In memory because a lease older than two
+  minutes is worth nothing anyway, and a restarted host starts with no sessions.
+- **Identity.** The MCP server puts its session name in the request envelope (`session`, `takeOver` next to `tool` and
+  `args`), never in `args`: the extension never sees them. Tool calls use a short connection each, so the name cannot come from
+  the connection; the long-lived presence connection (`__session`) carries the name too, and its closing is what releases the
+  leases. The name is `CLAUDE_SESSION_NAME`, else the MCP client's name, else `agent`, plus 4 random hex digits; `takeOver` is
+  a field of the MCP tool schemas (and stripped like `profile`).
+- **hover / scroll are free.** They do not change the page's state in a way that breaks another session's step, and a hover
+  often is how an agent reads a tooltip. `activate_tab` is treated as changing (it moves the user's window and, in a queue,
+  focus matters).
+- **Degrades.** Old host + new MCP: the host ignores the extra fields, no leases. New host + old MCP: no session name, so no
+  leases for it, and it is never refused. Not covered: two sessions that are not in the same profile (different hosts), or a
+  session that does everything with its own tabs (fine, nothing to guard).
+- **Not done.** Putting the session name into the extension's activity log / the page pill (needs a protocol change); a
+  lease-aware `wait` for a tab to come free.
+
+
+## Agents' window, per-site pacing, session name on the pill (2026-10-26)
+
+Three additions on top of the tab leases (bridge 0.3.0, together with the leases; the window and the pill need the next extension release).
+
+- **Agents' window (extension).** Tabs an agent opens itself (`open_tab`, `open_in_container`) go to one ordinary window per
+  profile, made on demand with `focused: false`, reused while it exists, rebuilt after the user closes it. The window is told
+  apart by its ID in `storage.session` (Chrome has no window title). Setting `agentWindow` (Full only, default on, "Open agent
+  tabs in a separate window"); an explicit `windowId` always wins; off = the current window as before. The blank first tab of
+  the new window is closed once the agent's own tab is in it. Why: the user's window was getting agent tabs between their
+  own, and "this tab" was ambiguous. Agents are told in the tool descriptions: "this tab" = the `active: true` tab of the
+  user's last-focused window. Not done: `list_tabs` does not say which window is the last focused one.
+- **Per-site pacing (host).** After the 2026-10-22 Reddit 429 (about 80 parallel requests from an agent, both accounts limited)
+  the host spaces the actions that reach a site's server, per registrable domain (`tldts`, already in the extension), over all
+  sessions of the profile: FIFO queue, 1500 ms apart, the host waits rather than refuses, 30 s cap then "site busy". Paced:
+  navigate, back, forward, reload, open (with a URL), click, select_option, upload_file, press_key Enter. Not paced: reads,
+  hover, scroll, type, run_js. Done in the host because it is the one place all sessions of a profile meet (as for leases) and
+  it needs no extension release for the URL tools; the tab-based tools ask the extension for the tab's address with a new
+  internal `__tab_url` (unknown to an older extension, which answers "pong": those actions are then not paced). Slots are
+  reserved on arrival (a start time per site), so a queue needs no timers of its own beyond one `setTimeout` per waiter, and
+  the cap is checked up front instead of after 30 s of waiting. `SPLITSESSION_SITE_GAP_MS` sets the gap (0 = off) and exists
+  for tests; the e2e fixtures run with 0 and the pacing spec uses a second profile with the default. The MCP server's own
+  deadline grows by the cap for changing tools so it never gives up before the host does.
+- **Session name to the extension.** The request envelope host -> extension gets an optional `session` (cleaned to letters,
+  digits, space, `-_.`, at most 64 characters; the extension cleans it again). No `PROTOCOL_VERSION` bump: an older extension
+  ignores the field, an older host sends none. The pill reads "<session>: reading" (24 characters, ellipsis), "Agent: reading"
+  without a name; the Diagnostics "agent action" entries have a `session` field. This is the item that the lease entry listed as
+  "not done". The existing e2e checks of the pill text now expect the `facet-e2e-xxxx: ` prefix.
+
+## "Duplicate" of a container tab reopens at the address it was created with (2026-10-26)
+
+- **Report.** Threads in a container group, right-click the tab, "Duplicate": the copy stayed in the group but showed the
+  site logged out, while the original was logged in.
+- **Reproduced** (`e2e/duplicate-tab.spec.ts`, stand page `/private`: needs the `who` cookie, otherwise 302 to
+  `/signin?next=...`). `chrome.tabs.duplicate` gives what the UI gives: index + 1, the original's group, the original as
+  `openerTabId`, `pendingUrl` = the original's address. Its first request left without any cookie (the real profile is not
+  logged in there), the site answered with the redirect, and the guard, 150 ms later, reopened the container tab at the
+  tab's *current* address: the sign-in page. The container tab was in the right container and group, on the wrong page.
+- **Cause.** The guard read the address from the live tab when it reopened it (`pendingUrl`, else `url`), by which time the
+  unisolated copy had followed the site's redirect.
+- **Fix.** `GroupGuard.tabCreated` remembers the website address the tab was created with (`pendingUrl`, else `url`); the
+  reopening uses it (`chooseAddress`), and forgets it when the tab's check ends. A tab dragged into the group has no such
+  record and is reopened where it stands, as before. Applies to every website Chrome creates in a group (a duplicate, an
+  address or link opened next to a grouped tab). A POST is still never repeated (the address is a plain GET). Not done: a
+  shorter settle for an obvious duplicate. The 150 ms also lets a link inherit from its opener first, and the unisolated
+  request is out within ~2 ms regardless, so a shorter wait would shrink the exposure only a little.
+- **Left as it was.** The copy's first request and its scripts still run as the real profile for a moment (limits.md).
+  When the reopen limit holds the tab back, the sweep that follows reopens it at where it stands.

@@ -110,14 +110,41 @@ const AgentSwitches = () => {
         <More id="more-activity" about="agent activity">
           <p>
             While the agent reads or works in a tab, that tab shows it: a
-            glowing frame and a small “Agent: reading” label on the page, a ring
-            of purple dots on the tab’s icon, the dot on the toolbar button
-            blinks, and the ⧉ in front of its container’s tab group name blinks
-            between ✦ and ✧, also when the group is collapsed. All of it fades a
-            few seconds after the last action and never takes focus or switches
+            glowing frame and a small label on the page (the agent session’s
+            name and what it does, like “claude-code-3f9a: reading”), a ring of
+            purple dots on the tab’s icon, the dot on the toolbar button blinks,
+            and the ⧉ in front of its container’s tab group name blinks between
+            ✦ and ✧, also when the group is collapsed. All of it fades a few
+            seconds after the last action and never takes focus or switches
             tabs. Pages cannot read or click it.
           </p>
           <p>Off: nothing is shown or changed on your tabs.</p>
+        </More>
+      </div>
+      <div class="opt-row" data-testid="bridge-window">
+        <Switch
+          label="Open agent tabs in a separate window"
+          description="Tabs an agent opens itself go to their own window, not the one you work in."
+          checked={value.agentWindow}
+          disabled={settings === null}
+          onChange={(next) => void change({ agentWindow: next })}
+        />
+        <More id="more-window" about="the agents’ window">
+          <p>
+            On by default. The first tab an agent opens (open_tab or
+            open_in_container) makes one extra browser window of this profile,
+            without taking focus; the next ones join it, and a container’s tabs
+            get their tab group there as usual. If you close that window, the
+            next tab an agent opens makes a new one. Chrome has no way to name a
+            window, so it is told apart only by being the one that appears when
+            an agent starts working.
+          </p>
+          <p>
+            Agents can still work in any tab that is already open, including the
+            one you are looking at: tell them “this tab” and they use the active
+            tab of the window you used last. An agent that names a window itself
+            always gets that window. Off: new tabs open in your current window.
+          </p>
         </More>
       </div>
       <div class="opt-row">

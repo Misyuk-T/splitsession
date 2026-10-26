@@ -1,3 +1,4 @@
+import { randomBytes } from "node:crypto";
 import { existsSync, statSync } from "node:fs";
 import net from "node:net";
 import path from "node:path";
@@ -14,10 +15,12 @@ import {
   type ClientResponse,
   HOST_TIMEOUT_MS,
   SESSION_TOOL,
+  SITE_WAIT_CAP_MS,
 } from "../../src/bridge/protocol";
 import { HOST_MARGIN_MS, TOOLS, toolTimeoutMs } from "../../src/bridge/spec";
 import { type Schema, validateArgs } from "../../src/bridge/validate";
-import { Dispatcher, Unreachable } from "./dispatch";
+import { type CallContext, Dispatcher, Unreachable } from "./dispatch";
+import { LEASE_MUTATING } from "./leases";
 import {
   bridgesDir,
   HOST_MANIFEST_FILE,
@@ -32,6 +35,7 @@ const INSTRUCTIONS =
   "Tools to see and operate the user's Chrome tabs across all windows, with SplitSession containers (several logged-in accounts of one site side by side). " +
   'Start with list_tabs. A tab\'s "container" says which account it is, its "profile" which Chrome profile (several can be connected at once; bridge_info lists them). ' +
   "Tools on a tab find the tab's profile by its tabId; to open a new tab while several profiles are connected, pass profile (its name or key). " +
+  'If the user says "this tab" or "the current tab", use the tab with active: true in the user\'s last-focused window (list_tabs); tabs you open yourself go to the agents\' window, not the user\'s. ' +
   "To work with a page: snapshot (accessibility tree with refs), then click / type / press_key / select_option by ref; snapshot again after the page changes. Screenshots for what the tree cannot tell. " +
   "These tools act inside the user's real, logged-in browser: do only what the user asked for.";
 
@@ -58,12 +62,33 @@ const isFile = (p: string): boolean => {
   }
 };
 
+/**
+ * The name this MCP server goes by in the host's tab leases and in "in use by" messages: `CLAUDE_SESSION_NAME`, else the
+ * MCP client's own name (known after `initialize`), else "agent", plus a random suffix so two sessions never share one.
+ */
+export function sessionName(
+  base: string | undefined,
+  suffix: string = randomBytes(2).toString("hex"),
+): string {
+  const clean = (base ?? "")
+    .replace(/[^A-Za-z0-9 ._-]/g, "")
+    .trim()
+    .slice(0, 40);
+  return `${clean === "" ? "agent" : clean}-${suffix}`;
+}
+
+/** The session name of this process; it may be refined once, when the MCP client says who it is. */
+export interface Identity {
+  name: string;
+}
+
 /** One request over the socket: connect, send, wait for the answer, close. A connection per call survives the bridge being switched off and on. */
 export function callHost(
   tool: string,
   args: unknown,
   timeoutMs: number = HOST_TIMEOUT_MS + 2_000,
   sock: string = socketPath(),
+  ctx?: CallContext,
 ): Promise<ClientResponse> {
   return new Promise((resolve, reject) => {
     const socket = net.createConnection(sock);
@@ -88,7 +113,17 @@ export function callHost(
       timeoutMs,
     );
     socket.setEncoding("utf8");
-    socket.on("connect", () => socket.write(encodeLine({ id: 1, tool, args })));
+    socket.on("connect", () =>
+      socket.write(
+        encodeLine({
+          id: 1,
+          tool,
+          args,
+          ...(ctx?.session ? { session: ctx.session } : {}),
+          ...(ctx?.takeOver ? { takeOver: true } : {}),
+        }),
+      ),
+    );
     socket.on("data", (chunk: string) => {
       try {
         for (const message of lines.push(chunk)) {
@@ -127,18 +162,28 @@ export function callHost(
  * short grace, takes back what the agent left behind (a viewport override, debugger sessions). Best effort: no host, no
  * presence; it is tried again on every call and every few seconds.
  */
-export function keepPresence(sock: string = socketPath()): {
+export function keepPresence(
+  sock: string = socketPath(),
+  identity: Identity = { name: "" },
+): {
   ensure(): void;
+  announce(): void;
   stop(): void;
 } {
   let socket: net.Socket | null = null;
+  const hello = () =>
+    encodeLine({
+      id: 1,
+      tool: SESSION_TOOL,
+      ...(identity.name ? { session: identity.name } : {}),
+    });
   const connect = () => {
     if (socket && !socket.destroyed) return;
     const s = net.createConnection(sock);
     socket = s;
     s.unref();
     s.setEncoding("utf8");
-    s.on("connect", () => s.write(encodeLine({ id: 1, tool: SESSION_TOOL })));
+    s.on("connect", () => s.write(hello()));
     s.on("data", () => {}); // the pong; nothing else is ever sent
     s.on("error", () => {});
     s.on("close", () => {
@@ -150,6 +195,11 @@ export function keepPresence(sock: string = socketPath()): {
   connect();
   return {
     ensure: connect,
+    /** The name changed: tell the host over the open connection (it re-registers the name). */
+    announce() {
+      if (socket && !socket.destroyed && !socket.connecting)
+        socket.write(hello());
+    },
     stop() {
       clearInterval(timer);
       socket?.destroy();
@@ -158,8 +208,12 @@ export function keepPresence(sock: string = socketPath()): {
 }
 
 /** One presence connection per connected profile, following the profiles as they are switched on and off. */
-export function presenceFor(discover: () => Endpoint[]): {
+export function presenceFor(
+  discover: () => Endpoint[],
+  identity: Identity = { name: "" },
+): {
   sync(): void;
+  announce(): void;
   stop(): void;
 } {
   const live = new Map<string, ReturnType<typeof keepPresence>>();
@@ -169,7 +223,7 @@ export function presenceFor(discover: () => Endpoint[]): {
       now.add(ep.socket);
       const known = live.get(ep.socket);
       if (known) known.ensure();
-      else live.set(ep.socket, keepPresence(ep.socket));
+      else live.set(ep.socket, keepPresence(ep.socket, identity));
     }
     for (const [sock, p] of live) {
       if (now.has(sock)) continue;
@@ -182,6 +236,9 @@ export function presenceFor(discover: () => Endpoint[]): {
   sync();
   return {
     sync,
+    announce() {
+      for (const p of live.values()) p.announce();
+    },
     stop() {
       clearInterval(timer);
       for (const p of live.values()) p.stop();
@@ -214,7 +271,13 @@ const PROFILE_PARAM: Record<"list" | "open" | "tab", Schema> = {
   },
 };
 
-/** The tools as the MCP server offers them: the extension's tools plus `profile`, which only the MCP server reads. */
+const TAKE_OVER_PARAM: Schema = {
+  type: "boolean",
+  description:
+    "Another agent session is working in this tab (list_tabs shows inUseBy) and such an action is refused. Pass true only when the user asked you to work in that very tab; otherwise open your own tab (open_tab / open_in_container).",
+};
+
+/** The tools as the MCP server offers them: the extension's tools plus `profile` (and `takeOver`), which only the MCP server and the host read. */
 export const MCP_TOOLS = TOOLS.map((tool) => {
   const kind = ["bridge_info", "list_tabs", "list_containers"].includes(
     tool.name,
@@ -230,6 +293,7 @@ export const MCP_TOOLS = TOOLS.map((tool) => {
       properties: {
         ...tool.inputSchema.properties,
         profile: PROFILE_PARAM[kind],
+        ...(LEASE_MUTATING.has(tool.name) ? { takeOver: TAKE_OVER_PARAM } : {}),
       },
     },
   };
@@ -239,15 +303,24 @@ const mcpToolByName = (name: string) => MCP_TOOLS.find((t) => t.name === name);
 /** The dispatcher of the real server: sockets on disk, one connection per call. */
 export function liveDispatcher(
   env: NodeJS.ProcessEnv = process.env,
+  identity: Identity = { name: "" },
 ): Dispatcher {
   return new Dispatcher({
     discover: () => discoverEndpoints(bridgesDir(env), socketPath(env)),
-    call: (ep, tool, args) =>
+    session: () => identity.name || undefined,
+    call: (ep, tool, args, ctx) =>
       callHost(
         tool,
         args,
-        toolTimeoutMs(tool) + HOST_MARGIN_MS + 2_000,
+        // The host may hold an action back (up to SITE_WAIT_CAP_MS) to keep a site's pace.
+        toolTimeoutMs(tool) +
+          HOST_MARGIN_MS +
+          2_000 +
+          (LEASE_MUTATING.has(tool) || tool.startsWith("open_")
+            ? SITE_WAIT_CAP_MS
+            : 0),
         ep.socket,
+        ctx,
       ),
     unreachable: () => unreachableMessage(env),
     gone: (ep) => void removeIfStale(ep),
@@ -260,12 +333,23 @@ const failure = (text: string): CallToolResult => ({
 });
 
 export async function runMcp(): Promise<void> {
-  const presence = presenceFor(() => discoverEndpoints());
-  const dispatcher = liveDispatcher();
+  const fromEnv = process.env.CLAUDE_SESSION_NAME;
+  const identity: Identity = { name: sessionName(fromEnv) };
+  const presence = presenceFor(() => discoverEndpoints(), identity);
+  const dispatcher = liveDispatcher(process.env, identity);
   const server = new Server(
     { name: "splitsession", version: __VERSION__ },
     { capabilities: { tools: {} }, instructions: INSTRUCTIONS },
   );
+
+  // Without CLAUDE_SESSION_NAME the MCP client's own name (e.g. "claude-code") says better who this session is.
+  server.oninitialized = () => {
+    const client = server.getClientVersion()?.name;
+    if (!fromEnv && client) {
+      identity.name = sessionName(client, identity.name.split("-").pop());
+      presence.announce();
+    }
+  };
 
   server.setRequestHandler(ListToolsRequestSchema, async () => ({
     tools: MCP_TOOLS.map((tool) => ({

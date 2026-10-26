@@ -92,7 +92,7 @@ export const TOOLS: readonly ToolSpec[] = [
     title: "List tabs",
     readOnly: true,
     description:
-      'List the open tabs of ALL Chrome windows of every connected Chrome profile, with the SplitSession container each one belongs to (container is null for an ordinary tab) and its profile ({key, label}). Titles of container tabs may carry a "[container] " prefix if the user enabled it. Use the returned tabId with every other tab tool: it finds the tab\'s profile by itself.',
+      'List the open tabs of ALL Chrome windows of every connected Chrome profile, with the SplitSession container each one belongs to (container is null for an ordinary tab) and its profile ({key, label}). Titles of container tabs may carry a "[container] " prefix if the user enabled it. Use the returned tabId with every other tab tool: it finds the tab\'s profile by itself. If the user says "this tab" or "the current tab", use the tab with focused: true (the active tab of the window the user works in); never pick a tab with agentWindow: true for that. Tabs you open yourself live in the agents\' window (a separate window, marked agentWindow: true), not in the user\'s.',
     inputSchema: obj({
       windowId: {
         type: "integer",
@@ -138,7 +138,7 @@ export const TOOLS: readonly ToolSpec[] = [
           type: "integer",
           minimum: 0,
           description:
-            "Window to open the tab in (default: the current window).",
+            "Window to open the tab in. Default: the agents' window (a separate window for tabs agents open, made on demand), or the user's current window when the user switched that off. A windowId you pass always wins.",
         },
         wait,
       },
@@ -150,7 +150,7 @@ export const TOOLS: readonly ToolSpec[] = [
     title: "Open a tab",
     readOnly: false,
     description:
-      "Open a new ordinary tab (no container; the regular Chrome profile). Use open_in_container for a container. Accepts http(s), about:blank and chrome:// addresses.",
+      "Open a new ordinary tab (no container; the regular Chrome profile) in the agents' window (see windowId). Use open_in_container for a container. Accepts http(s), about:blank and chrome:// addresses. To work in a tab the user already has open, do not open a new one: use its tabId from list_tabs.",
     inputSchema: obj(
       {
         url: { type: "string", minLength: 1, maxLength: 8192 },
@@ -159,7 +159,12 @@ export const TOOLS: readonly ToolSpec[] = [
           default: false,
           description: "Bring the new tab to the front. Default false.",
         },
-        windowId: { type: "integer", minimum: 0 },
+        windowId: {
+          type: "integer",
+          minimum: 0,
+          description:
+            "Window to open the tab in. Default: the agents' window (a separate window for tabs agents open, made on demand), or the user's current window when the user switched that off. A windowId you pass always wins.",
+        },
         wait,
       },
       ["url"],

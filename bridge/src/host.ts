@@ -27,6 +27,7 @@ import {
   PROTOCOL_VERSION,
   SAME_PROFILE_REASON,
 } from "../../src/bridge/protocol";
+import { siteGapFromEnv } from "./pacing";
 import {
   bridgesDir,
   profileSocketPath,
@@ -172,7 +173,11 @@ export async function runHost(args: string[]): Promise<void> {
 
   // This host process's session: the MCP server tells a tab ID it saw from the same number after a restart by it.
   const session = randomBytes(8).toString("hex");
-  const relay = new Relay({ sendToExtension: (m) => send(m) });
+  const relay = new Relay({
+    sendToExtension: (m) => send(m),
+    // Actions that reach a site are spaced out per site (SPLITSESSION_SITE_GAP_MS; 0 switches pacing off).
+    siteGapMs: siteGapFromEnv(process.env.SPLITSESSION_SITE_GAP_MS),
+  });
   const server = net.createServer((socket) => {
     const lines = new LineReader();
     const id = relay.addClient((response) => {

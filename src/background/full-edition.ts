@@ -3,6 +3,7 @@ import { browser } from "wxt/browser";
 import type { StorageAreaLike } from "../engine/storage/storage-area";
 import { AgentActivity } from "./bridge/activity";
 import { AgentBridge } from "./bridge/agent-bridge";
+import { AgentWindow } from "./bridge/agent-window";
 import { type BridgeApi, createBridgeApi } from "./bridge/bridge-api";
 import { CdpSessions, type DebuggerApi } from "./bridge/cdp";
 import { GroupActivityMark } from "./bridge/group-activity";
@@ -84,11 +85,20 @@ export function createAgentSide(
       const isMac = /mac/i.test(
         nav.userAgentData?.platform ?? nav.platform ?? "",
       );
+      const agentWindow = new AgentWindow({
+        b,
+        area: b.storage.session as unknown as StorageAreaLike,
+        enabled: () => extras.settings.get().agentWindow,
+      });
+      b.windows.onFocusChanged.addListener(
+        (id) => void agentWindow.noteFocus(id),
+      );
       const router = new BridgeRouter({
         b,
         facet,
         api,
         activity,
+        agentWindow,
         cdp,
         isMac,
         profileLabel: () => readProfileLabel(local),

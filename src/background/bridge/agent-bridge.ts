@@ -1,6 +1,7 @@
 import type { browser } from "wxt/browser";
 
 import {
+  cleanAgentName,
   type ExtensionToHost,
   HOST_NAME,
   type HostToExtension,
@@ -10,6 +11,7 @@ import {
   PROTOCOL_VERSION,
   SESSION_TOOL,
   SWITCHED_OFF,
+  TAB_URL_TOOL,
   TABS_TOOL,
   type ToolResult,
 } from "../../bridge/protocol";
@@ -349,7 +351,13 @@ export class AgentBridge {
       else this.scheduleRelease();
     } else if (message.type === "request" && typeof message.id === "number") {
       this.cancelRelease(); // somebody is working
-      void this.serve(port, message.id, message.tool, message.args);
+      void this.serve(
+        port,
+        message.id,
+        message.tool,
+        message.args,
+        message.session,
+      );
     }
   }
 
@@ -358,11 +366,12 @@ export class AgentBridge {
     id: number,
     tool: string,
     args: unknown,
+    session?: unknown,
   ): Promise<void> {
     if (isInternalTool(tool)) {
       let text = "pong";
       try {
-        text = await this.internal(String(tool));
+        text = await this.internal(String(tool), args);
       } catch {
         /* an internal answer is best effort: the MCP server falls back to the public tools */
       }
@@ -379,7 +388,12 @@ export class AgentBridge {
       return;
     }
     const started = Date.now();
-    const meta: ActionMeta = { signal: this.abort.signal };
+    // The host names the agent session (bridge 0.4+); cleaned again here, so a name can never carry markup into a page or the log.
+    const agent = cleanAgentName(session);
+    const meta: ActionMeta = {
+      signal: this.abort.signal,
+      ...(agent ? { session: agent } : {}),
+    };
     let reply: ExtensionToHost;
     try {
       if (!this.runner)
@@ -402,6 +416,7 @@ export class AgentBridge {
     // The action log: what was done to which tab and whether it worked. Never what the page said.
     this.log(reply.ok ? "info" : "warn", "agent action", {
       tool: String(tool),
+      ...(agent ? { session: agent } : {}),
       tabId: meta.tabId ?? null,
       host: meta.host ?? null,
       ok: reply.ok,
@@ -433,7 +448,16 @@ export class AgentBridge {
    * The MCP server's own questions (protocol 2), answered here, not by the router: they are bookkeeping, never an agent
    * action, so they are not counted, listed or logged. Never page content: the key, the name, tab and window IDs.
    */
-  private async internal(tool: string): Promise<string> {
+  private async internal(tool: string, args?: unknown): Promise<string> {
+    if (tool === TAB_URL_TOOL) {
+      // The host paces actions per site and needs the address a tab shows (never its content).
+      const tabId = (args as { tabId?: unknown } | null | undefined)?.tabId;
+      if (typeof tabId !== "number") return "pong";
+      const tab = await this.b.tabs.get(tabId).catch(() => null);
+      return JSON.stringify({
+        url: tab ? (tab.url ?? tab.pendingUrl ?? null) : null,
+      });
+    }
     if (tool === PROFILE_TOOL)
       return JSON.stringify({
         profileKey: this.profileKey,

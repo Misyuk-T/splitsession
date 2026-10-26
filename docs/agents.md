@@ -328,6 +328,85 @@ entry in your AI client) sees all of them.
 | new | 0.1.x | Works for one profile; the card asks to update the bridge; a second profile waits ("busy"). |
 | new | 0.2+ | Every profile at once. |
 
+### Several agents at once: tab leases (bridge 0.3+)
+
+Two AI sessions can use the same Chrome profile at the same time (each client starts its own MCP server; they meet at the
+profile's host). Without a guard one session's click or navigation lands between the other's steps, say in the middle of a
+publishing queue. So the host gives a tab to **one session at a time**:
+
+- **Who holds a tab.** The session that opened it (`open_tab`, `open_in_container`) or last **changed** it: `navigate`,
+  `navigate_back`, `navigate_forward`, `reload`, `click`, `drag`, `type`, `press_key`, `select_option`, `upload_file`,
+  `run_js`, `handle_dialog`, `assign_tab`, `resize_viewport`, `activate_tab`, `close_tab`. A tab nobody holds (your own tabs
+  too) is free for anyone; the first such action takes it.
+- **What is refused.** Another session's action from that list on a held tab fails before it reaches Chrome:
+  `tab 7 is in use by another agent session (claude-code-3f9a, last action 12s ago); open your own tab (open_tab /
+  open_in_container) or pass takeOver: true if the user asked you to work in it`.
+- **What is never refused.** Reading and looking: `snapshot`, `get_tab_text`, `get_tab_html`, `screenshot_tab`,
+  `console_messages`, `network_requests`, `wait_for`, `watch`, the list tools, and also `hover` and `scroll`. They neither take
+  nor need a lease.
+- **`takeOver: true`** on a changing tool takes the tab over (and the previous holder is then refused in turn). The tool
+  description tells the agent to use it only when you asked it to work in that very tab.
+- **`list_tabs`** adds `inUseBy: "<session>"` to a tab another session holds and `yours: true` to one the caller holds; other
+  fields are unchanged.
+- **When a lease ends.** The holder's MCP server exits (its connection to the host closes), the tab is closed, the holder does
+  nothing on the tab for **120 s**, or the bridge is switched off. Leases are per host (per Chrome profile) and live only in
+  memory.
+- **Session names.** Each MCP server calls itself `<name>-<4 hex>`: `CLAUDE_SESSION_NAME` from its environment, else the MCP
+  client's own name (`claude-code`, `codex`, …), else `agent`. Set `CLAUDE_SESSION_NAME` per session when you want readable names.
+- **Mixed versions.** The leases are entirely in the host plus the MCP server, so an extension of 0.1.x / 0.2.x needs no
+  update. A host older than 0.3 ignores the new request fields and leases nothing; an MCP server older than 0.3 names no session,
+  and the host then neither leases nor refuses anything for it. Update both with `npx splitsession-bridge@latest install` and
+  restart the AI clients.
+
+### The agents' window (extension after 0.1.8, on by default)
+
+Tabs an agent opens **itself** (`open_tab`, `open_in_container`) go into one separate ordinary window of the profile, not the
+window you are working in:
+
+- **Made on demand.** The first such open creates the window without taking focus (`focused: false`, `state: "normal"`); the
+  blank tab a new window starts with is closed once the agent's own tab is in it. The next opens reuse the window. If you close
+  it, the next open makes a new one. A container's tabs get their tab group in that window as usual.
+- **Identified by its ID, not a title.** Chrome has no window-title API, so the window's ID is kept in `chrome.storage.session`
+  (gone with the browser session, which is also when the window itself is gone).
+- **An explicit `windowId` always wins**, with the setting on or off.
+- **Setting.** Settings → For AI agents → "Open agent tabs in a separate window" (default **on**). Off: new tabs open in the
+  current window, as before 0.1.9.
+- **Working in a tab you already have open** is unchanged: any tab, including the one you are looking at. The tool descriptions
+  tell the agent: *if the user says "this tab" or "the current tab", use the tab with `active: true` in the user's last-focused
+  window; tabs you open yourself go to the agents' window.*
+- If Chrome cannot make the window, the tab opens where you are (the same as with the setting off).
+
+### Per-site pacing (bridge 0.4+)
+
+A loop of agent actions can send one site a burst of requests (a script of 80 parallel fetches got both Reddit accounts a 429
+on 2026-10-22). The **host** therefore spaces out the actions that make a site's server receive a request, per registrable
+domain (eTLD+1; an IP address or `localhost` counts as its own site), across **all agent sessions of the profile**:
+
+- **Paced:** `navigate`, `navigate_back`, `navigate_forward`, `reload`, `open_tab` and `open_in_container` (the site of the `url`;
+  `about:`/`chrome:` pages have none), `click`, `select_option`, `upload_file`, and `press_key` with Enter (the site the tab shows
+  now). **Not paced:** every reading tool, `hover`, `scroll`, `type`, `run_js` (nobody can tell what a script does to the
+  network), `close_tab`, `activate_tab`, `assign_tab`.
+- **At least 1500 ms between two such actions on one site**, in the order they arrived (FIFO per site). The host **waits** and
+  then forwards; the agent just sees the tool take longer. Other sites and reads do not wait behind it.
+- **Cap: 30 s.** An action that would have to wait longer than that is answered `site busy: <site> already has more than 30
+  seconds of agent actions queued …` instead of being queued; the agent can work on another site and come back.
+- **The tab's current site** is asked of the extension (`__tab_url`, an internal call that returns the address only). An older
+  extension does not know it, and the host then does not pace the actions that need it (those that carry a `url` are still paced).
+- **`SPLITSESSION_SITE_GAP_MS`** in the host's environment changes the gap (milliseconds; `0` switches pacing off). It exists for
+  tests; Chrome starts the host, so the variable must be in Chrome's environment.
+- It spaces actions; it does not make a site's rate limits go away, and a `click` on a link that triggers many requests is still
+  one action.
+
+### Which session is acting (bridge 0.4+)
+
+The host passes the session's name with each forwarded call (an optional `session` next to `tool` and `args`; an older
+extension ignores it, an older host sends none). The extension cleans it again (letters, digits, space, `-_.` only, so it can
+never carry markup) and uses it twice:
+
+- the page pill reads **`<session>: reading` / `clicking` / `typing` …** instead of `Agent: …` (cut to 24 characters with an
+  ellipsis; plain text in the overlay's closed shadow root). With no name (old host) it still says `Agent: …`;
+- every **Diagnostics** "agent action" entry has a `session` field.
+
 ### Seeing what the agent touches ("Show agent activity", on by default)
 
 While the agent works with one specific tab (every tool except `list_tabs`, `list_containers` and `bridge_info`), that
@@ -341,7 +420,7 @@ toolbar badge's colour dot).
 - **In the page, the whole session**: a soft **vignette along the edges of the viewport**, made of gradients only (about
   26 px from each edge fading to transparent, low opacity; there is no border, outline or shadow, so no line anywhere),
   slowly breathing (35 % to 100 % on an eased sine, 2.8 s a cycle). **On each action** a stronger, slightly wider layer
-  (34 px) and a pill in the top-right corner join it, "Agent: reading" / "clicking" / "typing" / ..., with a small custom
+  (34 px) and a pill in the top-right corner join it, "<session>: reading" / "clicking" / "typing" / ... ("Agent: …" when the host names no session), with a small custom
   glyph: an **eye** for read-only tools (`get_tab_text`, `get_tab_html`, `snapshot`, `screenshot_tab`, `console_messages`,
   `network_requests`, `wait_for`, `watch`), a **pointer** for everything that acts. A click, hover, drag, typing or upload
   also raises a ring once at the element (1.6 s, eased). The bright layer goes ~2.5 s after the last action, the soft
@@ -441,9 +520,9 @@ name looks wrong, `get_tab_html` with a `selector` shows the source.
 | --- | --- |
 | `bridge_info` (`profile?`) | The connected Chrome profiles: `profiles: [{profileKey, label, windows, tabs, containers, extensionVersion}]` (`label`: the name the user set, or `null`). With one profile also `profileKey`, `profileLabel`, `windows`, `tabs`, `containers`, `extensionVersion` at the top level. Call it when the tabs are not the ones you expected. |
 | `list_containers` (`profile?`) | Containers of every connected profile: id, name, colour, number of tabs, `profile` (`{key, label}`). |
-| `list_tabs` (`windowId?`, `containerId?`, `profile?`) | Every tab of every window of every connected profile: `tabId`, `windowId`, `index`, `active`, `pinned`, `title`, `url`, `status`, `groupId`, `container` (`{id, name}` or `null`), `profile` (`{key, label}`). Start here. |
-| `open_in_container` (`url`, `container`, `createIfMissing?`, `active?`, `windowId?`, `wait?`, `profile?`) | New tab in a container through SplitSession's own open path: assigned before the first request, so the page loads with that container's cookies. Unknown container is an error unless `createIfMissing`. Opens in the background unless `active`. `profile` is required when several profiles are connected (unless `windowId` says it). |
-| `open_tab` (`url`, `active?`, `windowId?`, `wait?`, `profile?`) | New plain tab (http(s), `about:blank`, `chrome://`). `profile` as for `open_in_container`. |
+| `list_tabs` (`windowId?`, `containerId?`, `profile?`) | Every tab of every window of every connected profile: `tabId`, `windowId`, `index`, `active`, `focused` (`true` on the one tab the user is looking at: the active tab of their last-focused ordinary window, or, when that is the agents' window, of the last non-agents window they used; absent elsewhere; "this tab" means it), `agentWindow` (`true` on tabs in the agents' window), `pinned`, `title`, `url`, `status`, `groupId`, `container` (`{id, name}` or `null`), `profile` (`{key, label}`). Start here. |
+| `open_in_container` (`url`, `container`, `createIfMissing?`, `active?`, `windowId?`, `wait?`, `profile?`) | New tab in a container through SplitSession's own open path: assigned before the first request, so the page loads with that container's cookies. Unknown container is an error unless `createIfMissing`. Opens in the background unless `active`, in the agents' window unless `windowId` says otherwise. `profile` is required when several profiles are connected (unless `windowId` says it). |
+| `open_tab` (`url`, `active?`, `windowId?`, `wait?`, `profile?`) | New plain tab (http(s), `about:blank`, `chrome://`) in the agents' window unless `windowId` says otherwise. `profile` as for `open_in_container`. |
 | `navigate` (`tabId`, `url`, `wait?`) | Navigate a tab, keeping its container. A domain rule can still replace the tab (new `tabId`). |
 | `navigate_back`, `navigate_forward` (`tabId`, `wait?`) | The previous / next entry of the tab's history (exactly that entry, through the debugger; Chrome's Back button would skip pages nobody interacted with, which is every page the agent just opened). Container tabs get SplitSession's service-worker check first. |
 | `reload` (`tabId`, `bypassCache?`, `wait?`) | Reload, keeping the container. |

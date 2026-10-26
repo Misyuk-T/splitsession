@@ -1,5 +1,6 @@
 import type { browser } from "wxt/browser";
 
+import { cleanAgentName } from "../../bridge/protocol";
 import { AGENT_GLYPHS } from "../../ui/agent-glyphs";
 import type { GroupActivityMark } from "./group-activity";
 import {
@@ -73,6 +74,21 @@ export const TOOL_LOOK: Readonly<Record<string, ToolLook>> = {
   close_tab: act("closing"),
   activate_tab: act("switching to this tab"),
 };
+
+/** Longest session name the pill shows; a longer one ends in an ellipsis. */
+export const PILL_NAME_MAX = 24;
+
+/**
+ * The agent session's name as the pill shows it: sanitised again here (letters, digits, space, `-_.`), cut to
+ * `PILL_NAME_MAX`. Empty: no name known, the pill says "Agent".
+ */
+export function pillName(session: string | null | undefined): string {
+  const name = cleanAgentName(session);
+  if (name === null) return "";
+  return name.length > PILL_NAME_MAX
+    ? `${name.slice(0, PILL_NAME_MAX - 1).trimEnd()}…`
+    : name;
+}
 
 /** Longest wait for the page side: a page that is stuck (a JavaScript dialog is open) must not hold the tool up. */
 const INJECT_MS = 1_200;
@@ -153,6 +169,7 @@ export class AgentActivity {
     tabId: number,
     tool: string,
     rect: ActivityRect | null = null,
+    session?: string | null,
   ): Promise<void> {
     const look = TOOL_LOOK[tool];
     if (!look || !this.d.enabled() || tabId < 0) return;
@@ -160,7 +177,12 @@ export class AgentActivity {
     this.blink(tabId);
     const done = await this.inject(
       tabId,
-      this.command("show", { label: look.label, kind: look.kind, rect }),
+      this.command("show", {
+        label: look.label,
+        kind: look.kind,
+        rect,
+        who: pillName(session),
+      }),
     );
     this.markScripted(tabId, done);
   }
@@ -205,10 +227,12 @@ export class AgentActivity {
       label?: string;
       kind?: ActivityCommand["kind"];
       rect?: ActivityRect | null;
+      who?: string;
     } = {},
   ): ActivityCommand {
     return {
       op,
+      who: o.who ?? "",
       label: o.label ?? "",
       kind: o.kind ?? "",
       ttl: ACTIVITY_TTL_MS,
