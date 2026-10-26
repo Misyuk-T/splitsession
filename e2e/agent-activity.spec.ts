@@ -1876,4 +1876,79 @@ test.describe("visible agent activity", () => {
       marker: null,
     });
   });
+
+  test("while a group shows the agent mark the group guard still holds: a duplicate, a website tab opened into the group and a plain tab dragged in each end up in the group's container within ~2 s", async ({
+    facet,
+  }) => {
+    const c = await facet.container("Spare");
+    await turnOn(facet);
+    mcp = await startMcp(facet);
+    const page = await facet.openIn(c.name, at("a.localhost", "/agent"));
+    const tabId = await facet.tabIdOf(page);
+    const group = await groupOfTab(facet, tabId);
+    const adopt = (p: Page) => facet.adopt(p);
+    facet.ctx.on("page", adopt);
+    let busy = true;
+    const keepBusy = (async () => {
+      while (busy) {
+        await mcp!.call("snapshot", { tabId }).catch(() => {});
+        await mcp!.call("scroll", { tabId, to: "bottom" }).catch(() => {});
+        await new Promise((r) => setTimeout(r, 300));
+      }
+    })();
+    /** The group holds `n` tabs, every one of them in the container. */
+    const allInContainer = (n: number) =>
+      expect
+        .poll(
+          async () => {
+            const ids = await facet.inWorker(
+              async (g: number) =>
+                (
+                  await (globalThis as any).chrome.tabs.query({ groupId: g })
+                ).map((t: { id: number }) => t.id) as number[],
+              group,
+            );
+            const containers = await Promise.all(
+              ids.map((id) => facet.api<string | null>("getTabContainer", id)),
+            );
+            return { n: ids.length, all: containers.every((x) => x === c.id) };
+          },
+          { timeout: 2_500, intervals: [100] },
+        )
+        .toEqual({ n, all: true });
+    try {
+      await expectMarked(facet, group, c.name);
+      // (a) "Duplicate" of the marked group's tab.
+      await facet.inWorker(
+        async (id: number) => (globalThis as any).chrome.tabs.duplicate(id),
+        tabId,
+      );
+      await allInContainer(2);
+      await expectMarked(facet, group, c.name);
+      // (b) A website tab opened straight into the group.
+      await facet.inWorker(
+        async ([g, url]: [number, string]) => {
+          const chrome = (globalThis as any).chrome;
+          const t = await chrome.tabs.create({ url, active: false });
+          await chrome.tabs.group({ tabIds: [t.id], groupId: g });
+        },
+        [group, at("a.localhost", "/whoami?t=into")] as [number, string],
+      );
+      await allInContainer(3);
+      // (c) A loaded plain tab dragged into the group.
+      const plain = await facet.plain(at("a.localhost", "/whoami?t=plain"));
+      const plainId = await facet.tabIdOf(plain);
+      await expectMarked(facet, group, c.name);
+      await facet.inWorker(
+        async ([id, g]: [number, number]) =>
+          (globalThis as any).chrome.tabs.group({ tabIds: [id], groupId: g }),
+        [plainId, group] as [number, number],
+      );
+      await allInContainer(4);
+    } finally {
+      busy = false;
+      await keepBusy;
+      facet.ctx.off("page", adopt);
+    }
+  });
 });

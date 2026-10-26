@@ -409,7 +409,8 @@ export class Extras {
     void this.facet.ready
       .then(() => this.ready)
       .then(() => {
-        if (__FULL__ && this.groups.takeMarkEcho(group)) return;
+        if (__FULL__ && this.groups.takeMarkEcho(group))
+          return this.guard.sweepIfPlainIn(group.id);
         this.guard.scheduleSweep();
         return this.groups.groupUpdated(group);
       });

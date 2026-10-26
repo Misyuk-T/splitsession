@@ -351,7 +351,7 @@ form half-filled in it is lost). A tab that has loaded nothing (the new tab page
 not loaded or has discarded, a page that is not a website, a tab the restore holds back) is put in the container where it
 stands. Besides the tab events, a check runs a second after tabs or groups change, when the worker starts, and every 30 s
 while such a group exists (an alarm), so a tab that got in without an event (dropped from another window, from before an
-update) is fixed within about half a minute. Every such action is in SplitSession's log (tab, from -> to, reason). Otherwise a group is only a view. Their titles end in an invisible marker (zero-width characters naming the container), so
+update) is fixed within about half a minute; a reopen that failed is retried after 0.5, 1.5 and 4 s (then it waits for the next check), and a tab held back by the reopen limit after the window. Every such action is in SplitSession's log (tab, from -> to, reason). Otherwise a group is only a view. Their titles end in an invisible marker (zero-width characters naming the container), so
 SplitSession can recognise its own groups after a restart; a title read by another extension or agent includes those characters. They follow the container when a tab is assigned or moved to another window, when a
 container is renamed or recoloured, when the setting is switched on and on "Re-group tabs"; they never read a tab's
 group to learn its container (except for the rule above), and a tab you drag out of a group, or into a group that is not
