@@ -56,6 +56,14 @@ const listTabs: ToolHandler = async (c, a) => {
     only = found.id;
   }
   const tabs = await c.b.tabs.query(query);
+  const aw = c.d.agentWindow;
+  const userWindow = aw
+    ? await aw.userWindow().catch(() => undefined)
+    : await c.b.windows
+        .getLastFocused({ windowTypes: ["normal"] })
+        .then((w) => w.id)
+        .catch(() => undefined);
+  const agentWindows = new Map<number, boolean>();
   const out = [];
   for (const tab of tabs) {
     if (tab.id === undefined) continue;
@@ -64,11 +72,19 @@ const listTabs: ToolHandler = async (c, a) => {
     const container = containerId
       ? c.d.facet.containers.get(containerId)
       : undefined;
+    if (aw && !agentWindows.has(tab.windowId))
+      agentWindows.set(
+        tab.windowId,
+        await aw.isAgentWindow(tab.windowId).catch(() => false),
+      );
     out.push({
       tabId: tab.id,
       windowId: tab.windowId,
       index: tab.index,
       active: tab.active,
+      // The tab the user is looking at: the active tab of their window (never the agents' window).
+      ...(tab.active && tab.windowId === userWindow ? { focused: true } : {}),
+      ...(agentWindows.get(tab.windowId) ? { agentWindow: true } : {}),
       pinned: tab.pinned,
       title: withoutAgentMark(tab.title ?? ""),
       url: tabUrl(tab) ?? "",

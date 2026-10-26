@@ -90,6 +90,9 @@ export function createAgentSide(
         area: b.storage.session as unknown as StorageAreaLike,
         enabled: () => extras.settings.get().agentWindow,
       });
+      b.windows.onFocusChanged.addListener(
+        (id) => void agentWindow.noteFocus(id),
+      );
       const router = new BridgeRouter({
         b,
         facet,

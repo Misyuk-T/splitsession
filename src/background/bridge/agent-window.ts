@@ -7,6 +7,9 @@ type Browser = typeof browser;
 /** `storage.session` key holding the ID of the agents' window (it survives the worker stopping, not a browser restart). */
 export const AGENT_WINDOW_KEY = "agentWindowId";
 
+/** `storage.session` key holding the ID of the last ordinary window the user focused that is not the agents' window. */
+export const LAST_USER_WINDOW_KEY = "lastUserWindowId";
+
 export interface AgentWindowDeps {
   b: Browser;
   /** `storage.session`. */
@@ -57,6 +60,47 @@ export class AgentWindow {
       this.placeholder = null;
       await this.d.b.tabs.remove(blank).catch(() => {});
     } // else: it is the window's only tab, so closing it would close the window; wait for the real tab
+  }
+
+  /** Whether `windowId` is the agents' window. */
+  async isAgentWindow(windowId: number): Promise<boolean> {
+    return (await this.stored()) === windowId;
+  }
+
+  /** A window got the focus (`windows.onFocusChanged`): remember it when it is an ordinary window of the user's. */
+  async noteFocus(windowId: number): Promise<void> {
+    if (windowId < 0 || (await this.stored()) === windowId) return;
+    const win = await this.d.b.windows.get(windowId).catch(() => null);
+    if (!win || (win.type !== undefined && win.type !== "normal")) return;
+    await this.d.area.set({ [LAST_USER_WINDOW_KEY]: windowId }).catch(() => {});
+  }
+
+  /**
+   * The ordinary window the user is working in: the last-focused one, or when that is the agents' window the last
+   * non-agents window that had the focus, else any other ordinary window (the focused one first).
+   */
+  async userWindow(): Promise<number | undefined> {
+    const agent = await this.stored();
+    const last = await this.d.b.windows
+      .getLastFocused({ windowTypes: ["normal"] })
+      .catch(() => null);
+    if (last?.id !== undefined && last.id !== agent) return last.id;
+    try {
+      const id = (await this.d.area.get(LAST_USER_WINDOW_KEY))[
+        LAST_USER_WINDOW_KEY
+      ];
+      if (typeof id === "number" && id !== agent) {
+        const win = await this.d.b.windows.get(id).catch(() => null);
+        if (win && (win.type === undefined || win.type === "normal")) return id;
+      }
+    } catch {
+      // fall through to any other window
+    }
+    const all = await this.d.b.windows
+      .getAll({ windowTypes: ["normal"] })
+      .catch(() => []);
+    const others = all.filter((w) => w.id !== undefined && w.id !== agent);
+    return (others.find((w) => w.focused) ?? others[0])?.id;
   }
 
   private async stored(): Promise<number | null> {

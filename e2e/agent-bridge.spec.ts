@@ -1190,6 +1190,51 @@ test.describe("agent bridge", () => {
     expect(offContainer.windowId).toBe(userWindow);
   });
 
+  test("list_tabs marks the tab the user looks at (focused) whichever of the user's and the agents' window has the focus, and tags the agents' window's tabs", async ({
+    facet,
+  }) => {
+    await turnOn(facet);
+    mcp = await startMcp(facet);
+    await facet.api("updateSettings", { agentWindow: true });
+    const userWindow = await facet.inWorker(
+      async () =>
+        (await (globalThis as any).chrome.windows.getAll())[0].id as number,
+      undefined,
+    );
+    const opened = await mcp.json<{ tabId: number; windowId: number }>(
+      "open_tab",
+      { url: at("a.localhost", "/agent") },
+    );
+    expect(opened.windowId).not.toBe(userWindow);
+    const focusWindow = (id: number) =>
+      facet.inWorker(
+        (w: number) =>
+          (globalThis as any).chrome.windows.update(w, { focused: true }),
+        id,
+      );
+    const m = mcp;
+    for (const win of [userWindow, opened.windowId, userWindow]) {
+      await focusWindow(win);
+      await expect
+        .poll(async () => {
+          const rows = (await tabsOf(m)) as Array<
+            TabRow & { focused?: boolean; agentWindow?: boolean }
+          >;
+          const focused = rows.filter((t) => t.focused);
+          return {
+            n: focused.length,
+            inUser: focused[0]?.windowId === userWindow,
+            active: focused[0]?.active,
+            agentTagged: rows
+              .filter((t) => t.agentWindow)
+              .every((t) => t.windowId === opened.windowId),
+          };
+        })
+        .toEqual({ n: 1, inUser: true, active: true, agentTagged: true });
+    }
+    await facet.api("updateSettings", { agentWindow: false });
+  });
+
   test("actions on one site are spaced 1.5 s apart across the whole profile, other sites and reads do not wait", async ({
     facet,
   }) => {

@@ -92,7 +92,7 @@ export const TOOLS: readonly ToolSpec[] = [
     title: "List tabs",
     readOnly: true,
     description:
-      'List the open tabs of ALL Chrome windows of every connected Chrome profile, with the SplitSession container each one belongs to (container is null for an ordinary tab) and its profile ({key, label}). Titles of container tabs may carry a "[container] " prefix if the user enabled it. Use the returned tabId with every other tab tool: it finds the tab\'s profile by itself. If the user says "this tab" or "the current tab", use the tab with active: true in the user\'s last-focused window; tabs you open yourself live in the agents\' window (a separate window), not in the user\'s.',
+      'List the open tabs of ALL Chrome windows of every connected Chrome profile, with the SplitSession container each one belongs to (container is null for an ordinary tab) and its profile ({key, label}). Titles of container tabs may carry a "[container] " prefix if the user enabled it. Use the returned tabId with every other tab tool: it finds the tab\'s profile by itself. If the user says "this tab" or "the current tab", use the tab with focused: true (the active tab of the window the user works in); never pick a tab with agentWindow: true for that. Tabs you open yourself live in the agents\' window (a separate window, marked agentWindow: true), not in the user\'s.',
     inputSchema: obj({
       windowId: {
         type: "integer",

@@ -60,6 +60,7 @@ function setup(
     windows: {
       update: vi.fn(async () => ({})),
       getAll: vi.fn(async () => [{ id: 10 }, { id: 11 }]),
+      getLastFocused: vi.fn(async () => ({ id: 10 })),
     },
     runtime: { getManifest: () => ({ version: "1.2.3" }) },
   };
@@ -134,6 +135,7 @@ describe("bridge router", () => {
         windowId: 10,
         index: 0,
         active: true,
+        focused: true,
         pinned: false,
         title: "[Work] Inbox",
         url: "https://mail.test/inbox",

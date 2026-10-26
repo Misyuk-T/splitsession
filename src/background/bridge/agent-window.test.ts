@@ -9,6 +9,7 @@ function browserWith() {
   const open = new Set<number>([1]); // the user's window
   let nextWindow = 100;
   let nextTab = 500;
+  let lastFocused: number | null = 1;
   const tabsIn = new Map<number, number[]>([[1, [10]]]);
   const b = {
     windows: {
@@ -24,6 +25,7 @@ function browserWith() {
         return { id, type: "normal", tabs: [{ id: first }], ...props };
       }),
       getAll: vi.fn(async () => [...open].map((id) => ({ id }))),
+      getLastFocused: vi.fn(async () => ({ id: lastFocused ?? undefined })),
       update: vi.fn(async () => ({})),
     },
     tabs: {
@@ -54,6 +56,8 @@ function browserWith() {
       })),
     },
     close: (id: number) => void open.delete(id),
+    focus: (id: number | null) => void (lastFocused = id),
+    openWindow: (id: number) => void open.add(id),
     tabsIn,
   };
   return b;
@@ -70,6 +74,38 @@ function setup(enabled = true) {
   });
   return { b, area, flag, windowOf };
 }
+
+describe("AgentWindow.userWindow", () => {
+  it("is the last-focused ordinary window when it is not the agents' window", async () => {
+    const { b, windowOf } = setup();
+    await windowOf.resolve(); // agents' window 100
+    b.openWindow(2);
+    b.focus(2);
+    expect(await windowOf.userWindow()).toBe(2);
+    expect(await windowOf.isAgentWindow(100)).toBe(true);
+    expect(await windowOf.isAgentWindow(2)).toBe(false);
+  });
+
+  it("is the previous user window while the agents' window has the focus", async () => {
+    const { b, windowOf } = setup();
+    b.openWindow(2);
+    await windowOf.noteFocus(1);
+    await windowOf.noteFocus(2);
+    const agents = (await windowOf.resolve())!;
+    await windowOf.noteFocus(agents); // not remembered
+    b.focus(agents);
+    expect(await windowOf.userWindow()).toBe(2);
+  });
+
+  it("falls back to another ordinary window when there is no history", async () => {
+    const { b, windowOf } = setup();
+    const agents = (await windowOf.resolve())!;
+    b.focus(agents);
+    expect(await windowOf.userWindow()).toBe(1);
+    b.close(1);
+    expect(await windowOf.userWindow()).toBeUndefined();
+  });
+});
 
 describe("AgentWindow", () => {
   it("makes an unfocused ordinary window on the first open and remembers it", async () => {

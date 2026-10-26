@@ -51,7 +51,10 @@ export interface RouterDeps {
   /** This profile's bridge key (the name of its socket), for `bridge_info`. */
   profileKey?: () => Promise<string>;
   /** The agents' window for tabs the agent opens itself (setting "Open agent tabs in a separate window"). Absent: the current window. */
-  agentWindow?: Pick<AgentWindow, "resolve" | "opened">;
+  agentWindow?: Pick<
+    AgentWindow,
+    "resolve" | "opened" | "isAgentWindow" | "userWindow"
+  >;
   /** Shows the user which tab the agent touches (glow, pill, favicon, badge). Absent: nothing is shown. */
   activity?: Pick<AgentActivity, "touch" | "hide" | "unhide">;
   /**
