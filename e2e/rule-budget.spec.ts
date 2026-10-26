@@ -10,7 +10,12 @@ interface Stats {
 }
 interface SessionRule {
   priority: number;
-  condition: { tabIds?: number[]; requestDomains?: string[] };
+  action: { type: string };
+  condition: {
+    tabIds?: number[];
+    requestDomains?: string[];
+    urlFilter?: string;
+  };
 }
 
 const SITES = ["a.localhost", "b.localhost", "c.localhost", "d.localhost"];
@@ -29,20 +34,37 @@ test.describe("rule budget", () => {
       ["Budget A", "Budget B", "Budget C"].map((n) => facet.container(n)),
     );
     const tabs: Array<{ page: Page; mark: string; containerId: string }> = [];
+    const addresses = new Set<string>();
     const open = async (i: number) => {
       for (const c of containers) {
         const mark = c.name;
-        const page = await facet.openIn(
-          c.name,
-          at(
-            SITES[i % SITES.length]!,
-            `/heavy?mark=${encodeURIComponent(mark)}`,
-          ),
+        const url = at(
+          SITES[i % SITES.length]!,
+          `/heavy?mark=${encodeURIComponent(mark)}`,
         );
+        addresses.add(url);
+        const page = await facet.openIn(c.name, url);
         await expect(page.locator("#mark")).toHaveText(mark);
         tabs.push({ page, mark, containerId: c.id });
       }
     };
+
+    /**
+     * The restore gate opens each container tab's address with one `allow` rule (per address, not per tab) once the
+     * restore snapshot is written, a moment after the tab committed (debounced). Rules are counted after that: read too
+     * early, the last address's opener is missing and the count is one short.
+     */
+    const restoreGateCaughtUp = () =>
+      expect
+        .poll(async () => {
+          const open = new Set(
+            (await facet.api<SessionRule[]>("getSessionRules"))
+              .filter((r) => r.action.type === "allow")
+              .map((r) => r.condition.urlFilter),
+          );
+          return [...addresses].filter((a) => !open.has(`|${a}|`));
+        })
+        .toEqual([]);
 
     // Every container on every site once: the jars are complete and each container has 4 top-level-site groups.
     for (let i = 0; i < SITES.length; i++) await open(i);
@@ -56,9 +78,11 @@ test.describe("rule budget", () => {
         ).some((c) => c.partitioned),
       )
       .toBe(true);
+    await restoreGateCaughtUp();
     const afterFirst = (await facet.api<Stats>("stats")).rules;
 
     for (let i = SITES.length; i < TABS_PER_CONTAINER; i++) await open(i);
+    await restoreGateCaughtUp();
     const stats = await facet.api<Stats>("stats");
     // More tabs on the same sites add no rules: they join the containers' existing rules.
     expect(stats.rules).toBe(afterFirst);
