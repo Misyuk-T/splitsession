@@ -3,6 +3,7 @@ import { toolByName, toolTimeoutMs } from "../../bridge/spec";
 import { validateArgs } from "../../bridge/validate";
 import { DEVTOOLS_TOOLS } from "./tools/devtools";
 import { INPUT_TOOLS } from "./tools/input";
+import { LOG_TOOLS } from "./tools/log";
 import { READ_TOOLS } from "./tools/read";
 import { TAB_TOOLS } from "./tools/tabs";
 import { ToolError } from "./errors";
@@ -20,6 +21,7 @@ export class BridgeRouter {
   private readonly tools: Record<string, ToolHandler> = {
     ...TAB_TOOLS,
     ...READ_TOOLS,
+    ...LOG_TOOLS,
     ...INPUT_TOOLS,
     ...DEVTOOLS_TOOLS,
   };

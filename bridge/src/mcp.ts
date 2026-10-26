@@ -247,7 +247,14 @@ export function presenceFor(
   };
 }
 
-const PROFILE_PARAM: Record<"list" | "open" | "tab", Schema> = {
+const PROFILE_PARAM: Record<"list" | "open" | "tab" | "one", Schema> = {
+  one: {
+    type: "string",
+    minLength: 1,
+    maxLength: 64,
+    description:
+      "The Chrome profile (name or key, from bridge_info). Needed when several profiles are connected.",
+  },
   list: {
     type: "string",
     minLength: 1,
@@ -285,7 +292,9 @@ export const MCP_TOOLS = TOOLS.map((tool) => {
     ? "list"
     : ["open_tab", "open_in_container"].includes(tool.name)
       ? "open"
-      : "tab";
+      : tool.name === "extension_log"
+        ? "one"
+        : "tab";
   return {
     ...tool,
     inputSchema: {

@@ -36,6 +36,7 @@ export interface RouterDeps {
   facet: Pick<
     Facet,
     | "ready"
+    | "log"
     | "listContainers"
     | "containers"
     | "createContainer"

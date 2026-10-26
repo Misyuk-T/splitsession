@@ -545,6 +545,46 @@ describe("bridge router: visible agent activity", () => {
   });
 });
 
+describe("extension_log", () => {
+  const entries = [
+    { at: 1_000, level: "info", message: "Alpha", data: { k: "Needle" } },
+    { at: 2_000, level: "warn", message: "beta needle" },
+    { at: 3_000, level: "error", message: "Gamma", data: "x".repeat(5000) },
+    { at: 4_000, level: "info", message: "delta" },
+  ];
+  const read = async (args: unknown) => {
+    const t = setup([tab()]);
+    (t.facet as unknown as { log: unknown }).log = { entries: () => entries };
+    return JSON.parse((await run(t.router, "extension_log", args))[0]!);
+  };
+  const messages = (list: Array<{ message: string }>) =>
+    list.map((e) => e.message);
+
+  it("returns oldest-first entries with ISO time, stringified data, each cut to 2000 characters", async () => {
+    const all = await read({});
+    expect(messages(all)).toEqual(["Alpha", "beta needle", "Gamma", "delta"]);
+    expect(all[0]).toEqual({
+      time: new Date(1_000).toISOString(),
+      level: "info",
+      message: "Alpha",
+      data: '{"k":"Needle"}',
+    });
+    expect(all[1]).not.toHaveProperty("data");
+    expect(all[2].message.length + all[2].data.length).toBe(2000);
+  });
+
+  it("keeps the newest `limit` matches, filters case-insensitively on message and data, and by level", async () => {
+    expect(messages(await read({ limit: 2 }))).toEqual(["Gamma", "delta"]);
+    expect(messages(await read({ contains: "NEEDLE" }))).toEqual([
+      "Alpha",
+      "beta needle",
+    ]);
+    expect(messages(await read({ level: "error" }))).toEqual(["Gamma"]);
+    expect(await read({ contains: "needle", limit: 1 })).toHaveLength(1);
+    expect(await read({ contains: "nothing like this" })).toEqual([]);
+  });
+});
+
 describe("bridge_info", () => {
   it("names the profile and sizes it", async () => {
     const { router, setLabel } = setup([tab(), tab({ id: 2 })]);
