@@ -105,7 +105,9 @@ container (GET only):
   SplitSession has seen the tab and reopened it (a fresh tab of the group's container, the old one closed); in that time the
   site's scripts run with the real profile's cookies and storage, can read them, and can write cookies and localStorage
   there. Anything written stays in the real profile after the old tab is closed. Unless the restore gate blocks that
-  address, the site sees the real profile at least once. A new tab page opened inside a group ("New tab to the right", "New
+  address, the site sees the real profile at least once. The container tab opens the address the tab was created with, so
+  after "Duplicate" the copy shows the same page as the original, logged in as the container, and not the sign-in page a
+  logged-out site sent the unisolated copy to (the copy may flash that page for a moment before it is replaced). A new tab page opened inside a group ("New tab to the right", "New
   tab in group") makes no request and is put in the container at once, so an address typed there is isolated from its first
   request.
 

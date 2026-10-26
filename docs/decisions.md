@@ -1954,3 +1954,23 @@ Three additions on top of the tab leases (bridge 0.3.0, together with the leases
   ignores the field, an older host sends none. The pill reads "<session>: reading" (24 characters, ellipsis), "Agent: reading"
   without a name; the Diagnostics "agent action" entries have a `session` field. This is the item that the lease entry listed as
   "not done". The existing e2e checks of the pill text now expect the `facet-e2e-xxxx: ` prefix.
+
+## "Duplicate" of a container tab reopens at the address it was created with (2026-10-26)
+
+- **Report.** Threads in a container group, right-click the tab, "Duplicate": the copy stayed in the group but showed the
+  site logged out, while the original was logged in.
+- **Reproduced** (`e2e/duplicate-tab.spec.ts`, stand page `/private`: needs the `who` cookie, otherwise 302 to
+  `/signin?next=...`). `chrome.tabs.duplicate` gives what the UI gives: index + 1, the original's group, the original as
+  `openerTabId`, `pendingUrl` = the original's address. Its first request left without any cookie (the real profile is not
+  logged in there), the site answered with the redirect, and the guard, 150 ms later, reopened the container tab at the
+  tab's *current* address: the sign-in page. The container tab was in the right container and group, on the wrong page.
+- **Cause.** The guard read the address from the live tab when it reopened it (`pendingUrl`, else `url`), by which time the
+  unisolated copy had followed the site's redirect.
+- **Fix.** `GroupGuard.tabCreated` remembers the website address the tab was created with (`pendingUrl`, else `url`); the
+  reopening uses it (`chooseAddress`), and forgets it when the tab's check ends. A tab dragged into the group has no such
+  record and is reopened where it stands, as before. Applies to every website Chrome creates in a group (a duplicate, an
+  address or link opened next to a grouped tab). A POST is still never repeated (the address is a plain GET). Not done: a
+  shorter settle for an obvious duplicate. The 150 ms also lets a link inherit from its opener first, and the unisolated
+  request is out within ~2 ms regardless, so a shorter wait would shrink the exposure only a little.
+- **Left as it was.** The copy's first request and its scripts still run as the real profile for a moment (limits.md).
+  When the reopen limit holds the tab back, the sweep that follows reopens it at where it stands.
