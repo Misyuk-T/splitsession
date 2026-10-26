@@ -25,7 +25,7 @@ async function legacyClick(
     "ISOLATED",
     meta,
   )) as { clicked: string; rect: PageRect | null };
-  await c.touch(a.tabId, "click", rect);
+  await c.touch(a.tabId, "click", rect, meta);
   return json(result);
 }
 
@@ -46,7 +46,7 @@ const click: ToolHandler = async (c, a, meta) => {
       (a.modifiers ?? []) as Modifier[],
     );
   });
-  await c.touch(a.tabId, "click", p.rect); // the ring at the spot that was clicked
+  await c.touch(a.tabId, "click", p.rect, meta); // the ring at the spot that was clicked
   return c.withDialogNote(a.tabId, json({ clicked: p.label }));
 };
 
@@ -59,7 +59,7 @@ const hover: ToolHandler = async (c, a, meta) => {
     live(meta);
     await hands.mouseMove(s, p);
   });
-  await c.touch(a.tabId, "hover", p.rect);
+  await c.touch(a.tabId, "hover", p.rect, meta);
   return c.withDialogNote(a.tabId, json({ hovered: p.label }));
 };
 
@@ -77,7 +77,7 @@ const drag: ToolHandler = async (c, a, meta) => {
     live(meta);
     await hands.mouseDrag(s, from, to);
   });
-  await c.touch(a.tabId, "drag", to.rect);
+  await c.touch(a.tabId, "drag", to.rect, meta);
   return c.withDialogNote(a.tabId, json({ dragged: from.label, to: to.label }));
 };
 
@@ -92,7 +92,7 @@ const type: ToolHandler = async (c, a, meta) => {
       "ISOLATED",
       meta,
     )) as { typed: number; rect: PageRect | null };
-    await c.touch(a.tabId, "type", rect);
+    await c.touch(a.tabId, "type", rect, meta);
     return json(result);
   }
   const t = c.target(a);
@@ -123,7 +123,7 @@ const type: ToolHandler = async (c, a, meta) => {
     });
     return prepared.rect;
   });
-  await c.touch(a.tabId, "type", rect);
+  await c.touch(a.tabId, "type", rect, meta);
   return c.withDialogNote(a.tabId, json({ typed: a.text.length }));
 };
 
@@ -145,7 +145,7 @@ const pressKey: ToolHandler = async (c, a, meta) => {
     await hands.pressShortcut(s, a.key, !!c.d.isMac, a.repeat);
     return focused;
   });
-  await c.touch(a.tabId, "press_key", rect);
+  await c.touch(a.tabId, "press_key", rect, meta);
   return c.withDialogNote(a.tabId, json({ pressed: a.key, times: a.repeat }));
 };
 
@@ -167,7 +167,7 @@ const selectOption: ToolHandler = async (c, a, meta) => {
     target,
     values: a.values,
   }));
-  await c.touch(a.tabId, "select_option", r.rect);
+  await c.touch(a.tabId, "select_option", r.rect, meta);
   return json({ selected: r.selected });
 };
 
@@ -202,7 +202,7 @@ const uploadFile: ToolHandler = async (c, a, meta) => {
     }
     return marked.rect;
   });
-  await c.touch(a.tabId, "upload_file", rect);
+  await c.touch(a.tabId, "upload_file", rect, meta);
   return c.withDialogNote(
     a.tabId,
     json({ uploaded: (a.paths as string[]).map((p) => p.split("/").pop()) }),

@@ -57,7 +57,9 @@ export interface ActivityCommand {
    * `end`: the session is over (fade out); `stop`: gone at once (setting or bridge switched off).
    */
   op: "show" | "session" | "end" | "hide" | "unhide" | "inspect" | "stop";
-  /** "reading", "clicking", ... (shown as "Agent: <label>"). */
+  /** The agent session's name (already sanitised and cut); '' when the host named none. Shown in front of the label. */
+  who: string;
+  /** "reading", "clicking", ... (shown as "<who>: <label>", or "Agent: <label>" without a name). */
   label: string;
   /** What the tool does: reads, or can change the page ('' for the other ops). */
   kind: "read" | "act" | "";
@@ -865,7 +867,7 @@ export async function pageActivity(
   }
   if (cmd.op === "show") {
     s.kind = cmd.kind;
-    s.text.textContent = `Agent: ${cmd.label}`;
+    s.text.textContent = `${cmd.who || "Agent"}: ${cmd.label}`;
     setGlyph(cmd.kind === "read" ? "read" : "act");
   } else if (!s.glyphKind) {
     setGlyph("act");

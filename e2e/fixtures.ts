@@ -327,6 +327,7 @@ export const test = base.extend<
       showNameToPages: true,
       agentBridge: false,
       agentActivity: true,
+      agentWindow: true,
       restoreTabs: true,
       markOutsideGroup: true,
       rememberTabs: true,

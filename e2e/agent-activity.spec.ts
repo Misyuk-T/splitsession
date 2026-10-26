@@ -371,6 +371,7 @@ test.describe("visible agent activity", () => {
     await facet.api("updateSettings", {
       agentBridge: false,
       agentActivity: true,
+      agentWindow: true,
     });
     await facet.inWorker(async () => {
       const c = (globalThis as any).chrome;

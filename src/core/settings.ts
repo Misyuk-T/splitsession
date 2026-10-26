@@ -32,6 +32,12 @@ export interface Settings {
    */
   agentActivity: boolean;
   /**
+   * Tabs an agent opens itself (open_tab, open_in_container) go into one separate ordinary window of this profile, made on
+   * the first open without taking focus and reused while it exists, instead of the window the user is working in. An explicit
+   * `windowId` from the agent wins. Off: they open in the current window. Full only. Default on.
+   */
+  agentWindow: boolean;
+  /**
    * Container tabs that come back (browser restart with "Continue where you left off", Ctrl/Cmd+Shift+T, History's
    * "Recently closed", a closed tab group opened again) return to their container before their first request. SplitSession
    * keeps the addresses of container tabs in `storage.local` for that and holds such tabs until it has matched them.
@@ -69,6 +75,7 @@ export const DEFAULT_SETTINGS: Readonly<Settings> = Object.freeze(
         showNameToPages: false,
         agentBridge: false,
         agentActivity: true,
+        agentWindow: true,
         restoreTabs: true,
         markOutsideGroup: true,
         rememberTabs: true,

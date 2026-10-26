@@ -85,34 +85,40 @@ const openInContainer: ToolHandler = async (c, a, meta) => {
   meta.host = url.host;
   const container = await c.container(a.container, a.createIfMissing);
   live(meta);
+  const windowId = await c.agentWindowFor(a.windowId);
+  live(meta);
   const tabId = await c.d.facet.openInContainer(url.href, container.id, {
     active: a.active,
-    ...(a.windowId !== undefined ? { windowId: a.windowId } : {}),
+    ...(windowId !== undefined ? { windowId } : {}),
   });
+  await c.d.agentWindow?.opened(windowId);
   meta.tabId = tabId;
-  await c.touch(tabId, "open_in_container");
+  await c.touch(tabId, "open_in_container", null, meta);
   const loaded = a.wait ? await c.waitForLoad(tabId, meta) : undefined;
-  if (loaded) await c.touch(tabId, "open_in_container");
+  if (loaded) await c.touch(tabId, "open_in_container", null, meta);
   return c.summaryAfterLoad(tabId, loaded);
 };
 
 const openTab: ToolHandler = async (c, a, meta) => {
   const url = checkUrl(a.url, OPEN_SCHEMES);
   meta.host = url.host || undefined;
+  const windowId = await c.agentWindowFor(a.windowId);
+  live(meta);
   const tab = await c.b.tabs.create({
     url: url.href,
     active: a.active,
-    ...(a.windowId !== undefined ? { windowId: a.windowId } : {}),
+    ...(windowId !== undefined ? { windowId } : {}),
   });
   if (tab.id === undefined)
     throw new ToolError("Chrome did not create the tab");
+  await c.d.agentWindow?.opened(windowId);
   meta.tabId = tab.id;
-  await c.touch(tab.id, "open_tab");
+  await c.touch(tab.id, "open_tab", null, meta);
   const loaded =
     a.wait && url.protocol !== "about:"
       ? await c.waitForLoad(tab.id, meta)
       : undefined;
-  if (loaded) await c.touch(tab.id, "open_tab");
+  if (loaded) await c.touch(tab.id, "open_tab", null, meta);
   return c.summaryAfterLoad(tab.id, loaded);
 };
 
@@ -129,7 +135,7 @@ const navigate: ToolHandler = async (c, a, meta) => {
   live(meta);
   await c.b.tabs.update(a.tabId, { url: url.href });
   const loaded = a.wait ? await c.waitForLoad(a.tabId, meta) : undefined;
-  if (loaded) await c.touch(a.tabId, "navigate"); // the new page has none of the old page's overlay
+  if (loaded) await c.touch(a.tabId, "navigate", null, meta); // the new page has none of the old page's overlay
   return c.summaryAfterLoad(a.tabId, loaded);
 };
 
@@ -161,7 +167,7 @@ const assignTab: ToolHandler = async (c, a, meta) => {
   live(meta);
   await c.d.api.assignTab(a.tabId, containerId, { reload: a.reload });
   if (a.reload && (await c.waitForLoad(a.tabId, meta)))
-    await c.touch(a.tabId, "assign_tab"); // the reloaded page starts clean
+    await c.touch(a.tabId, "assign_tab", null, meta); // the reloaded page starts clean
   return json(await c.summary(a.tabId));
 };
 
@@ -223,7 +229,12 @@ async function history(
   }
   const loaded = a.wait ? await c.waitForLoad(a.tabId, meta) : undefined;
   if (loaded)
-    await c.touch(a.tabId, step < 0 ? "navigate_back" : "navigate_forward");
+    await c.touch(
+      a.tabId,
+      step < 0 ? "navigate_back" : "navigate_forward",
+      null,
+      meta,
+    );
   return c.summaryAfterLoad(a.tabId, loaded);
 }
 
@@ -235,7 +246,7 @@ const reload: ToolHandler = async (c, a, meta) => {
   live(meta);
   await c.b.tabs.reload(a.tabId, { bypassCache: a.bypassCache });
   const loaded = a.wait ? await c.waitForLoad(a.tabId, meta) : undefined;
-  if (loaded) await c.touch(a.tabId, "reload");
+  if (loaded) await c.touch(a.tabId, "reload", null, meta);
   return c.summaryAfterLoad(a.tabId, loaded);
 };
 

@@ -10,6 +10,8 @@ export interface ActionMeta {
   /** The tool being run, and the title of the tab it works on (without our own marks): for the popup's recent actions. */
   tool?: string;
   title?: string;
+  /** The agent session that asked (sanitised by `cleanAgentName`), when the host named it: shown on the page label, kept in the action log. */
+  session?: string;
   /**
    * Aborted when the bridge is switched off (or its connection drops) while the tool runs. Every step that changes
    * something checks it first, and every wait ends on it: a tool that was already received must not act after "off".
