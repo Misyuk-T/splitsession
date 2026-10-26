@@ -144,6 +144,28 @@ describe("SessionRuleManager", () => {
     expect(tabsCovered(dnr)).toEqual(new Set([1, 4]));
   });
 
+  it("a tab joining or leaving a container changes the rules' tabIds, not their number, in one call each", async () => {
+    const { dnr, tabs, manager, timer } = setup();
+    const step = async (tabIds: number[]) => {
+      tabs.set("a", tabIds);
+      const p = manager.invalidate("a");
+      timer.flush();
+      expect(await p).toBe(true);
+      return [...dnr.rules.values()];
+    };
+    const one = await step([1]);
+    const calls = dnr.calls.length;
+    const three = await step([1, 2, 3]);
+    const two = await step([1, 3]);
+    expect(dnr.calls.length).toBe(calls + 2);
+    expect(three.length).toBe(one.length);
+    expect(two.length).toBe(one.length);
+    expect(two.every((r) => r.condition.tabIds?.join() === "1,3")).toBe(true);
+    // Every remove + add went through one call: tab 1 was never without rules in between.
+    for (const call of dnr.calls.slice(calls))
+      expect(call.removeRuleIds.length).toBe(call.addRules.length);
+  });
+
   it("drops a key whose compiler returns null (no tabs left)", async () => {
     const { dnr, tabs, manager, timer } = setup();
     tabs.set("a", [1]);

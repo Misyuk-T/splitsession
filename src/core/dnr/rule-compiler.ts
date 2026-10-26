@@ -14,7 +14,10 @@ import type { BeaconPayload, ContainerId, Cookie } from "../types";
 /**
  * Compiles one container jar into declarativeNetRequest session rules for a GROUP of tabs (every tab of the
  * container, or, when the jar holds partitioned cookies, every tab of the container with the same top-level site).
- * Rules carry `tabIds: [...group]`, so the rule count grows with containers and hosts, not with tabs.
+ * Rules carry `tabIds: [...group]`, so the rule count grows with containers and hosts, not with tabs. A container's
+ * groups compile together (`compileContainerRules`): a rule identical in several groups is emitted once for all
+ * their tabs, so only what really depends on the top-level site (hosts and beacon answers with partitioned cookies)
+ * is repeated per group.
  *
  * Emitted, in this order:
  *  1. catch-all (priority 2): drop request `Cookie` and response `Set-Cookie`, so the real profile's cookies never
@@ -241,231 +244,308 @@ export function compileGroupRules(
   input: CompileGroupInput,
   allocator: RuleIdAllocator,
 ): CompiledRules {
-  const {
-    tabIds,
-    containerName,
-    jar,
-    topLevelSite = null,
-    now = Date.now(),
-    pageKeyOf,
-  } = input;
-  if (tabIds.length === 0)
-    throw new RangeError("compileGroupRules: empty tab group");
-  for (const tabId of tabIds) {
-    if (!Number.isInteger(tabId) || tabId < 0) {
-      // tabId -1 would match every request that does not belong to a tab (service workers, other extensions).
-      throw new RangeError(`compileGroupRules: invalid tabId ${tabId}`);
+  const { tabIds, topLevelSite = null, frameSites, ...rest } = input;
+  return compileContainerRules(
+    { ...rest, groups: [{ tabIds, topLevelSite, frameSites }] },
+    allocator,
+  );
+}
+
+/** Tabs of one container that see the same jar view: the same top-level site while the jar holds partitioned cookies. */
+export interface TabGroupInput {
+  /** Must be non-empty, non-negative integers. */
+  tabIds: readonly number[];
+  /** Top-level site of the group (`siteOf`), used to include the right partitioned (CHIPS) cookies. */
+  topLevelSite?: string | null;
+  /** Sites (registrable domains) whose frames get a beacon answer even without cookies: the sites the tabs are on. */
+  frameSites?: Iterable<string>;
+}
+
+export interface CompileContainerInput extends Omit<
+  CompileGroupInput,
+  "tabIds" | "topLevelSite" | "frameSites"
+> {
+  /** Non-empty. */
+  groups: readonly TabGroupInput[];
+}
+
+type RuleSpec = Omit<DnrRule, "id">;
+
+/** Identity of a rule apart from its tabs: two rules with the same key differ only in which tabs they cover. */
+const specKey = (rule: RuleSpec): string =>
+  JSON.stringify([
+    rule.priority,
+    { ...rule.condition, tabIds: undefined },
+    rule.action,
+  ]);
+
+/**
+ * Compiles a container's tab groups into one rule set. Each group compiles as it would on its own; rules that two
+ * groups emit identically apart from `tabIds` (the catch-all, the rules of every host whose cookies do not depend on
+ * the top-level site, beacon answers without partitioned cookies) become ONE rule with the union of their tabs.
+ * `tabIds` is an "any of" condition, so the merged rule matches exactly the requests the separate rules matched, at the
+ * same priority: the rule count grows with containers, hosts and partitioned-cookie variants, not with tabs or the
+ * sites they are on.
+ */
+export function compileContainerRules(
+  input: CompileContainerInput,
+  allocator: RuleIdAllocator,
+): CompiledRules {
+  const { containerName, jar, now = Date.now(), pageKeyOf } = input;
+  if (input.groups.length === 0)
+    throw new RangeError("compileContainerRules: no tab group");
+  for (const { tabIds } of input.groups) {
+    if (tabIds.length === 0)
+      throw new RangeError("compileGroupRules: empty tab group");
+    for (const tabId of tabIds) {
+      if (!Number.isInteger(tabId) || tabId < 0) {
+        // tabId -1 would match every request that does not belong to a tab (service workers, other extensions).
+        throw new RangeError(`compileGroupRules: invalid tabId ${tabId}`);
+      }
     }
   }
-  let regexLeft = input.regexBudget ?? Number.POSITIVE_INFINITY;
-  let regexRuleCount = 0;
+  const regex = { left: input.regexBudget ?? Number.POSITIVE_INFINITY };
 
-  const addRules: DnrRule[] = [];
-  const emit = (rule: Omit<DnrRule, "id">): void => {
-    if (rule.condition.regexFilter !== undefined) regexRuleCount++;
-    addRules.push({ id: allocator.next(), ...rule });
+  /** Rules in first-emission order; a rule emitted again by another group only adds its tabs. */
+  const specs = new Map<string, { spec: RuleSpec; tabs: Set<number> }>();
+  const isNew = (rule: RuleSpec): boolean => !specs.has(specKey(rule));
+  const add = (rule: RuleSpec): void => {
+    const key = specKey(rule);
+    const known = specs.get(key);
+    if (known) for (const t of rule.condition.tabIds ?? []) known.tabs.add(t);
+    else specs.set(key, { spec: rule, tabs: new Set(rule.condition.tabIds) });
   };
-  // Fresh arrays per rule: the engine may mutate or serialise rules independently.
-  const base = () => ({
-    tabIds: [...tabIds],
-    resourceTypes: [...ALL_RESOURCE_TYPES],
-  });
-  const stripSetCookie = (): DnrHeaderOperation[] => [
-    { header: "set-cookie", operation: "remove" },
-  ];
-  const cookieAction = (cookies: Cookie[]): DnrRule["action"] => ({
-    type: "modifyHeaders",
-    requestHeaders:
-      cookies.length > 0
-        ? [
-            {
-              header: "cookie",
-              operation: "set",
-              value: serializeCookieHeader(cookies),
-            },
-          ]
-        : [{ header: "cookie", operation: "remove" }],
-    responseHeaders: stripSetCookie(),
-  });
 
-  type Fragment = Partial<DnrRule["condition"]>;
-  /** How many rules one matcher fragment turns into for these cookies (see the SameSite split). */
-  const splitSize = (cookies: Cookie[]): number => {
-    const none = cookies.filter((c) => c.sameSite === "none").length;
-    if (none === cookies.length) return 1;
-    const lax = cookies.filter((c) => c.sameSite !== "strict").length;
-    return lax === none ? 2 : 3;
-  };
-  /** Cookie rules for one matcher fragment, split by SameSite (see the file comment). */
-  const emitCookieRules = (
-    fragment: Fragment,
-    priority: number,
-    cookies: Cookie[],
-  ): void => {
-    const none = cookies.filter((c) => c.sameSite === "none");
-    if (none.length === cookies.length) {
-      emit({
-        priority,
-        condition: { ...base(), ...fragment },
-        action: cookieAction(cookies),
+  for (const group of input.groups) {
+    const { tabIds, topLevelSite = null } = group;
+    const base = () => ({
+      tabIds: [...tabIds],
+      resourceTypes: [...ALL_RESOURCE_TYPES],
+    });
+    const stripSetCookie = (): DnrHeaderOperation[] => [
+      { header: "set-cookie", operation: "remove" },
+    ];
+    const cookieAction = (cookies: Cookie[]): DnrRule["action"] => ({
+      type: "modifyHeaders",
+      requestHeaders:
+        cookies.length > 0
+          ? [
+              {
+                header: "cookie",
+                operation: "set",
+                value: serializeCookieHeader(cookies),
+              },
+            ]
+          : [{ header: "cookie", operation: "remove" }],
+      responseHeaders: stripSetCookie(),
+    });
+
+    type Fragment = Partial<DnrRule["condition"]>;
+    /** Cookie rules for one matcher fragment, split by SameSite (see the file comment). */
+    const cookieRules = (
+      fragment: Fragment,
+      priority: number,
+      cookies: Cookie[],
+    ): RuleSpec[] => {
+      const none = cookies.filter((c) => c.sameSite === "none");
+      if (none.length === cookies.length) {
+        return [
+          {
+            priority,
+            condition: { ...base(), ...fragment },
+            action: cookieAction(cookies),
+          },
+        ];
+      }
+      const out: RuleSpec[] = [
+        {
+          priority,
+          condition: { ...base(), ...fragment, domainType: "firstParty" },
+          action: cookieAction(cookies),
+        },
+        {
+          priority,
+          condition: { ...base(), ...fragment, domainType: "thirdParty" },
+          action: cookieAction(none),
+        },
+      ];
+      const lax = cookies.filter((c) => c.sameSite !== "strict");
+      if (lax.length === none.length) return out; // the thirdParty rule already says it
+      out.push({
+        priority: priority + CROSS_SITE_NAVIGATION_STEP,
+        condition: {
+          ...base(),
+          ...fragment,
+          domainType: "thirdParty",
+          resourceTypes: ["main_frame"],
+          requestMethods: ["get"],
+        },
+        action: cookieAction(lax),
       });
-      return;
-    }
-    emit({
-      priority,
-      condition: { ...base(), ...fragment, domainType: "firstParty" },
-      action: cookieAction(cookies),
-    });
-    emit({
-      priority,
-      condition: { ...base(), ...fragment, domainType: "thirdParty" },
-      action: cookieAction(none),
-    });
-    const lax = cookies.filter((c) => c.sameSite !== "strict");
-    if (lax.length === none.length) return; // the thirdParty rule already says it
-    emit({
-      priority: priority + CROSS_SITE_NAVIGATION_STEP,
-      condition: {
-        ...base(),
-        ...fragment,
-        domainType: "thirdParty",
-        resourceTypes: ["main_frame"],
-        requestMethods: ["get"],
-      },
-      action: cookieAction(lax),
-    });
-  };
-  const emitExact = (
-    host: string,
-    schemes: SchemeSet,
-    priority: number,
-    cookies: Cookie[],
-  ): void => {
-    const needed = splitSize(cookies);
-    if (regexLeft >= needed) {
-      regexLeft -= needed;
-      emitCookieRules(
+      return out;
+    };
+    const emitCookieRules = (
+      fragment: Fragment,
+      priority: number,
+      cookies: Cookie[],
+    ): void => cookieRules(fragment, priority, cookies).forEach(add);
+    const emitExact = (
+      host: string,
+      schemes: SchemeSet,
+      priority: number,
+      cookies: Cookie[],
+    ): void => {
+      const regexRules = cookieRules(
         { requestDomains: [host], regexFilter: exactHostRegex(host, schemes) },
         priority,
         cookies,
       );
-      return;
+      // Rules another group already emitted merge into those and cost no budget.
+      const needed = regexRules.filter(isNew).length;
+      if (regex.left >= needed) {
+        regex.left -= needed;
+        regexRules.forEach(add);
+        return;
+      }
+      regex.left = 0; // keep the fallback decision stable for the rest of this compile
+      for (const urlFilter of exactHostUrlFilters(host, schemes))
+        emitCookieRules(
+          { requestDomains: [host], urlFilter },
+          priority,
+          cookies,
+        );
+    };
+
+    add({
+      priority: CATCH_ALL_PRIORITY,
+      condition: base(),
+      action: {
+        type: "modifyHeaders",
+        requestHeaders: [{ header: "cookie", operation: "remove" }],
+        responseHeaders: stripSetCookie(),
+      },
+    });
+
+    interface HostPlan {
+      host: string;
+      /** Everything a secure request to exactly `host` carries. */
+      full: Cookie[];
+      /** Same, over plain http. */
+      plain: Cookie[];
+      /** Domain cookies only: what unknown subdomains of `host` inherit. */
+      wide: Cookie[];
+      widePlain: Cookie[];
+      hasHostOnly: boolean;
     }
-    regexLeft = 0; // keep the fallback decision stable for the rest of this compile
-    for (const urlFilter of exactHostUrlFilters(host, schemes))
-      emitCookieRules({ requestDomains: [host], urlFilter }, priority, cookies);
-  };
+    const plans: HostPlan[] = [];
+    for (const host of jar.hosts(now)) {
+      const full = jar.cookiesForHost(host, {
+        secure: true,
+        topLevelSite,
+        now,
+      });
+      if (full.length === 0) continue; // e.g. only partitioned cookies of another site
+      const plain = jar.cookiesForHost(host, {
+        secure: false,
+        topLevelSite,
+        now,
+      });
+      plans.push({
+        host,
+        full,
+        plain,
+        wide: full.filter((c) => !c.hostOnly),
+        widePlain: plain.filter((c) => !c.hostOnly),
+        hasHostOnly: full.some((c) => c.hostOnly),
+      });
+    }
 
-  emit({
-    priority: CATCH_ALL_PRIORITY,
-    condition: base(),
-    action: {
-      type: "modifyHeaders",
-      requestHeaders: [{ header: "cookie", operation: "remove" }],
-      responseHeaders: stripSetCookie(),
-    },
-  });
+    for (const { host, full, wide, hasHostOnly } of plans) {
+      // With no Domain cookie matching `host`, no ancestor has one either, so subdomains correctly fall through to
+      // the catch-all (or to an ancestor rule that is equally empty of matching cookies).
+      if (wide.length > 0)
+        emitCookieRules(
+          { requestDomains: [host] },
+          hostRulePriority(host),
+          wide,
+        );
+      if (hasHostOnly)
+        emitExact(host, "any", exactHostRulePriority(host), full);
+    }
 
-  interface HostPlan {
-    host: string;
-    /** Everything a secure request to exactly `host` carries. */
-    full: Cookie[];
-    /** Same, over plain http. */
-    plain: Cookie[];
-    /** Domain cookies only: what unknown subdomains of `host` inherit. */
-    wide: Cookie[];
-    widePlain: Cookie[];
-    hasHostOnly: boolean;
-  }
-  const plans: HostPlan[] = [];
-  for (const host of jar.hosts(now)) {
-    const full = jar.cookiesForHost(host, { secure: true, topLevelSite, now });
-    if (full.length === 0) continue; // e.g. only partitioned cookies of another site
-    const plain = jar.cookiesForHost(host, {
-      secure: false,
+    // A host needs its own http rules if it holds Secure cookies, or if an ancestor does (the ancestor's higher-band
+    // http rule would otherwise also win for this host and hide this host's own cookies).
+    const insecureHosts: string[] = [];
+    const byDepth = [...plans].sort(
+      (a, b) =>
+        labelCount(a.host) - labelCount(b.host) || (a.host < b.host ? -1 : 1),
+    );
+    for (const { host, full, plain } of byDepth) {
+      if (isPotentiallyTrustworthyHost(host)) continue;
+      const differs = plain.length !== full.length;
+      if (
+        differs ||
+        insecureHosts.some((parent) => isSameOrSubdomain(host, parent))
+      )
+        insecureHosts.push(host);
+    }
+    for (const host of insecureHosts) {
+      const plan = plans.find((p) => p.host === host)!;
+      // `emitCookieRules` covers every request category (one rule without domainType, or the split), also with an
+      // empty list: a missing http rule would let the secure-band rule (Secure cookies included) answer plain http.
+      if (plan.wide.length > 0)
+        emitCookieRules(
+          { requestDomains: [host], urlFilter: "|http://" },
+          insecureHostRulePriority(host),
+          plan.widePlain,
+        );
+      if (plan.hasHostOnly)
+        emitExact(
+          host,
+          "insecure",
+          insecureExactHostRulePriority(host),
+          plan.plain,
+        );
+    }
+
+    // Beacon: a generic "ask again" answer, and one answer per site with that site's page key and cookie snapshot.
+    const named = containerName === undefined ? {} : { n: containerName };
+    add({
+      priority: BEACON_PRIORITY,
+      condition: { ...base(), urlFilter: BEACON_URL_FILTER },
+      action: {
+        type: "redirect",
+        redirect: { url: beaconDataUrl({ p: 1, ...named }) },
+      },
+    });
+    for (const [site, payload] of buildSiteBeaconPayloads(
+      jar,
       topLevelSite,
       now,
-    });
-    plans.push({
-      host,
-      full,
-      plain,
-      wide: full.filter((c) => !c.hostOnly),
-      widePlain: plain.filter((c) => !c.hostOnly),
-      hasHostOnly: full.some((c) => c.hostOnly),
-    });
+      { pageKeyOf, containerName, frameSites: group.frameSites },
+    )) {
+      add({
+        priority: beaconSitePriority(site),
+        condition: {
+          ...base(),
+          urlFilter: BEACON_URL_FILTER,
+          initiatorDomains: [site],
+        },
+        action: { type: "redirect", redirect: { url: beaconDataUrl(payload) } },
+      });
+    }
   }
 
-  for (const { host, full, wide, hasHostOnly } of plans) {
-    // With no Domain cookie matching `host`, no ancestor has one either, so subdomains correctly fall through to
-    // the catch-all (or to an ancestor rule that is equally empty of matching cookies).
-    if (wide.length > 0)
-      emitCookieRules({ requestDomains: [host] }, hostRulePriority(host), wide);
-    if (hasHostOnly) emitExact(host, "any", exactHostRulePriority(host), full);
-  }
-
-  // A host needs its own http rules if it holds Secure cookies, or if an ancestor does (the ancestor's higher-band
-  // http rule would otherwise also win for this host and hide this host's own cookies).
-  const insecureHosts: string[] = [];
-  const byDepth = [...plans].sort(
-    (a, b) =>
-      labelCount(a.host) - labelCount(b.host) || (a.host < b.host ? -1 : 1),
-  );
-  for (const { host, full, plain } of byDepth) {
-    if (isPotentiallyTrustworthyHost(host)) continue;
-    const differs = plain.length !== full.length;
-    if (
-      differs ||
-      insecureHosts.some((parent) => isSameOrSubdomain(host, parent))
-    )
-      insecureHosts.push(host);
-  }
-  for (const host of insecureHosts) {
-    const plan = plans.find((p) => p.host === host)!;
-    // `emitCookieRules` covers every request category (one rule without domainType, or the split), also with an empty
-    // list: a missing http rule would let the secure-band rule (Secure cookies included) answer plain http.
-    if (plan.wide.length > 0)
-      emitCookieRules(
-        { requestDomains: [host], urlFilter: "|http://" },
-        insecureHostRulePriority(host),
-        plan.widePlain,
-      );
-    if (plan.hasHostOnly)
-      emitExact(
-        host,
-        "insecure",
-        insecureExactHostRulePriority(host),
-        plan.plain,
-      );
-  }
-
-  // Beacon: a generic "ask again" answer, and one answer per site with that site's page key and cookie snapshot.
-  const named = containerName === undefined ? {} : { n: containerName };
-  emit({
-    priority: BEACON_PRIORITY,
-    condition: { ...base(), urlFilter: BEACON_URL_FILTER },
-    action: {
-      type: "redirect",
-      redirect: { url: beaconDataUrl({ p: 1, ...named }) },
-    },
-  });
-  for (const [site, payload] of buildSiteBeaconPayloads(
-    jar,
-    topLevelSite,
-    now,
-    { pageKeyOf, containerName, frameSites: input.frameSites },
-  )) {
-    emit({
-      priority: beaconSitePriority(site),
-      condition: {
-        ...base(),
-        urlFilter: BEACON_URL_FILTER,
-        initiatorDomains: [site],
-      },
-      action: { type: "redirect", redirect: { url: beaconDataUrl(payload) } },
+  const addRules: DnrRule[] = [];
+  let regexRuleCount = 0;
+  for (const { spec, tabs } of specs.values()) {
+    if (spec.condition.regexFilter !== undefined) regexRuleCount++;
+    addRules.push({
+      id: allocator.next(),
+      ...spec,
+      condition: { ...spec.condition, tabIds: [...tabs] },
     });
   }
-
   return { addRules, ruleIds: addRules.map((rule) => rule.id), regexRuleCount };
 }
 
@@ -528,11 +608,13 @@ export function buildSiteBeaconPayloads(
         ? { c: options.pageKeyOf(site) }
         : { c: options.pageKeyOf(site), n: options.containerName };
     const tooBig = JSON.stringify(cookies).length > BEACON_COOKIE_BYTE_LIMIT;
+    // The group's site only when the snapshot depends on it (partitioned cookies in `k`); otherwise the shim's own
+    // estimate stands in (as for every container without partitioned cookies), and the answer is the same for all
+    // groups, so their beacon rules merge (`compileContainerRules`).
+    const s = cookies.some((c) => c.partitioned) ? topLevelSite : null;
     result.set(
       site,
-      tooBig
-        ? { ...identity, o: 1 }
-        : { ...identity, k: cookies, s: topLevelSite },
+      tooBig ? { ...identity, o: 1 } : { ...identity, k: cookies, s },
     );
   }
   return result;
