@@ -30,7 +30,7 @@ Measured in Playwright's bundled Chromium 156 (Chrome for Testing, `channel: 'ch
 - **Host-only cookies are exact-host only.** Per cookie host `h` the compiler now emits a WIDE rule (`requestDomains: [h]`, Domain cookies only, which is right for subdomains) and, when `h` holds host-only cookies, an EXACT rule anchored on the host with `regexFilter` `^(?:https?|wss?)://h(?::[0-9]+)?/` (plus `requestDomains: [h]` for indexing). Fixes the Stage A leak of `a.com` host-only cookies (HttpOnly sessions included) to `x.a.com`. A substring/`*` urlFilter was rejected: `x.a.com/?u=https://a.com/` would match it.
 - **Regex budget.** Chrome allows 1000 regex rules; the engine gives the compiler a shared budget of 900. Past it, EXACT rules fall back to one left-anchored `urlFilter` per scheme (`|https://h^`; `^` never matches `.`). Unit tests check both forms produce identical headers.
 - **Priority bands** changed to fit the pair: WIDE `10 + 2*labels`, EXACT `11 + 2*labels`, http-only variants `200 + 2*labels` / `201 + 2*labels` (EXACT http also covers `ws://`), generic beacon 1000, per-site beacons `1000 + labels`.
-- **Rules per container, not per tab.** Every rule carries `tabIds: [all tabs of the container]`, so the rule count grows with containers and hosts, not tabs. Tabs are split into groups by top-level site only while the jar holds partitioned (CHIPS) cookies.
+- **Rules per container, not per tab.** Every rule carries `tabIds: [all tabs of the container]`, so the rule count grows with containers and hosts, not tabs. Tabs are split into groups by top-level site only while the jar holds partitioned (CHIPS) cookies (since 2026-10-26 the groups' identical rules are merged: "Session rules scale with containers").
 - **The beacon is readable by the page.** Measured: a page's own `fetch('http://ctr.localhost/whoami')` (CORS or no-cors) and sync XHR receive the DNR `data:` redirect body. Stage A's whole-jar snapshot would have exposed every non-HttpOnly cookie of the container to any frame. Now the generic per-container rule answers only `{c, n}` (ID, name); the `document.cookie` snapshot comes from one rule per registrable domain with `initiatorDomains: [site]` (verified: the initiator of an ISOLATED-world XHR is the page origin). Residual exposure is listed in limits.md.
 - `compileManagedBeaconRule` builds the global `{m:1}` answer (see SW policy). A tiny DNR matching simulator (`src/core/dnr/dnr-simulator.ts`, test-only) lets compiler tests assert the Cookie header a URL ends up with.
 
@@ -1981,3 +1981,48 @@ Three additions on top of the tab leases (bridge 0.3.0, together with the leases
   `agentWindow` now defaults to off; the switch stays (Settings, For AI agents) for whoever wants a separate window.
 - **Existing installs.** No migration: settings store an `explicit` list, and a key never set follows the current default, so
   installs that never touched the switch go to off on update. Whoever set it on 0.1.9 keeps their choice.
+
+## Session rules scale with containers, not with the sites their tabs are on (2026-10-26)
+
+- **Incident** (owner's Chrome, business profile, 16 container tabs in 6 containers on threads.com, supabase, vercel,
+  northflank; read with the bridge's `extension_log`):
+  `warn session rules at 4965, above the soft limit of 4000`, then
+  `error refusing to install 5063 session rules (Chrome's limit is 5000)` and
+  `error group guard: tab 1174928102 could not be reopened in 8ike4ctlwf (created in the group); ... "could not install the
+  container rules (declarativeNetRequest limit?)"`. No new container tab could be isolated: a duplicate stayed a plain,
+  logged-out tab in the container's group.
+- **Measured first** (`src/core/dnr/rule-budget.test.ts`, a probe over synthetic jars shaped like those sites: threads with
+  its instagram and facebook cookies, the dashboards and the widgets they embed; ~54 cookie hosts). One container tab:
+  556 rules. Breakdown: host rules dominate, up to 12 per cookie host (WIDE and EXACT, each split by SameSite into
+  first-party / third-party / cross-site navigation, and the same again in the plain-http band for hosts with Secure
+  cookies: 498 rules), per-site beacon answers 18, catch-all and generic beacon 1 each. A second tab on the **same** site:
+  +0 (rules already carried `tabIds: [all tabs]`). A second tab on **another** site: +556. The cause: while a jar holds
+  any partitioned (CHIPS) cookie (an embedded Stripe, Intercom or Cloudflare widget is enough), tabs were grouped by
+  top-level site and **every group got a full copy of the container's rules**; a tab that is still loading
+  (top-level site unknown) was a group of its own too. So the count grew with tabs × cookie hosts, as the log showed.
+  The incident's mix in the probe: 8896 rules before.
+- **Design.** `compileContainerRules` compiles all groups of a container in one pass and merges rules that are identical
+  apart from `tabIds` (same priority, same condition, same action) into one rule with the union of the groups' tabs.
+  `tabIds` is an "any of" condition, so the set of rules that matches a given tab is exactly the set its group would get on
+  its own: same priorities, same actions, nothing from another group (unit test compares, per tab, the rule shapes and
+  the simulated `Cookie` header of the merged and the separate compiles). Only rules that really depend on the top-level
+  site stay per group: hosts whose cookie list includes a partitioned cookie of that site, and their beacon answers. A
+  beacon answer now carries the group's site (`s`) only when its snapshot holds partitioned cookies; otherwise the shim's
+  own estimate stands in, as it always did for jars without partitioned cookies, and the answer merges. Regex budget is
+  spent once per merged rule. Different containers never share a rule: each compiles separately with its own tabs.
+- **Not done: stable rule IDs per container, kind and domain with in-place `tabIds` edits.** The manager already swaps a
+  container's whole rule set in one `updateSessionRules` call (remove old IDs + add new rules), so a tab joining or
+  leaving is never without rules or under another container's rules in between; a tab joining changes the rules'
+  `tabIds`, not their number (unit test). Stable IDs would save nothing on the limit.
+- **Numbers after.** Probe: the incident's 16 tabs in 6 containers 3426 rules (was 8896); 30 tabs in 3 containers on 4
+  sites 1776 (3 single-tab containers: 1668). Each extra top-level site of a container now costs only its partitioned
+  variants (~9 rules here) instead of a full copy.
+- **Budget guard.** The soft-limit warning stays. `SessionRuleManager.stats()` now also reports the limits and `refusedAt`:
+  when a batch was last refused for the rule limit (ours, or Chrome's own refusal), cleared once a batch installs with the
+  total at or under the soft limit. The popup shows "Too many container cookie rules (N of 5000): close some container
+  tabs" (warning above the soft limit; error, plus "a tab could not be put in its container", after a refusal), so a tab
+  left plain in a container group is no longer silent. The group guard still logs and retries on its next sweep.
+- **Tests.** Unit: probe and merge (`rule-budget.test.ts`), join/leave and refusal stats (`session-rules.test.ts`). E2e:
+  `rule-budget.spec.ts` opens 30 container tabs in 3 containers on 4 cookie-heavy stand sites (`/heavy`, with widgets that
+  set partitioned cookies): one catch-all per container covering all its tabs (the old compile installs 12), no new rules
+  for more tabs on the same sites, every tab sends only its container's cookies.

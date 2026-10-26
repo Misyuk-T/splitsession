@@ -3,7 +3,7 @@
 A short tour of the isolation model. The reasoning behind each choice is in [decisions.md](decisions.md); what is and is not isolated is in [limits.md](limits.md).
 
 1. A container belongs to a **tab** (`tabId -> container`), not to a site, so everything the tab requests, on any host, is in its container.
-2. For a container's tabs, `declarativeNetRequest` session rules replace the `Cookie` request header with the container's jar and strip `Set-Cookie` from responses. The profile's real cookies are neither sent nor changed. The rules follow `SameSite`.
+2. For a container's tabs, `declarativeNetRequest` session rules replace the `Cookie` request header with the container's jar and strip `Set-Cookie` from responses. The profile's real cookies are neither sent nor changed. The rules follow `SameSite`. Each rule lists every tab of the container it applies to (`tabIds`), so the rule count grows with containers and the hosts in their jars, not with tabs; only rules for partitioned (CHIPS) cookies are repeated per top-level site.
 3. `Set-Cookie` headers are read in `webRequest` before the rules remove them, and stored in the container's jar.
 4. A script that runs before the page's own scripts learns its container synchronously and namespaces cookie, storage, IndexedDB, Cache Storage and `BroadcastChannel` access per container.
 5. Pages that a container tab opens (`window.open`, `target=_blank`) are created blank, put in the same container, and only then navigated, so even the first request of an OAuth popup is isolated.
