@@ -1,5 +1,6 @@
 import type { Container, ContainerColor, ContainerId, Cookie } from "../core";
 import type { ContentScriptStatus } from "../engine/content-scripts";
+import type { RuleStats } from "../engine/dnr/session-rules";
 import type { StrictModeStatus } from "../engine/strict-mode";
 import type { ContainerInfo, Facet, OpenOptions } from "./facet";
 import type { RestoreStatus } from "./restore";
@@ -71,7 +72,8 @@ export interface FacetApi {
   /** Tests: applies the wanted registration now, without the grace period after the last container tab. */
   flushContentScripts(): Promise<ContentScriptStatus>;
   getLog(): Promise<unknown[]>;
-  stats(): Promise<{ rules: number; regexRules: number; keys: number }>;
+  /** Session rule count and whether a batch was refused for Chrome's limit (the popup's budget notice). */
+  stats(): Promise<RuleStats>;
 }
 
 export const API_METHODS = [

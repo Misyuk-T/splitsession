@@ -53,7 +53,14 @@ const manual = () => {
 };
 
 /** Compiler driven by a mutable map key -> tab IDs, one cookie per key so rules are recognisable. */
-function setup(options: { regexBudget?: number; hardLimit?: number } = {}) {
+function setup(
+  options: {
+    regexBudget?: number;
+    hardLimit?: number;
+    softLimit?: number;
+    now?: () => number;
+  } = {},
+) {
   const dnr = new FakeDnr();
   const tabs = new Map<string, number[]>();
   const compile: KeyCompiler = (key, allocator, regexBudget) => {
@@ -243,6 +250,40 @@ describe("SessionRuleManager", () => {
     expect(await p).toBe(false);
     expect(manager.isInstalled("b")).toBe(false);
     expect(tabsCovered(dnr)).toEqual(new Set([1]));
+  });
+
+  it("reports a refusal for the limit in stats until the rules are back under the soft limit", async () => {
+    const { dnr, tabs, manager, timer } = setup({
+      hardLimit: 5,
+      softLimit: 4,
+      now: () => 1234,
+    });
+    const flush = async (...keys: string[]) => {
+      const p = manager.invalidate(...keys);
+      timer.flush();
+      return p;
+    };
+    tabs.set("a", [1]);
+    expect(await flush("a")).toBe(true);
+    expect(manager.stats()).toMatchObject({
+      rules: 4,
+      softLimit: 4,
+      hardLimit: 5,
+      refusedAt: null,
+    });
+    tabs.set("b", [2]);
+    expect(await flush("b")).toBe(false);
+    expect(manager.stats().refusedAt).toBe(1234);
+    // Another failure that is not about the limit leaves the flag as it is; a successful batch under the soft limit clears it.
+    tabs.delete("b");
+    tabs.set("a", [1, 3]);
+    expect(await flush("a", "b")).toBe(true);
+    expect(manager.stats().refusedAt).toBeNull();
+    // Chrome's own refusal counts too.
+    dnr.limit = 1;
+    tabs.set("a", [1, 3, 4]);
+    expect(await flush("a")).toBe(false);
+    expect(manager.stats().refusedAt).toBe(1234);
   });
 
   it("shares one regex budget across keys", async () => {
