@@ -66,8 +66,6 @@ const RETRY_MS = 250;
 const MAX_ATTEMPTS = 80;
 const RATE_WINDOW_MS = 10_000;
 const RATE_LIMIT = 10;
-/** A reopen that failed is tried again after these pauses (then given up until the next sweep). */
-export const REOPEN_RETRY_MS = [500, 1_500, 4_000];
 
 const dragRefusal = (error: unknown): boolean =>
   /cannot be edited|dragging/i.test(String((error as Error)?.message ?? error));
@@ -135,12 +133,6 @@ export class GroupGuard {
   private limitedAt = 0;
   private sweepTimer: ReturnType<typeof setTimeout> | null = null;
   private limitTimer: ReturnType<typeof setTimeout> | null = null;
-  /** Per tab: the pending retry of a failed or rate-limited reopen, and how many failure retries were used. */
-  private readonly retries = new Map<
-    number,
-    { used: number; timer: ReturnType<typeof setTimeout> | null }
-  >();
-
   /**
    * Tabs SplitSession created that Chrome put into another container's group and that are not yet back where they belong
    * (the group call kept being refused during a long drag). `ownTab` forgets a tab a few seconds after its creation; this
@@ -186,34 +178,6 @@ export class GroupGuard {
       this.sweepTimer = null;
       void this.sweep(reason);
     }, SWEEP_DEBOUNCE_MS);
-  }
-
-  /**
-   * A quiet (echo-filtered) title write hid the group's update from the sweep: when a tab of the group is not in its
-   * container, one sweep is scheduled (without postponing one already waiting, so a blinking mark cannot starve it).
-   */
-  async sweepIfPlainIn(groupId: number): Promise<void> {
-    if (this.sweepTimer) return;
-    try {
-      const target = await this.deps.groupContainer(groupId);
-      if (target === null) return;
-      const tabs = await this.deps.groupedTabs();
-      const plain = tabs.some(
-        (t) =>
-          t.groupId === groupId &&
-          t.id !== undefined &&
-          this.deps.containerOf(t.id) !== target &&
-          !this.running.has(t.id),
-      );
-      if (plain && !this.sweepTimer)
-        this.scheduleSweep("plain tab in a group after a quiet mark write");
-    } catch (error) {
-      this.deps.log(
-        "warn",
-        "group guard: could not look for plain tabs",
-        String(error),
-      );
-    }
   }
 
   /**
@@ -324,13 +288,11 @@ export class GroupGuard {
     const tab = await this.deps.getTab(tabId);
     if (!tab || tab.groupId < 0) {
       this.pendingOwn.delete(tabId);
-      this.cancelRetry(tabId);
       return "done"; // closed, or out of any group (that keeps its container)
     }
     const target = await this.deps.groupContainer(tab.groupId);
     if (target === null) {
       this.pendingOwn.delete(tabId);
-      this.cancelRetry(tabId);
       return "done";
     }
     const asked = await this.deps.ownTab(tabId);
@@ -365,7 +327,6 @@ export class GroupGuard {
     }
     if (from === target) {
       this.pendingOwn.delete(tabId);
-      this.cancelRetry(tabId);
       return "done";
     }
     if (own === "own") {
@@ -394,7 +355,6 @@ export class GroupGuard {
     ) {
       // Nothing is loaded in it: assigning it where it stands is free and not counted toward the limit.
       await this.deps.assignInPlace(tabId, target);
-      this.cancelRetry(tabId);
       this.record(tabId, from, target, reason, "assigned in place");
       return "done";
     }
@@ -408,7 +368,6 @@ export class GroupGuard {
           );
         }
         this.sweepAfterWindow();
-        this.scheduleRetry(tabId, "limit");
         return "done";
       }
       state.counted = true;
@@ -416,7 +375,6 @@ export class GroupGuard {
     try {
       const fresh = await this.deps.move(tabId, target, address);
       this.record(tabId, from, target, reason, "reopened", fresh);
-      this.cancelRetry(tabId);
       this.deps.moved(fresh, target, this.deps.containerName(target) ?? "");
       return "done";
     } catch (error) {
@@ -426,79 +384,8 @@ export class GroupGuard {
         `group guard: tab ${tabId} could not be reopened in ${target} (${reason}); the next sweep tries again`,
         String(error),
       );
-      this.scheduleRetry(tabId, "failure");
       return "done";
     }
-  }
-
-  private cancelRetry(tabId: number): void {
-    const entry = this.retries.get(tabId);
-    if (!entry) return;
-    if (entry.timer) clearTimeout(entry.timer);
-    this.retries.delete(tabId);
-  }
-
-  /**
-   * Another try for a tab that is still in a container group and not in its container: after a failed reopen (backoff,
-   * `REOPEN_RETRY_MS`, then given up), or once the reopen limit's window has freed (no try used). The retry looks at the
-   * live tab first and is dropped when it closed, left the group, or got assigned.
-   */
-  private scheduleRetry(tabId: number, kind: "failure" | "limit"): void {
-    const entry = this.retries.get(tabId) ?? { used: 0, timer: null };
-    if (entry.timer) return;
-    let wait: number;
-    if (kind === "limit") {
-      const oldest = this.recent[0] ?? this.now();
-      wait = Math.max(0, oldest + RATE_WINDOW_MS - this.now()) + 100;
-    } else {
-      if (entry.used >= REOPEN_RETRY_MS.length) {
-        this.retries.delete(tabId);
-        this.deps.log(
-          "error",
-          `group guard: tab ${tabId} gave up after ${REOPEN_RETRY_MS.length} retries of the reopen; the next sweep tries again`,
-        );
-        return;
-      }
-      wait = REOPEN_RETRY_MS[entry.used]!;
-      entry.used++;
-    }
-    const number = kind === "failure" ? entry.used : 0;
-    this.retries.set(tabId, entry);
-    entry.timer = setTimeout(() => {
-      entry.timer = null;
-      void this.retry(tabId, kind, number);
-    }, wait);
-  }
-
-  private async retry(
-    tabId: number,
-    kind: "failure" | "limit",
-    number: number,
-  ): Promise<void> {
-    try {
-      const tab = await this.deps.getTab(tabId);
-      const target =
-        tab && tab.groupId >= 0
-          ? await this.deps.groupContainer(tab.groupId)
-          : null;
-      if (!tab || target === null || this.deps.containerOf(tabId) === target) {
-        this.cancelRetry(tabId);
-        return;
-      }
-    } catch {
-      // look again through the check below
-    }
-    this.deps.log(
-      "info",
-      kind === "failure"
-        ? `group guard: tab ${tabId} reopen retry ${number} of ${REOPEN_RETRY_MS.length}`
-        : `group guard: tab ${tabId} retried after the reopen limit's window`,
-    );
-    await this.check(
-      tabId,
-      kind === "failure" ? "reopen retry" : "reopen limit lifted",
-      0,
-    );
   }
 
   /** The tab's split view and the IDs of its tabs (the tab itself included), or null when it is in none. */
