@@ -54,6 +54,16 @@ export function urlFilterToRegExp(filter: string): RegExp {
   return new RegExp(source + tail, "i");
 }
 
+const compiled = new Map<string, RegExp>();
+const cached = (key: string, make: () => RegExp): RegExp => {
+  let re = compiled.get(key);
+  if (!re) {
+    re = make();
+    compiled.set(key, re);
+  }
+  return re;
+};
+
 export function ruleMatches(rule: DnrRule, req: SimulatedRequest): boolean {
   const c = rule.condition;
   const type = req.type ?? "main_frame";
@@ -77,10 +87,17 @@ export function ruleMatches(rule: DnrRule, req: SimulatedRequest): boolean {
     return false;
   if (
     c.urlFilter !== undefined &&
-    !urlFilterToRegExp(c.urlFilter).test(req.url)
+    !cached(`u:${c.urlFilter}`, () => urlFilterToRegExp(c.urlFilter!)).test(
+      req.url,
+    )
   )
     return false;
-  if (c.regexFilter !== undefined && !new RegExp(c.regexFilter).test(req.url))
+  if (
+    c.regexFilter !== undefined &&
+    !cached(`r:${c.regexFilter}`, () => new RegExp(c.regexFilter!)).test(
+      req.url,
+    )
+  )
     return false;
   return true;
 }

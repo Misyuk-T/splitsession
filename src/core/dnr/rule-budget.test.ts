@@ -2,6 +2,7 @@
 import { describe, expect, it } from "vitest";
 
 import { CookieJar } from "../jar/cookie-jar";
+import * as legacy from "./legacy/rule-compiler-0.1.12";
 import { simulate } from "./dnr-simulator";
 import {
   breakdown,
@@ -14,6 +15,7 @@ import {
   compileGroupRules,
   createSequentialAllocator,
   type DnrRule,
+  REGEX_RULE_BUDGET,
   SESSION_RULE_SOFT_LIMIT,
   type TabGroupInput,
 } from "./rule-compiler";
@@ -113,6 +115,64 @@ describe("rule budget probe (heavy jars of the 2026-10-26 incident)", () => {
     console.log("16 tabs / 6 containers after:", sum(after), after);
     expect(sum(before)).toBeGreaterThan(5000);
     expect(sum(after)).toBeLessThan(SESSION_RULE_SOFT_LIMIT);
+  });
+
+  it("compression (0.1.13): heavy containers sharing the regex budget, before and after", () => {
+    /** Like the engine: containers installed one after another share what is left of the regex budget. */
+    const total = (n: number, compile: typeof compileContainerRules) => {
+      let regexLeft = REGEX_RULE_BUDGET;
+      let rules = 0;
+      const each: number[] = [];
+      for (let c = 0; c < n; c++) {
+        const out = compile(
+          {
+            containerId: `c${c}`,
+            jar: heavyJar(c),
+            now: FIXTURE_NOW,
+            pageKeyOf,
+            regexBudget: regexLeft,
+            groups: groupsOf([{ id: c + 1, site: https(SITES[c % 4]!) }]),
+          },
+          createSequentialAllocator(),
+        );
+        regexLeft = Math.max(0, regexLeft - out.regexRuleCount);
+        rules += out.addRules.length;
+        each.push(out.addRules.length);
+      }
+      return { rules, regexUsed: REGEX_RULE_BUDGET - regexLeft, each };
+    };
+    const legacyCompile =
+      legacy.compileContainerRules as unknown as typeof compileContainerRules;
+    const one = compileMerged(heavyJar(), [
+      { id: 1, site: https("threads.com") },
+    ]);
+    const oneNoRegex = compileMerged(
+      heavyJar(),
+      [{ id: 1, site: https("threads.com") }],
+      0,
+    );
+    console.log(
+      "one heavy container after:",
+      one.addRules.length,
+      "regex",
+      one.regexRuleCount,
+      breakdown(one.addRules),
+    );
+    console.log(
+      "one heavy container after, regex budget spent:",
+      oneNoRegex.addRules.length,
+      breakdown(oneNoRegex.addRules),
+    );
+    for (const n of [1, 6, 10]) {
+      const before = total(n, legacyCompile);
+      const after = total(n, compileContainerRules);
+      console.log(`${n} heavy containers: before`, before, "after", after);
+      expect(after.rules).toBeLessThan(before.rules);
+    }
+    // The owner's case: 10 heavy accounts fit under the soft limit.
+    expect(total(10, compileContainerRules).rules).toBeLessThan(
+      SESSION_RULE_SOFT_LIMIT,
+    );
   });
 
   it("30 tabs in 3 containers on 4 sites cost about what 3 single-tab containers cost", () => {

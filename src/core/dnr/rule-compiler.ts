@@ -45,8 +45,20 @@ import type { BeaconPayload, ContainerId, Cookie } from "../types";
  *     `page-key.ts`). A generic rule answers frames of sites without their own rule with `{p: 1}` ("in a container,
  *     ask again"): the content script then asks the background to add the site and polls.
  *
- * Path matching is ignored, as planned. EXACT rules use `regexFilter` while the caller's regex budget lasts
- * (Chrome allows 1000 regex rules); beyond it they fall back to one left-anchored `urlFilter` rule per scheme.
+ * Path matching is ignored, as planned.
+ *
+ * Compression (0.1.13; it changes no request's outcome, proven against the 0.1.12 compiler by
+ * `rule-compression.test.ts`): the rules above are first planned, then
+ *  - pruned: a rule (for EXACT rules: each scheme it answers) is dropped when every request it would decide gets the
+ *    same Cookie header from the rules below it. Typical: a subdomain's WIDE rules repeat its parent's (no Domain
+ *    cookie of its own), the plain-http EXACT rule answers http like the parent's http WIDE rule and is needed for
+ *    `ws://` only, a secure EXACT rule's http and ws variants are shadowed by the plain-http band. `pruneHostRules`
+ *    decides this on a finite model of requests (see there);
+ *  - materialised: an EXACT rule left with one scheme is one anchored `urlFilter` rule; with several it is one
+ *    `regexFilter` rule while the caller's regex budget lasts (Chrome allows 1000), spent first where it saves the most
+ *    rules, else one `urlFilter` rule per scheme;
+ *  - coalesced: WIDE rules identical apart from the host (same priority, SameSite category, scheme and Cookie header,
+ *    same tabs) become one rule with all those hosts in `requestDomains`.
  */
 
 /** Chrome allows 5000 session rules with modifyHeaders/redirect actions; we start warning at 4000. */
@@ -209,18 +221,28 @@ const urlHost = (host: string): string =>
 const escapeRegex = (s: string): string =>
   s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
-type SchemeSet = "any" | "insecure";
-const SCHEMES: Record<SchemeSet, readonly string[]> = {
-  any: ["http", "https", "ws", "wss"],
-  insecure: ["http", "ws"],
-};
+export type Scheme = "http" | "https" | "ws" | "wss";
+type SchemeSet = "any" | "insecure" | readonly Scheme[];
+const SCHEME_ORDER: readonly Scheme[] = ["http", "https", "ws", "wss"];
+const schemeList = (schemes: SchemeSet): readonly Scheme[] =>
+  schemes === "any"
+    ? SCHEME_ORDER
+    : schemes === "insecure"
+      ? ["http", "ws"]
+      : SCHEME_ORDER.filter((s) => schemes.includes(s));
 
 /** Regex that matches URLs whose host is exactly `host` (any port), for the given schemes. */
 export function exactHostRegex(
   host: string,
   schemes: SchemeSet = "any",
 ): string {
-  const scheme = schemes === "any" ? "(?:https?|wss?)" : "(?:http|ws)";
+  const list = schemeList(schemes);
+  const scheme =
+    list.length === 4
+      ? "(?:https?|wss?)"
+      : list.length === 1
+        ? list[0]!
+        : `(?:${list.join("|")})`;
   return `^${scheme}://${escapeRegex(urlHost(host))}(?::[0-9]+)?/`;
 }
 
@@ -229,7 +251,124 @@ export function exactHostUrlFilters(
   host: string,
   schemes: SchemeSet = "any",
 ): string[] {
-  return SCHEMES[schemes].map((scheme) => `|${scheme}://${urlHost(host)}^`);
+  return schemeList(schemes).map((scheme) => `|${scheme}://${urlHost(host)}^`);
+}
+
+/**
+ * Which requests of its matcher a cookie rule answers (see the file comment): every request (`all`, a host whose
+ * cookies are all `SameSite=None`), same-site ones, cross-site ones, or cross-site top-level GET navigations (one
+ * step higher than `thirdParty`, which also matches them).
+ */
+type Category = "all" | "firstParty" | "thirdParty" | "crossSiteNav";
+
+/** A cookie rule as planned, before pruning and materialisation. */
+export interface HostRule {
+  host: string;
+  /** EXACT: requests to `host` only; WIDE: to `host` and its subdomains (`requestDomains`). */
+  exact: boolean;
+  /** Schemes it answers: all four, or plain `http` (WIDE) / `http` + `ws` (EXACT) for the plain-http band. */
+  schemes: readonly Scheme[];
+  category: Category;
+  priority: number;
+  /** Already filtered for the category; empty = remove the Cookie header. */
+  cookies: Cookie[];
+}
+
+/** The request categories a rule's `Category` can tell apart. */
+const REQUEST_KINDS = ["sameSite", "crossSite", "crossSiteNav"] as const;
+type RequestKind = (typeof REQUEST_KINDS)[number];
+const covers = (category: Category, kind: RequestKind): boolean =>
+  category === "all" ||
+  (category === "firstParty"
+    ? kind === "sameSite"
+    : category === "thirdParty"
+      ? kind !== "sameSite"
+      : kind === "crossSiteNav");
+
+const parentHost = (host: string): string | null => {
+  const dot = host.indexOf(".");
+  return dot < 0 ? null : host.slice(dot + 1);
+};
+
+/**
+ * Which schemes each planned rule must still answer (same order as `rules`; empty = drop the rule) so that every
+ * request gets the Cookie header it gets from all of `rules` (above the catch-all, which removes it).
+ *
+ * The rules depend on a request only through: its host's relation to the rule hosts (equal, or a subdomain), its
+ * scheme, and its category (`RequestKind`). So a finite set of request classes stands for all requests: for every
+ * rule host `h`, "exactly `h`" and "a subdomain of `h` that is no rule host" (its rules: the WIDE ones of `h` and its
+ * ancestors), times four schemes, times three kinds. Hosts below no rule host only meet the catch-all.
+ *
+ * Rules are decided from the lowest priority up. A rule (scheme) decides exactly the classes in which it is the
+ * highest matching one, as long as every higher rule is still there; it is dropped when, in each of those classes, the
+ * highest rule kept below it gives the same Cookie header (none kept: the catch-all's "no Cookie"). Every step keeps
+ * every class's outcome, so the result does too. A WIDE rule cannot answer a subset of schemes without becoming
+ * several rules, so it is kept or dropped as a whole.
+ */
+export function pruneHostRules(rules: readonly HostRule[]): Scheme[][] {
+  const S = SCHEME_ORDER.length;
+  const variant = (rule: number, scheme: Scheme) =>
+    rule * S + SCHEME_ORDER.indexOf(scheme);
+  const header = rules.map((r) =>
+    r.cookies.length > 0 ? serializeCookieHeader(r.cookies) : null,
+  );
+  const byHost = new Map<string, number[]>();
+  rules.forEach((r, i) => {
+    const list = byHost.get(r.host);
+    if (list) list.push(i);
+    else byHost.set(r.host, [i]);
+  });
+
+  /** Per variant: in each class it decides, the variants below it, highest first. */
+  const decides = new Map<number, number[][]>();
+  for (const host of byHost.keys()) {
+    const wide: number[] = [];
+    for (let h: string | null = host; h !== null; h = parentHost(h))
+      for (const i of byHost.get(h) ?? []) if (!rules[i]!.exact) wide.push(i);
+    const exact = byHost.get(host)!.filter((i) => rules[i]!.exact);
+    for (const candidates of [[...wide, ...exact], wide])
+      for (const scheme of SCHEME_ORDER)
+        for (const kind of REQUEST_KINDS) {
+          const matching = candidates
+            .filter(
+              (i) =>
+                rules[i]!.schemes.includes(scheme) &&
+                covers(rules[i]!.category, kind),
+            )
+            .sort((a, b) => rules[b]!.priority - rules[a]!.priority)
+            .map((i) => variant(i, scheme));
+          if (matching.length === 0) continue;
+          const [top, ...below] = matching;
+          const list = decides.get(top!);
+          if (list) list.push(below);
+          else decides.set(top!, [below]);
+        }
+  }
+
+  const kept = new Set<number>();
+  const result: Scheme[][] = rules.map(() => []);
+  const order = rules
+    .map((_, i) => i)
+    .sort((a, b) => rules[a]!.priority - rules[b]!.priority);
+  for (const i of order) {
+    const rule = rules[i]!;
+    const needed = rule.schemes.filter((scheme) =>
+      (decides.get(variant(i, scheme)) ?? []).some((below) => {
+        const next = below.find((v) => kept.has(v));
+        const fallback =
+          next === undefined ? null : header[Math.floor(next / S)]!;
+        return fallback !== header[i];
+      }),
+    );
+    const keep = rule.exact
+      ? needed
+      : needed.length > 0
+        ? [...rule.schemes]
+        : [];
+    for (const scheme of keep) kept.add(variant(i, scheme));
+    result[i] = keep;
+  }
+  return result;
 }
 
 export function compileTabRules(
@@ -304,16 +443,24 @@ export function compileContainerRules(
       }
     }
   }
-  const regex = { left: input.regexBudget ?? Number.POSITIVE_INFINITY };
-
-  /** Rules in first-emission order; a rule emitted again by another group only adds its tabs. */
-  const specs = new Map<string, { spec: RuleSpec; tabs: Set<number> }>();
-  const isNew = (rule: RuleSpec): boolean => !specs.has(specKey(rule));
-  const add = (rule: RuleSpec): void => {
-    const key = specKey(rule);
+  /**
+   * Rules in first-emission order; a rule emitted again by another group only adds its tabs. EXACT cookie rules stay
+   * plans (`exact`) until every group is in and the regex budget is shared out.
+   */
+  const specs = new Map<
+    string,
+    { spec: RuleSpec; tabs: Set<number>; exact?: ExactPlan }
+  >();
+  const add = (rule: RuleSpec, exact?: ExactPlan): void => {
+    const key = exact ? exactKey(exact) : specKey(rule);
     const known = specs.get(key);
     if (known) for (const t of rule.condition.tabIds ?? []) known.tabs.add(t);
-    else specs.set(key, { spec: rule, tabs: new Set(rule.condition.tabIds) });
+    else
+      specs.set(key, {
+        spec: rule,
+        tabs: new Set(rule.condition.tabIds),
+        exact,
+      });
   };
 
   for (const group of input.groups) {
@@ -322,98 +469,32 @@ export function compileContainerRules(
       tabIds: [...tabIds],
       resourceTypes: [...ALL_RESOURCE_TYPES],
     });
-    const stripSetCookie = (): DnrHeaderOperation[] => [
-      { header: "set-cookie", operation: "remove" },
-    ];
-    const cookieAction = (cookies: Cookie[]): DnrRule["action"] => ({
-      type: "modifyHeaders",
-      requestHeaders:
-        cookies.length > 0
-          ? [
-              {
-                header: "cookie",
-                operation: "set",
-                value: serializeCookieHeader(cookies),
-              },
-            ]
-          : [{ header: "cookie", operation: "remove" }],
-      responseHeaders: stripSetCookie(),
-    });
 
-    type Fragment = Partial<DnrRule["condition"]>;
-    /** Cookie rules for one matcher fragment, split by SameSite (see the file comment). */
+    /** Cookie rules for one matcher, split by SameSite (see the file comment). */
     const cookieRules = (
-      fragment: Fragment,
+      host: string,
+      exact: boolean,
+      schemes: readonly Scheme[],
       priority: number,
       cookies: Cookie[],
-    ): RuleSpec[] => {
+    ): HostRule[] => {
+      const rule = (category: Category, list: Cookie[], p = priority) => ({
+        host,
+        exact,
+        schemes,
+        category,
+        priority: p,
+        cookies: list,
+      });
       const none = cookies.filter((c) => c.sameSite === "none");
-      if (none.length === cookies.length) {
-        return [
-          {
-            priority,
-            condition: { ...base(), ...fragment },
-            action: cookieAction(cookies),
-          },
-        ];
-      }
-      const out: RuleSpec[] = [
-        {
-          priority,
-          condition: { ...base(), ...fragment, domainType: "firstParty" },
-          action: cookieAction(cookies),
-        },
-        {
-          priority,
-          condition: { ...base(), ...fragment, domainType: "thirdParty" },
-          action: cookieAction(none),
-        },
-      ];
+      if (none.length === cookies.length) return [rule("all", cookies)];
+      const out = [rule("firstParty", cookies), rule("thirdParty", none)];
       const lax = cookies.filter((c) => c.sameSite !== "strict");
       if (lax.length === none.length) return out; // the thirdParty rule already says it
-      out.push({
-        priority: priority + CROSS_SITE_NAVIGATION_STEP,
-        condition: {
-          ...base(),
-          ...fragment,
-          domainType: "thirdParty",
-          resourceTypes: ["main_frame"],
-          requestMethods: ["get"],
-        },
-        action: cookieAction(lax),
-      });
-      return out;
-    };
-    const emitCookieRules = (
-      fragment: Fragment,
-      priority: number,
-      cookies: Cookie[],
-    ): void => cookieRules(fragment, priority, cookies).forEach(add);
-    const emitExact = (
-      host: string,
-      schemes: SchemeSet,
-      priority: number,
-      cookies: Cookie[],
-    ): void => {
-      const regexRules = cookieRules(
-        { requestDomains: [host], regexFilter: exactHostRegex(host, schemes) },
-        priority,
-        cookies,
+      out.push(
+        rule("crossSiteNav", lax, priority + CROSS_SITE_NAVIGATION_STEP),
       );
-      // Rules another group already emitted merge into those and cost no budget.
-      const needed = regexRules.filter(isNew).length;
-      if (regex.left >= needed) {
-        regex.left -= needed;
-        regexRules.forEach(add);
-        return;
-      }
-      regex.left = 0; // keep the fallback decision stable for the rest of this compile
-      for (const urlFilter of exactHostUrlFilters(host, schemes))
-        emitCookieRules(
-          { requestDomains: [host], urlFilter },
-          priority,
-          cookies,
-        );
+      return out;
     };
 
     add({
@@ -460,17 +541,30 @@ export function compileContainerRules(
       });
     }
 
+    const hostRules: HostRule[] = [];
     for (const { host, full, wide, hasHostOnly } of plans) {
       // With no Domain cookie matching `host`, no ancestor has one either, so subdomains correctly fall through to
       // the catch-all (or to an ancestor rule that is equally empty of matching cookies).
       if (wide.length > 0)
-        emitCookieRules(
-          { requestDomains: [host] },
-          hostRulePriority(host),
-          wide,
+        hostRules.push(
+          ...cookieRules(
+            host,
+            false,
+            SCHEME_ORDER,
+            hostRulePriority(host),
+            wide,
+          ),
         );
       if (hasHostOnly)
-        emitExact(host, "any", exactHostRulePriority(host), full);
+        hostRules.push(
+          ...cookieRules(
+            host,
+            true,
+            SCHEME_ORDER,
+            exactHostRulePriority(host),
+            full,
+          ),
+        );
     }
 
     // A host needs its own http rules if it holds Secure cookies, or if an ancestor does (the ancestor's higher-band
@@ -491,22 +585,60 @@ export function compileContainerRules(
     }
     for (const host of insecureHosts) {
       const plan = plans.find((p) => p.host === host)!;
-      // `emitCookieRules` covers every request category (one rule without domainType, or the split), also with an
+      // `cookieRules` covers every request category (one rule without domainType, or the split), also with an
       // empty list: a missing http rule would let the secure-band rule (Secure cookies included) answer plain http.
       if (plan.wide.length > 0)
-        emitCookieRules(
-          { requestDomains: [host], urlFilter: "|http://" },
-          insecureHostRulePriority(host),
-          plan.widePlain,
+        hostRules.push(
+          ...cookieRules(
+            host,
+            false,
+            ["http"],
+            insecureHostRulePriority(host),
+            plan.widePlain,
+          ),
         );
       if (plan.hasHostOnly)
-        emitExact(
-          host,
-          "insecure",
-          insecureExactHostRulePriority(host),
-          plan.plain,
+        hostRules.push(
+          ...cookieRules(
+            host,
+            true,
+            ["http", "ws"],
+            insecureExactHostRulePriority(host),
+            plan.plain,
+          ),
         );
     }
+
+    // Only what changes some request's Cookie header becomes a rule (see `pruneHostRules`).
+    const keep = pruneHostRules(hostRules);
+    hostRules.forEach((rule, i) => {
+      const schemes = keep[i]!;
+      if (schemes.length === 0) return;
+      const condition = {
+        ...base(),
+        ...categoryCondition(rule.category),
+        requestDomains: [rule.host],
+      };
+      const action = cookieAction(rule.cookies);
+      if (!rule.exact) {
+        // The plain-http band answers `http://` only; the secure band every scheme.
+        const urlFilter = rule.schemes.length === 1 ? "|http://" : undefined;
+        add({
+          priority: rule.priority,
+          condition: urlFilter ? { ...condition, urlFilter } : condition,
+          action,
+        });
+        return;
+      }
+      const exact: ExactPlan = {
+        host: rule.host,
+        schemes,
+        priority: rule.priority,
+        category: rule.category,
+        action,
+      };
+      add({ priority: rule.priority, condition, action }, exact);
+    });
 
     // Beacon: a generic "ask again" answer, and one answer per site with that site's page key and cookie snapshot.
     const named = containerName === undefined ? {} : { n: containerName };
@@ -536,17 +668,129 @@ export function compileContainerRules(
     }
   }
 
-  const addRules: DnrRule[] = [];
-  let regexRuleCount = 0;
-  for (const { spec, tabs } of specs.values()) {
-    if (spec.condition.regexFilter !== undefined) regexRuleCount++;
-    addRules.push({
-      id: allocator.next(),
+  // The regex budget goes to the EXACT rules a regex saves the most urlFilter rules for (one per scheme it answers).
+  const exactRules = [...specs.values()].filter(
+    (e): e is typeof e & { exact: ExactPlan } =>
+      e.exact !== undefined && e.exact.schemes.length > 1,
+  );
+  const useRegex = new Set(
+    exactRules
+      .map((e, i) => ({ e, i }))
+      .sort(
+        (a, b) =>
+          b.e.exact.schemes.length - a.e.exact.schemes.length || a.i - b.i,
+      )
+      .slice(0, Math.max(0, input.regexBudget ?? Number.POSITIVE_INFINITY))
+      .map(({ e }) => e),
+  );
+
+  const materialised: RuleSpec[] = [];
+  for (const entry of specs.values()) {
+    const { spec, tabs, exact } = entry;
+    const withTabs = (condition: DnrRule["condition"]) => ({
       ...spec,
-      condition: { ...spec.condition, tabIds: [...tabs] },
+      condition: { ...condition, tabIds: [...tabs] },
     });
+    if (!exact) materialised.push(withTabs(spec.condition));
+    else if (useRegex.has(entry as (typeof exactRules)[number]))
+      materialised.push(
+        withTabs({
+          ...spec.condition,
+          regexFilter: exactHostRegex(exact.host, exact.schemes),
+        }),
+      );
+    else
+      for (const urlFilter of exactHostUrlFilters(exact.host, exact.schemes))
+        materialised.push(withTabs({ ...spec.condition, urlFilter }));
   }
+
+  // WIDE rules that differ only in their host answer the union of their hosts' requests at the same priority with
+  // the same action: one rule lists them all.
+  const merged: RuleSpec[] = [];
+  const wideByKey = new Map<string, RuleSpec>();
+  for (const spec of materialised) {
+    const c = spec.condition;
+    const wide =
+      c.requestDomains !== undefined &&
+      c.regexFilter === undefined &&
+      (c.urlFilter === undefined || c.urlFilter === "|http://");
+    if (!wide) {
+      merged.push(spec);
+      continue;
+    }
+    const key = JSON.stringify([
+      spec.priority,
+      {
+        ...c,
+        requestDomains: undefined,
+        tabIds: [...c.tabIds!].sort((a, b) => a - b),
+      },
+      spec.action,
+    ]);
+    const known = wideByKey.get(key);
+    if (known) known.condition.requestDomains!.push(...c.requestDomains!);
+    else {
+      const own = {
+        ...spec,
+        condition: { ...c, requestDomains: [...c.requestDomains!] },
+      };
+      wideByKey.set(key, own);
+      merged.push(own);
+    }
+  }
+
+  const addRules: DnrRule[] = merged.map((spec) => ({
+    id: allocator.next(),
+    ...spec,
+  }));
+  const regexRuleCount = addRules.filter(
+    (r) => r.condition.regexFilter !== undefined,
+  ).length;
   return { addRules, ruleIds: addRules.map((rule) => rule.id), regexRuleCount };
+}
+
+/** An EXACT cookie rule after pruning, before it becomes one regexFilter rule or one urlFilter rule per scheme. */
+interface ExactPlan {
+  host: string;
+  /** The schemes it still answers (`pruneHostRules`). */
+  schemes: readonly Scheme[];
+  priority: number;
+  category: Category;
+  action: DnrRule["action"];
+}
+
+const exactKey = (plan: ExactPlan): string => JSON.stringify(["exact", plan]);
+
+function categoryCondition(category: Category): Partial<DnrRule["condition"]> {
+  if (category === "all") return {};
+  if (category === "crossSiteNav")
+    return {
+      domainType: "thirdParty",
+      resourceTypes: ["main_frame"],
+      requestMethods: ["get"],
+    };
+  return { domainType: category };
+}
+
+const stripSetCookie = (): DnrHeaderOperation[] => [
+  { header: "set-cookie", operation: "remove" },
+];
+
+function cookieAction(cookies: Cookie[]): DnrRule["action"] {
+  return {
+    type: "modifyHeaders",
+    requestHeaders:
+      cookies.length > 0
+        ? [
+            {
+              header: "cookie",
+              operation: "set",
+              value: serializeCookieHeader(cookies),
+            },
+          ]
+        : [{ header: "cookie", operation: "remove" }],
+    responseHeaders: stripSetCookie(),
+  };
 }
 
 /** Non-HttpOnly, unexpired cookies a page of this group could see through `document.cookie` (on some host). */

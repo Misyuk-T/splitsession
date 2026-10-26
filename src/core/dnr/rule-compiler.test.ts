@@ -931,8 +931,11 @@ describe("SameSite", () => {
     for (let i = 0; i < 40; i++)
       entries.push([`https://t${i}.tracker/`, "id=1; SameSite=None; Secure"]);
     const { addRules } = compile(jarFrom(entries));
-    // catch-all + 40 * (WIDE 3 + EXACT 3) + 40 * (EXACT 1 + its http twin 1) + generic beacon + 80 site beacons
-    expect(addRules).toHaveLength(1 + 240 + 80 + 1 + 80);
+    // 0.1.12: catch-all + 40 * (WIDE 3 + EXACT 3) + 40 * (EXACT 1 + its http twin 1) + generic beacon + 80 site
+    // beacons = 402. Compressed: the sites' WIDE rules (same `ga=2` everywhere) become one rule per category, minus the
+    // cross-site one ("no Cookie", as the catch-all); EXACT keeps same-site and cross-site navigation (cross-site
+    // subresources get nothing either way); the trackers' http twin says what the catch-all says.
+    expect(addRules).toHaveLength(1 + 2 + 40 * 2 + 40 + 1 + 80);
   });
 });
 
@@ -1148,8 +1151,9 @@ describe("rule IDs and limits", () => {
         allocator,
       ),
     );
-    // catch-all + a.localhost (WIDE + EXACT, 3 SameSite rules each) + sso.localhost (EXACT, 3) + generic beacon + 2 site beacons
-    expect(totalRuleCount(groups)).toBe(3 * 13);
+    // catch-all + a.localhost (WIDE + EXACT) + sso.localhost (EXACT), 2 SameSite rules each (the cross-site one would
+    // remove the Cookie header like the catch-all) + generic beacon + 2 site beacons
+    expect(totalRuleCount(groups)).toBe(3 * 10);
     expect(totalRuleCount([])).toBe(0);
 
     expect(SESSION_RULE_SOFT_LIMIT).toBe(4000);
