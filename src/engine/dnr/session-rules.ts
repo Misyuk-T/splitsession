@@ -37,7 +37,26 @@ export interface SessionRuleManagerOptions {
   regexBudget?: number;
   softLimit?: number;
   hardLimit?: number;
+  /** Clock for `RuleStats.refusedAt`. Default: `Date.now`. */
+  now?: () => number;
 }
+
+export interface RuleStats {
+  rules: number;
+  regexRules: number;
+  keys: number;
+  softLimit: number;
+  hardLimit: number;
+  /**
+   * When a batch was last refused for Chrome's rule limit (a tab could then not be put in its container); null again
+   * once a batch is installed with the total at or under the soft limit.
+   */
+  refusedAt: number | null;
+}
+
+/** Chrome's own refusal when the session rule limit is exceeded (the message names the rule count limit). */
+const isLimitError = (error: unknown): boolean =>
+  /limit|exceed|maximum/i.test(String(error));
 
 interface Installed {
   ids: number[];
@@ -80,6 +99,8 @@ export class SessionRuleManager {
   private readonly softLimit: number;
   private readonly hardLimit: number;
   private lastWarnedTotal = 0;
+  private refusedAt: number | null = null;
+  private readonly now: () => number;
 
   constructor(
     private readonly api: DnrSessionApi,
@@ -91,6 +112,7 @@ export class SessionRuleManager {
     this.regexBudget = options.regexBudget ?? REGEX_RULE_BUDGET;
     this.softLimit = options.softLimit ?? SESSION_RULE_SOFT_LIMIT;
     this.hardLimit = options.hardLimit ?? SESSION_RULE_HARD_LIMIT;
+    this.now = options.now ?? Date.now;
   }
 
   invalidate(...keys: string[]): Promise<boolean> {
@@ -117,14 +139,21 @@ export class SessionRuleManager {
     return this.invalidate(...keys);
   }
 
-  stats(): { rules: number; regexRules: number; keys: number } {
+  stats(): RuleStats {
     let rules = 0;
     let regexRules = 0;
     for (const { ids, regex } of this.installed.values()) {
       rules += ids.length;
       regexRules += regex;
     }
-    return { rules, regexRules, keys: this.installed.size };
+    return {
+      rules,
+      regexRules,
+      keys: this.installed.size,
+      softLimit: this.softLimit,
+      hardLimit: this.hardLimit,
+      refusedAt: this.refusedAt,
+    };
   }
 
   isInstalled(key: string): boolean {
@@ -213,6 +242,7 @@ export class SessionRuleManager {
         "error",
         `refusing to install ${total} session rules (Chrome's limit is ${this.hardLimit})`,
       );
+      this.refusedAt = this.now();
       this.rollback(previous, addRules, orphanIds);
       return false;
     }
@@ -221,6 +251,7 @@ export class SessionRuleManager {
       await this.api.updateSessionRules({ removeRuleIds, addRules });
     } catch (error) {
       this.log("error", "updateSessionRules failed", String(error));
+      if (isLimitError(error)) this.refusedAt = this.now();
       this.rollback(previous, addRules, orphanIds);
       return false;
     }
@@ -229,6 +260,7 @@ export class SessionRuleManager {
       if (inst) this.installed.set(key, inst);
       else this.installed.delete(key);
     }
+    if (total <= this.softLimit) this.refusedAt = null;
     return true;
   }
 

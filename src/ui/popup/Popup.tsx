@@ -17,6 +17,7 @@ import { Header } from "./Header";
 import { HeldBanner } from "./HeldBanner";
 import { NONE, rowId } from "./ids";
 import { RestoreOffer } from "./RestoreOffer";
+import { RuleBudgetNotice } from "./RuleBudgetNotice";
 import { ThisTabRow } from "./ThisTabRow";
 import { usePopupData } from "./usePopupData";
 import { useStatus } from "./useStatus";
@@ -35,6 +36,7 @@ export const Popup = () => {
     tabContainer,
     restore,
     groupOffer,
+    ruleStats,
     loadError,
     refresh,
   } = usePopupData();
@@ -259,6 +261,8 @@ export const Popup = () => {
       <Header bridge={bridge} />
 
       <CopyNotice copies={otherCopies} />
+
+      <RuleBudgetNotice stats={ruleStats} />
 
       {__FULL__ && bridge && <BridgeRow bridge={bridge} />}
 

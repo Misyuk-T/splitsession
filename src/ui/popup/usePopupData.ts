@@ -5,6 +5,7 @@ import type { ContainerInfo } from "../../background/facet";
 import type { RestoreStatus } from "../../background/restore";
 import type { GroupRestoreOffer, Settings } from "../../core";
 import { facetApi } from "../../engine/api-client";
+import type { RuleStats } from "../../engine/dnr/session-rules";
 import { describeError } from "../format";
 
 export interface TabInfo {
@@ -32,17 +33,21 @@ export function usePopupData() {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [restore, setRestore] = useState<RestoreStatus | null>(null);
   const [groupOffer, setGroupOffer] = useState<GroupRestoreOffer | null>(null);
+  const [ruleStats, setRuleStats] = useState<RuleStats | null>(null);
 
   const refresh = useCallback(async () => {
     try {
-      const [list, active, prefs, restoreStatus, offer] = await Promise.all([
-        facetApi.listContainers(),
-        currentTab(),
-        facetApi.getSettings(),
-        facetApi.getRestoreStatus(),
-        facetApi.getGroupRestoreOffer(),
-      ]);
+      const [list, active, prefs, restoreStatus, offer, stats] =
+        await Promise.all([
+          facetApi.listContainers(),
+          currentTab(),
+          facetApi.getSettings(),
+          facetApi.getRestoreStatus(),
+          facetApi.getGroupRestoreOffer(),
+          facetApi.stats(),
+        ]);
       setContainers(list);
+      setRuleStats(stats);
       setGroupOffer(offer);
       setRestore(restoreStatus);
       setTab(active);
@@ -66,6 +71,7 @@ export function usePopupData() {
     tabContainer,
     restore,
     groupOffer,
+    ruleStats,
     loadError,
     refresh,
   };

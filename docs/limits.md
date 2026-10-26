@@ -297,7 +297,12 @@ any of these that Chrome issues without the tab's ID would carry the real profil
 
 **Limits.** Chrome allows 5000 session rules and 1000 regex rules per extension. SplitSession warns above 4000 rules, falls
 back from regex to per-scheme URL filters past 900 regex rules, and refuses to put a tab into a container when the rules
-would not fit. Deleting a container closes its tabs and forgets its cookies, but leaves its namespaced storage
+would not fit; the popup then says "Too many container cookie rules: close some container tabs" (closing all tabs of a
+container frees its rules). Rules are shared by all tabs of a container, so capacity depends on containers and the cookie
+hosts in their jars, not on tabs: a cookie host costs up to 6 rules (up to 12 with Secure cookies on a host that is not
+localhost), a site with script-visible cookies one beacon rule, and a container on several top-level sites repeats only
+the rules of hosts holding partitioned cookies. A heavy jar (threads.com with instagram and facebook, a dashboard and its
+widgets: ~54 cookie hosts) is ~560 rules, so about 7 such containers fit under the 4000 warning with any number of tabs. Deleting a container closes its tabs and forgets its cookies, but leaves its namespaced storage
 (`__facet:<key>:…` keys, databases, caches) in the sites' origins.
 
 **Two copies of SplitSession in one profile.** Not supported: both rewrite `Cookie` headers, both capture `Set-Cookie` into

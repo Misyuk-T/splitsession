@@ -66,7 +66,7 @@ export interface BeaconPayload {
   n?: string;
   /** Non-HttpOnly, unexpired cookies of the requesting frame's site: the initial `document.cookie` state. */
   k?: Cookie[];
-  /** Top-level site of the group at compile time, needed to evaluate partitioned cookies in `k`. */
+  /** Top-level site of the group at compile time, needed to evaluate partitioned cookies in `k`; null when `k` has none. */
   s?: string | null;
   /** Set to 1 when `k` was dropped because it exceeded the size cap; the shim must fetch cookies asynchronously. */
   o?: 1;

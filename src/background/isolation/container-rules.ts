@@ -1,6 +1,6 @@
 import {
+  compileContainerRules,
   type CompiledRules,
-  compileGroupRules,
   compileNoTabRule,
   compileNoTabWorkerScriptRule,
   type ContainerId,
@@ -93,40 +93,35 @@ export class ContainerRules {
       if (list) list.push(tabId);
       else groups.set(site, [tabId]);
     }
-    const addRules: DnrRule[] = [];
-    const ruleIds: number[] = [];
-    let regexRuleCount = 0;
-    const pageKeyOf = (site: string) => this.d.pageKeyOf(containerId, site);
-    for (const [site, group] of groups) {
-      const frameSites = new Set<string>();
-      for (const tabId of group) {
-        const own = siteOfFrameUrl(tabs.get(tabId)?.url);
-        if (own) frameSites.add(own);
-        for (const s of this.frameSites.get(tabId) ?? []) frameSites.add(s);
-      }
-      const compiled = compileGroupRules(
-        {
-          tabIds: group.sort((a, b) => a - b),
-          containerId,
-          // Pages see the name only when the user allows it (setting "Show container name to pages"; Full edition only).
-          containerName:
-            __FULL__ && this.d.settings().showNameToPages
-              ? container.name
-              : undefined,
-          jar,
-          topLevelSite: site,
-          now,
-          regexBudget: Math.max(0, regexBudget - regexRuleCount),
-          pageKeyOf,
-          frameSites,
-        },
-        allocator,
-      );
-      addRules.push(...compiled.addRules);
-      ruleIds.push(...compiled.ruleIds);
-      regexRuleCount += compiled.regexRuleCount;
-    }
-    return { addRules, ruleIds, regexRuleCount };
+    // One compile for all groups: rules that do not depend on the group's site are shared by every tab.
+    return compileContainerRules(
+      {
+        containerId,
+        // Pages see the name only when the user allows it (setting "Show container name to pages"; Full edition only).
+        containerName:
+          __FULL__ && this.d.settings().showNameToPages
+            ? container.name
+            : undefined,
+        jar,
+        now,
+        regexBudget,
+        pageKeyOf: (site: string) => this.d.pageKeyOf(containerId, site),
+        groups: [...groups].map(([site, group]) => {
+          const frameSites = new Set<string>();
+          for (const tabId of group) {
+            const own = siteOfFrameUrl(tabs.get(tabId)?.url);
+            if (own) frameSites.add(own);
+            for (const s of this.frameSites.get(tabId) ?? []) frameSites.add(s);
+          }
+          return {
+            tabIds: group.sort((a, b) => a - b),
+            topLevelSite: site,
+            frameSites,
+          };
+        }),
+      },
+      allocator,
+    );
   }
 
   /**
