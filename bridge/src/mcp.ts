@@ -35,7 +35,7 @@ const INSTRUCTIONS =
   "Tools to see and operate the user's Chrome tabs across all windows, with SplitSession containers (several logged-in accounts of one site side by side). " +
   'Start with list_tabs. A tab\'s "container" says which account it is, its "profile" which Chrome profile (several can be connected at once; bridge_info lists them). ' +
   "Tools on a tab find the tab's profile by its tabId; to open a new tab while several profiles are connected, pass profile (its name or key). " +
-  "If the user says \"this tab\" or \"the current tab\", use the tab with active: true in the user's last-focused window (list_tabs); tabs you open yourself go to the agents' window, not the user's. " +
+  'If the user says "this tab" or "the current tab", use the tab with active: true in the user\'s last-focused window (list_tabs); tabs you open yourself go to the agents\' window, not the user\'s. ' +
   "To work with a page: snapshot (accessibility tree with refs), then click / type / press_key / select_option by ref; snapshot again after the page changes. Screenshots for what the tree cannot tell. " +
   "These tools act inside the user's real, logged-in browser: do only what the user asked for.";
 

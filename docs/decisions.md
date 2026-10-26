@@ -1925,3 +1925,32 @@ Goal: a container tab that is not in its container's tab group (dragged out, or 
   session that does everything with its own tabs (fine, nothing to guard).
 - **Not done.** Putting the session name into the extension's activity log / the page pill (needs a protocol change); a
   lease-aware `wait` for a tab to come free.
+
+
+## Agents' window, per-site pacing, session name on the pill (2026-10-26)
+
+Three additions on top of the tab leases (bridge 0.4.0; the window and the pill need the next extension release).
+
+- **Agents' window (extension).** Tabs an agent opens itself (`open_tab`, `open_in_container`) go to one ordinary window per
+  profile, made on demand with `focused: false`, reused while it exists, rebuilt after the user closes it. The window is told
+  apart by its ID in `storage.session` (Chrome has no window title). Setting `agentWindow` (Full only, default on, "Open agent
+  tabs in a separate window"); an explicit `windowId` always wins; off = the current window as before. The blank first tab of
+  the new window is closed once the agent's own tab is in it. Why: the user's window was getting agent tabs between their
+  own, and "this tab" was ambiguous. Agents are told in the tool descriptions: "this tab" = the `active: true` tab of the
+  user's last-focused window. Not done: `list_tabs` does not say which window is the last focused one.
+- **Per-site pacing (host).** After the 2026-10-22 Reddit 429 (about 80 parallel requests from an agent, both accounts limited)
+  the host spaces the actions that reach a site's server, per registrable domain (`tldts`, already in the extension), over all
+  sessions of the profile: FIFO queue, 1500 ms apart, the host waits rather than refuses, 30 s cap then "site busy". Paced:
+  navigate, back, forward, reload, open (with a URL), click, select_option, upload_file, press_key Enter. Not paced: reads,
+  hover, scroll, type, run_js. Done in the host because it is the one place all sessions of a profile meet (as for leases) and
+  it needs no extension release for the URL tools; the tab-based tools ask the extension for the tab's address with a new
+  internal `__tab_url` (unknown to an older extension, which answers "pong": those actions are then not paced). Slots are
+  reserved on arrival (a start time per site), so a queue needs no timers of its own beyond one `setTimeout` per waiter, and
+  the cap is checked up front instead of after 30 s of waiting. `SPLITSESSION_SITE_GAP_MS` sets the gap (0 = off) and exists
+  for tests; the e2e fixtures run with 0 and the pacing spec uses a second profile with the default. The MCP server's own
+  deadline grows by the cap for changing tools so it never gives up before the host does.
+- **Session name to the extension.** The request envelope host -> extension gets an optional `session` (cleaned to letters,
+  digits, space, `-_.`, at most 64 characters; the extension cleans it again). No `PROTOCOL_VERSION` bump: an older extension
+  ignores the field, an older host sends none. The pill reads "<session>: reading" (24 characters, ellipsis), "Agent: reading"
+  without a name; the Diagnostics "agent action" entries have a `session` field. This is the item that the lease entry listed as
+  "not done". The existing e2e checks of the pill text now expect the `facet-e2e-xxxx: ` prefix.
