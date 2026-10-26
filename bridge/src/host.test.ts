@@ -416,7 +416,7 @@ describe("tab leases: two MCP sessions against one real host", () => {
     return false;
   };
 
-  it("B's click on A's tab is refused, reads and takeOver work, the extension never sees the lease fields", async () => {
+  it("B's click on A's tab is refused, reads and takeOver work, takeOver never reaches the extension", async () => {
     const { ext, a, b } = await setup();
     expect(
       (await a.run("click", { tabId: 7, ref: "e1" })).isError,
@@ -451,7 +451,8 @@ describe("tab leases: two MCP sessions against one real host", () => {
       (await b.run("click", { tabId: 7, ref: "e2", takeOver: true })).isError,
     ).toBeUndefined();
     for (const m of clicks()) {
-      expect(JSON.stringify(m)).not.toMatch(/takeOver|agent-/);
+      expect(JSON.stringify(m)).not.toMatch(/takeOver/);
+      expect((m as { session?: string }).session).toMatch(/^agent-/);
     }
     expect(t0(await a.run("click", { tabId: 7, ref: "e1" }))).toMatch(
       /agent-b/,

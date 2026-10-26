@@ -92,7 +92,7 @@ describe("relay: tab leases", () => {
     expect(requests()).toBe(2);
   });
 
-  it("takeOver passes and moves the lease; the envelope fields never reach the extension", () => {
+  it("takeOver passes and moves the lease; takeOver never reaches the extension; the session name does (for the page label)", () => {
     const { session, sent, answer } = leased();
     const a = session("agent-a");
     const b = session("agent-b");
@@ -100,7 +100,8 @@ describe("relay: tab leases", () => {
     answer({});
     b.call("click", { tabId: 7 }, { takeOver: true });
     expect(sent.at(-1)).toMatchObject({ type: "request", args: { tabId: 7 } });
-    expect(JSON.stringify(sent.at(-1))).not.toMatch(/takeOver|agent-b/);
+    expect(JSON.stringify(sent.at(-1))).not.toMatch(/takeOver/);
+    expect(sent.at(-1)).toMatchObject({ session: "agent-b" });
     answer({});
     a.call("click", { tabId: 7 });
     expect(lastError(a)).toMatch(/agent-b/);

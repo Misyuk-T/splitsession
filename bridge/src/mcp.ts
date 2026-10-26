@@ -15,6 +15,7 @@ import {
   type ClientResponse,
   HOST_TIMEOUT_MS,
   SESSION_TOOL,
+  SITE_WAIT_CAP_MS,
 } from "../../src/bridge/protocol";
 import { HOST_MARGIN_MS, TOOLS, toolTimeoutMs } from "../../src/bridge/spec";
 import { type Schema, validateArgs } from "../../src/bridge/validate";
@@ -310,7 +311,13 @@ export function liveDispatcher(
       callHost(
         tool,
         args,
-        toolTimeoutMs(tool) + HOST_MARGIN_MS + 2_000,
+        // The host may hold an action back (up to SITE_WAIT_CAP_MS) to keep a site's pace.
+        toolTimeoutMs(tool) +
+          HOST_MARGIN_MS +
+          2_000 +
+          (LEASE_MUTATING.has(tool) || tool.startsWith("open_")
+            ? SITE_WAIT_CAP_MS
+            : 0),
         ep.socket,
         ctx,
       ),

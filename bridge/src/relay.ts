@@ -1,8 +1,11 @@
 import {
+  cleanAgentName,
   type ClientResponse,
   type HostToExtension,
   PING_TOOL,
   SESSION_TOOL,
+  SITE_WAIT_CAP_MS,
+  TAB_URL_TOOL,
   type ToolResult,
 } from "../../src/bridge/protocol";
 import { HOST_MARGIN_MS, toolTimeoutMs } from "../../src/bridge/spec";
@@ -12,8 +15,21 @@ import {
   LEASE_OPENING,
   Leases,
 } from "./leases";
+import { paceTarget, siteKey, SitePacer } from "./pacing";
+
+/** A request held back to keep its site's pace. */
+interface Waiting {
+  clientId: number;
+  clientRequestId: number;
+  timer: ReturnType<typeof setTimeout>;
+}
+
+/** How long the host waits for the extension to say which address a tab shows. */
+const TAB_URL_WAIT_MS = 3_000;
 
 interface Pending {
+  /** The host's own question to the extension (not a client's request): gets the answer's text, or null on any failure. */
+  internal?: (text: string | null) => void;
   clientId: number;
   clientRequestId: number;
   timer: ReturnType<typeof setTimeout>;
@@ -28,6 +44,12 @@ export interface RelayOptions {
   timeoutMs?: number;
   /** Tab leases; by default a fresh set with the real clock. */
   leases?: Leases;
+  /** Minimum gap between actions that reach the same site (ms); 0 or absent: no pacing. The host passes 1500 unless the env says otherwise. */
+  siteGapMs?: number;
+  /** Longest a request waits for its site's turn before it is answered "site busy"; default 30 s. */
+  siteWaitCapMs?: number;
+  /** The clock of the pacing (tests). */
+  now?: () => number;
 }
 
 /**
@@ -47,6 +69,9 @@ export class Relay {
   /** The session name each presence connection (`__session`) announced: when the last one of a name goes, its leases go. */
   private readonly names = new Map<number, string>();
   private readonly leases: Leases;
+  private readonly pacer: SitePacer | null;
+  private readonly waiting = new Map<number, Waiting>();
+  private nextWait = 1;
   private nextClient = 1;
   private nextRequest = 1;
   private readonly timeoutMs: number | undefined;
@@ -55,6 +80,14 @@ export class Relay {
   constructor(private readonly options: RelayOptions) {
     this.timeoutMs = options.timeoutMs;
     this.leases = options.leases ?? new Leases();
+    this.pacer =
+      options.siteGapMs && options.siteGapMs > 0
+        ? new SitePacer(
+            options.siteGapMs,
+            options.siteWaitCapMs ?? SITE_WAIT_CAP_MS,
+            options.now,
+          )
+        : null;
   }
 
   get clientCount(): number {
@@ -80,6 +113,11 @@ export class Relay {
       if (p.clientId !== clientId) continue;
       clearTimeout(p.timer);
       this.pending.delete(id);
+    }
+    for (const [id, w] of this.waiting) {
+      if (w.clientId !== clientId) continue;
+      clearTimeout(w.timer);
+      this.waiting.delete(id);
     }
   }
 
@@ -149,13 +187,64 @@ export class Relay {
         lease = { session, tool: msg.tool, tabId: onTab };
     }
 
+    const tool = msg.tool;
+    const forward = () =>
+      this.forward(clientId, requestId, tool, msg.args, session, lease);
+    const target = this.pacer ? paceTarget(tool, msg.args) : null;
+    if (!target) return forward();
+    // An action that reaches a site's server: it waits for the site's turn (every session of this profile shares the queue).
+    const turn = (site: string | null) => {
+      if (site === null || !this.pacer) return forward();
+      const delay = this.pacer.reserve(site);
+      if (delay === null) {
+        const cap = Math.round(
+          (this.options.siteWaitCapMs ?? SITE_WAIT_CAP_MS) / 1000,
+        );
+        return reply({
+          id: requestId,
+          ok: false,
+          error: `site busy: ${site} already has more than ${cap} seconds of agent actions queued (the host spaces them ${this.pacer.gapMs} ms apart); try again later or work on another site meanwhile`,
+        });
+      }
+      if (delay <= 0) return forward();
+      const waitId = this.nextWait++;
+      const timer = setTimeout(() => {
+        this.waiting.delete(waitId);
+        if (this.closed)
+          return reply({ id: requestId, ok: false, error: this.closed });
+        forward();
+      }, delay);
+      this.waiting.set(waitId, { clientId, clientRequestId: requestId, timer });
+    };
+    if (target.kind === "url") return turn(siteKey(target.url));
+    void this.tabSite(target.tabId).then((site) => {
+      if (!this.clients.has(clientId)) return; // the client left while the extension was asked
+      if (this.closed)
+        return reply({ id: requestId, ok: false, error: this.closed });
+      turn(site);
+    });
+  }
+
+  /** Sends one request to the extension and remembers who waits for the answer. */
+  private forward(
+    clientId: number,
+    requestId: number,
+    tool: string,
+    args: unknown,
+    session: string | null,
+    lease: Pending["lease"],
+  ): void {
+    const reply = (response: ClientResponse) =>
+      this.clients.get(clientId)?.(response);
+    const agent = cleanAgentName(session);
     const id = this.nextRequest++;
     try {
       this.options.sendToExtension({
         type: "request",
         id,
-        tool: msg.tool,
-        args: msg.args,
+        tool,
+        args,
+        ...(agent ? { session: agent } : {}),
       });
     } catch (error) {
       return reply({
@@ -164,14 +253,13 @@ export class Relay {
         error: `could not send the request to Chrome: ${error instanceof Error ? error.message : String(error)}`,
       });
     }
-    const timeoutMs =
-      this.timeoutMs ?? toolTimeoutMs(msg.tool) + HOST_MARGIN_MS;
+    const timeoutMs = this.timeoutMs ?? toolTimeoutMs(tool) + HOST_MARGIN_MS;
     const timer = setTimeout(() => {
       this.pending.delete(id);
       reply({
         id: requestId,
         ok: false,
-        error: `Chrome did not answer ${msg.tool} within ${Math.round(timeoutMs / 1000)} seconds`,
+        error: `Chrome did not answer ${tool} within ${Math.round(timeoutMs / 1000)} seconds`,
       });
     }, timeoutMs);
     this.pending.set(id, {
@@ -179,6 +267,44 @@ export class Relay {
       clientRequestId: requestId,
       timer,
       ...(lease ? { lease } : {}),
+    });
+  }
+
+  /** The site a tab shows now, asked of the extension; null when it cannot say (an older extension, a tab without a site, a timeout). */
+  private tabSite(tabId: number): Promise<string | null> {
+    return new Promise((resolve) => {
+      const id = this.nextRequest++;
+      const done = (text: string | null) => {
+        let url: unknown = null;
+        try {
+          if (text !== null) url = (JSON.parse(text) as { url?: unknown }).url;
+        } catch {
+          /* "pong" from an extension that does not know the question */
+        }
+        resolve(typeof url === "string" ? siteKey(url) : null);
+      };
+      const timer = setTimeout(() => {
+        this.pending.delete(id);
+        done(null);
+      }, TAB_URL_WAIT_MS);
+      this.pending.set(id, {
+        clientId: 0,
+        clientRequestId: 0,
+        timer,
+        internal: done,
+      });
+      try {
+        this.options.sendToExtension({
+          type: "request",
+          id,
+          tool: TAB_URL_TOOL,
+          args: { tabId },
+        });
+      } catch {
+        clearTimeout(timer);
+        this.pending.delete(id);
+        done(null);
+      }
     });
   }
 
@@ -222,6 +348,15 @@ export class Relay {
     if (!p) return; // late answer to a request that timed out or whose client left
     clearTimeout(p.timer);
     this.pending.delete(msg.id);
+    if (p.internal) {
+      const block = (msg.result as ToolResult | undefined)?.content?.find(
+        (c) => c.type === "text",
+      ) as { text?: unknown } | undefined;
+      p.internal(
+        msg.ok === true && typeof block?.text === "string" ? block.text : null,
+      );
+      return;
+    }
     const write = this.clients.get(p.clientId);
     const result =
       p.lease && msg.ok === true
@@ -294,9 +429,22 @@ export class Relay {
   extensionGone(reason: string): void {
     this.closed = reason;
     this.leases.clear();
+    for (const [id, w] of this.waiting) {
+      clearTimeout(w.timer);
+      this.waiting.delete(id);
+      this.clients.get(w.clientId)?.({
+        id: w.clientRequestId,
+        ok: false,
+        error: reason,
+      });
+    }
     for (const [id, p] of this.pending) {
       clearTimeout(p.timer);
       this.pending.delete(id);
+      if (p.internal) {
+        p.internal(null);
+        continue;
+      }
       this.clients.get(p.clientId)?.({
         id: p.clientRequestId,
         ok: false,

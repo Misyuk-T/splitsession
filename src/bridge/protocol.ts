@@ -59,7 +59,17 @@ export type HostToExtension =
   | { type: "profiles"; count: number }
   /** How many MCP clients are connected to the host now (sent whenever it changes); 0: the agent is gone. */
   | { type: "clients"; count: number }
-  | { type: "request"; id: number; tool: string; args: unknown };
+  | {
+      type: "request";
+      id: number;
+      tool: string;
+      args: unknown;
+      /**
+       * Bridge 0.4+: the name of the agent session that asked (`cleanAgentName`), for the page label and the action log.
+       * Optional: an older host sends none, an older extension ignores it.
+       */
+      session?: string;
+    };
 
 /** extension -> host (stdin of the host). */
 export type ExtensionToHost =
@@ -94,6 +104,29 @@ export const SESSION_TOOL = "__session";
  */
 export const PROFILE_TOOL = "__profile";
 export const TABS_TOOL = "__tabs";
+/**
+ * Asked by the host (per-site pacing) with `{tabId}`; the extension answers `{"url": string | null}`. An extension that does
+ * not know it answers "pong" (every `__` tool is internal), and the host then does not pace the actions that need the tab's address.
+ */
+export const TAB_URL_TOOL = "__tab_url";
+
+/**
+ * An agent session name as the extension shows and logs it: letters, digits, space and `-_.` only, at most `max`
+ * characters; null when nothing is left. Applied by the host and again by the extension, so a name can never carry markup.
+ */
+export function cleanAgentName(value: unknown, max = 64): string | null {
+  if (typeof value !== "string") return null;
+  const name = value
+    .replace(/[^A-Za-z0-9 ._-]/g, "")
+    .replace(/ +/g, " ")
+    .trim()
+    .slice(0, max)
+    .trim();
+  return name === "" ? null : name;
+}
+
+/** The longest a host waits to space out requests to one site before it answers "site busy". */
+export const SITE_WAIT_CAP_MS = 30_000;
 
 /** Sent by a host that found the socket held by a live host; shown in the popup next to the explanation. */
 export const BUSY_REASON = "another Chrome profile is connected";
