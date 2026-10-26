@@ -1981,3 +1981,18 @@ Three additions on top of the tab leases (bridge 0.3.0, together with the leases
   `agentWindow` now defaults to off; the switch stays (Settings, For AI agents) for whoever wants a separate window.
 - **Existing installs.** No migration: settings store an `explicit` list, and a key never set follows the current default, so
   installs that never touched the switch go to off on update. Whoever set it on 0.1.9 keeps their choice.
+
+## The group guard retries a failed reopen (2026-10-26)
+
+- **Incident.** In the owner's Chrome a tab duplicated into the container group "spare" while an agent was acting in it (title
+  "✦ spare") stayed plain (container null) for 5+ s. The e2e test "while a group shows the agent mark the group guard still
+  holds" (duplicate, tab opened into the group, tab dragged in: all in the container within ~2.5 s) passes, so the cause was
+  not reproduced.
+- **What is known.** The group-to-container lookup ignores the glyph. The most likely cause: the reopen failed (logged "could
+  not be reopened … the next sweep tries again"), and the next sweep came only from the 30 s alarm, because the blink's
+  title updates are echo-filtered and schedule no sweep.
+- **Decision (defensive, whatever the cause).** A failed reopen of a tab still in a container group and not in its container
+  is retried after 0.5, 1.5 and 4 s (3 extra tries, each logged; the give-up is logged), dropped when the tab closes, leaves
+  the group or is assigned. A tab held back by the 10-per-10 s reopen limit is retried when the window frees. After a quiet
+  (echo-filtered) mark write, one sweep is scheduled when the group holds a tab outside its container (a sweep already waiting
+  is not postponed, so the blink cannot starve it).
