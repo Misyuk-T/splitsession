@@ -118,6 +118,7 @@ test.describe("agent bridge", () => {
       "close_tab",
       "console_messages",
       "drag",
+      "extension_log",
       "get_tab_html",
       "get_tab_text",
       "handle_dialog",
@@ -1114,6 +1115,22 @@ test.describe("agent bridge", () => {
     const serialized = JSON.stringify(log);
     expect(serialized).not.toContain("secret-typed-text");
     expect(serialized).not.toContain("Agent page");
+
+    // extension_log hands an agent the same entries (read-only, filterable, newest last).
+    const seen = await mcp.json<
+      Array<{ time: string; level: string; message: string; data?: string }>
+    >("extension_log", { contains: "agent action", level: "warn" });
+    expect(seen.length).toBeGreaterThan(0);
+    expect(seen.every((e) => e.level === "warn")).toBe(true);
+    expect(seen.at(-1)).toMatchObject({ message: "agent action" });
+    expect(seen.at(-1)!.data).toContain('"tool":"click"');
+    expect(Number.isNaN(Date.parse(seen[0]!.time))).toBe(false);
+    const one = await mcp.json<unknown[]>("extension_log", {
+      contains: "agent action",
+      limit: 1,
+    });
+    expect(one).toHaveLength(1);
+    expect(JSON.stringify(seen)).not.toContain("secret-typed-text");
   });
 
   test("tabs the agent opens go to the agents' window (one window, reused, rebuilt after the user closes it); an explicit windowId wins; with the setting off they open in the current window", async ({

@@ -551,6 +551,18 @@ export const TOOLS: readonly ToolSpec[] = [
     ),
   },
   {
+    name: "extension_log",
+    title: "Extension diagnostics log",
+    readOnly: true,
+    description:
+      "SplitSession's own diagnostics log (the entries Settings → Advanced → Diagnostics shows; the extension keeps the most recent few hundred). Newest last: time (ISO), level, message, data (as text; each entry cut to 2000 characters). Never holds cookies or page content. contains keeps entries whose message or data contains that text (case-insensitive); level keeps one level; limit keeps the newest N matches.",
+    inputSchema: obj({
+      limit: { type: "integer", minimum: 1, maximum: 2000, default: 200 },
+      contains: { type: "string", minLength: 1, maxLength: 500 },
+      level: { type: "string", enum: ["info", "warn", "error"] },
+    }),
+  },
+  {
     name: "console_messages",
     title: "Console messages",
     readOnly: true,

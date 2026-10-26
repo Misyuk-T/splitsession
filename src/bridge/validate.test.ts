@@ -14,6 +14,7 @@ describe("tool arguments", () => {
         "bridge_info",
         "click",
         "close_tab",
+        "extension_log",
         "get_tab_html",
         "get_tab_text",
         "list_containers",
