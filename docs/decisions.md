@@ -1929,7 +1929,7 @@ Goal: a container tab that is not in its container's tab group (dragged out, or 
 
 ## Agents' window, per-site pacing, session name on the pill (2026-10-26)
 
-Three additions on top of the tab leases (bridge 0.4.0; the window and the pill need the next extension release).
+Three additions on top of the tab leases (bridge 0.3.0, together with the leases; the window and the pill need the next extension release).
 
 - **Agents' window (extension).** Tabs an agent opens itself (`open_tab`, `open_in_container`) go to one ordinary window per
   profile, made on demand with `focused: false`, reused while it exists, rebuilt after the user closes it. The window is told
