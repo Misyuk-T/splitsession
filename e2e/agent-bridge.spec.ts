@@ -1115,6 +1115,127 @@ test.describe("agent bridge", () => {
     expect(serialized).not.toContain("secret-typed-text");
     expect(serialized).not.toContain("Agent page");
   });
+
+  test("tabs the agent opens go to the agents' window (one window, reused, rebuilt after the user closes it); an explicit windowId wins; with the setting off they open in the current window", async ({
+    facet,
+  }) => {
+    await turnOn(facet);
+    mcp = await startMcp(facet);
+    const c = await facet.container("agentwin");
+    const userWindow = await facet.inWorker(
+      async () =>
+        (await (globalThis as any).chrome.windows.getAll())[0].id as number,
+      undefined,
+    );
+    await facet.api("updateSettings", { agentWindow: true });
+
+    const first = await mcp.json<{ tabId: number; windowId: number }>(
+      "open_tab",
+      { url: at("a.localhost", "/agent") },
+    );
+    expect(first.windowId).not.toBe(userWindow);
+    const second = await mcp.json<{
+      tabId: number;
+      windowId: number;
+      container: { name: string } | null;
+    }>("open_in_container", {
+      url: at("a.localhost", "/agent"),
+      container: c.name,
+    });
+    expect(second.windowId).toBe(first.windowId); // one window, reused
+    expect(second.container?.name).toBe(c.name);
+
+    // The window holds just the agent's two tabs (the blank tab a new window starts with is gone), and the container's
+    // tab group is in that window.
+    await expect
+      .poll(
+        async () => (await tabsOf(mcp!, { windowId: first.windowId })).length,
+      )
+      .toBe(2);
+    const inAgentWindow = await tabsOf(mcp, { windowId: first.windowId });
+    const containerTab = inAgentWindow.find((t) => t.tabId === second.tabId)!;
+    expect(containerTab.groupId).not.toBe(-1);
+    expect(await facet.groupInfo(containerTab.groupId)).toMatchObject({
+      windowId: first.windowId,
+    });
+
+    // An explicit windowId always wins.
+    const explicit = await mcp.json<{ windowId: number }>("open_tab", {
+      url: at("a.localhost", "/agent"),
+      windowId: userWindow,
+    });
+    expect(explicit.windowId).toBe(userWindow);
+
+    // The user closes the agents' window: the next open makes a new one.
+    await facet.inWorker(
+      (id: number) => (globalThis as any).chrome.windows.remove(id),
+      first.windowId,
+    );
+    const rebuilt = await mcp.json<{ windowId: number }>("open_tab", {
+      url: at("a.localhost", "/agent"),
+    });
+    expect(rebuilt.windowId).not.toBe(first.windowId);
+    expect(rebuilt.windowId).not.toBe(userWindow);
+
+    // Off: today's behaviour, the current window.
+    await facet.api("updateSettings", { agentWindow: false });
+    const off = await mcp.json<{ windowId: number }>("open_tab", {
+      url: at("a.localhost", "/agent"),
+    });
+    expect(off.windowId).toBe(userWindow);
+    const offContainer = await mcp.json<{ windowId: number }>(
+      "open_in_container",
+      { url: at("a.localhost", "/agent"), container: c.name },
+    );
+    expect(offContainer.windowId).toBe(userWindow);
+  });
+
+  test("actions on one site are spaced 1.5 s apart across the whole profile, other sites and reads do not wait", async ({
+    facet,
+  }) => {
+    // The main profile runs its host without pacing (fixtures); a second profile's host has the default gap.
+    second = await startSecondProfile(facet);
+    await second.api("updateSettings", { agentBridge: true });
+    await expect(
+      (await second.popup()).getByTestId("bridge-card"),
+    ).toHaveAttribute("data-status", "connected", { timeout: 20_000 });
+    mcp = await startMcp(facet);
+    const opened = await mcp.json<{ tabId: number }>("open_tab", {
+      url: at("a.localhost", "/agent"),
+    });
+    const other = await mcp.json<{ tabId: number }>("open_tab", {
+      url: at("b.localhost", "/agent"),
+    });
+    const timed = async (tool: string, args: Record<string, unknown>) => {
+      const r = await mcp!.call(tool, args);
+      expect(r.isError, r.text).toBe(false);
+      return Date.now();
+    };
+    const [n1, n2, n3, otherSite, read] = await Promise.all([
+      timed("navigate", {
+        tabId: opened.tabId,
+        url: at("a.localhost", "/agent?1"),
+        wait: false,
+      }),
+      timed("navigate", {
+        tabId: opened.tabId,
+        url: at("a.localhost", "/agent?2"),
+        wait: false,
+      }),
+      timed("reload", { tabId: opened.tabId, wait: false }),
+      timed("navigate", {
+        tabId: other.tabId,
+        url: at("b.localhost", "/agent?1"),
+        wait: false,
+      }),
+      timed("get_tab_text", { tabId: opened.tabId }),
+    ]);
+    const sameSite = [n1, n2, n3].sort((x, y) => x - y);
+    expect(sameSite[1]! - sameSite[0]!).toBeGreaterThanOrEqual(1400);
+    expect(sameSite[2]! - sameSite[1]!).toBeGreaterThanOrEqual(1400);
+    expect(otherSite).toBeLessThan(sameSite[2]! - 1000); // not queued behind the other site
+    expect(read).toBeLessThan(sameSite[2]! - 1000);
+  });
 });
 
 /** The Playwright page of a tab that SplitSession or the bridge opened (so the test closes it afterwards). */

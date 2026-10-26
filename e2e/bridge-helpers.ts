@@ -67,6 +67,7 @@ export interface Mcp {
 export async function startMcp(
   facet: Facet,
   manifestDirs: string = facet.profile.nativeHostsDir,
+  extraEnv: Record<string, string> = {},
 ): Promise<Mcp> {
   expect(existsSync(bridgeEntry), "run `node bridge/build.mjs` first").toBe(
     true,
@@ -79,6 +80,7 @@ export async function startMcp(
       ...(process.env as Record<string, string>),
       FACET_BRIDGE_SOCKET: facet.profile.socketPath,
       FACET_BRIDGE_MANIFEST_DIRS: manifestDirs,
+      ...extraEnv,
     },
     stderr: "pipe",
   });
