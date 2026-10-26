@@ -18,7 +18,7 @@ describe("settings defaults", () => {
       showNameToPages: false,
       agentBridge: false,
       agentActivity: true,
-      agentWindow: true,
+      agentWindow: false,
       restoreTabs: true,
       markOutsideGroup: true,
       rememberTabs: true,
@@ -100,7 +100,7 @@ describe("settings defaults", () => {
         showNameToPages: false,
         agentBridge: false,
         agentActivity: true,
-        agentWindow: true,
+        agentWindow: false,
       }),
     ).toEqual({
       settings: { ...DEFAULT_SETTINGS, strictMode: false },

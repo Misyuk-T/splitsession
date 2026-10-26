@@ -496,8 +496,8 @@ full access to every tab, in containers or not (docs/agents.md, section 7). What
   Reddit 429), not a guarantee: `type`, `run_js` and the reading tools are not paced, a single click can still fire many
   requests, an action on a tab whose address the host cannot learn (an older extension) waits for nothing, and a site's
   other traffic (your own browsing, other devices) shares its limits unseen.
-- **The agents' window is a convention, not a boundary.** Tabs an agent opens go to one separate window (setting on by
-  default), but the agent can still act in any tab of any window, including the one you are using, and an explicit `windowId`
+- **The agents' window is a convention, not a boundary.** Tabs an agent opens go to one separate window (when the setting, off by
+  default, is on), but the agent can still act in any tab of any window, including the one you are using, and an explicit `windowId`
   puts a tab wherever it names. Chrome has no window title API, so nothing on the window itself says "agents"; closing it
   just makes the next open build a new one.
 - **The session name on the pill is only as good as the name.** It comes from `CLAUDE_SESSION_NAME` or the MCP client's own

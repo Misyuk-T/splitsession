@@ -131,13 +131,13 @@ const AgentSwitches = () => {
         />
         <More id="more-window" about="the agents’ window">
           <p>
-            On by default. The first tab an agent opens (open_tab or
-            open_in_container) makes one extra browser window of this profile,
-            without taking focus; the next ones join it, and a container’s tabs
-            get their tab group there as usual. If you close that window, the
-            next tab an agent opens makes a new one. Chrome has no way to name a
-            window, so it is told apart only by being the one that appears when
-            an agent starts working.
+            Off by default (tabs open in the window you work in). On: the first
+            tab an agent opens (open_tab or open_in_container) makes one extra
+            browser window of this profile, without taking focus; the next ones
+            join it, and a container’s tabs get their tab group there as usual.
+            If you close that window, the next tab an agent opens makes a new
+            one. Chrome has no way to name a window, so it is told apart only by
+            being the one that appears when an agent starts working.
           </p>
           <p>
             Agents can still work in any tab that is already open, including the

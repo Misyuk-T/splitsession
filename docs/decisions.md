@@ -1974,3 +1974,10 @@ Three additions on top of the tab leases (bridge 0.3.0, together with the leases
   request is out within ~2 ms regardless, so a shorter wait would shrink the exposure only a little.
 - **Left as it was.** The copy's first request and its scripts still run as the real profile for a moment (limits.md).
   When the reopen limit holds the tab back, the sweep that follows reopens it at where it stands.
+
+## The agents' window is off by default (2026-10-26)
+
+- **Decision (product owner).** The owner prefers agents' tabs in the window they work in, as background tabs, as before 0.1.9.
+  `agentWindow` now defaults to off; the switch stays (Settings, For AI agents) for whoever wants a separate window.
+- **Existing installs.** No migration: settings store an `explicit` list, and a key never set follows the current default, so
+  installs that never touched the switch go to off on update. Whoever set it on 0.1.9 keeps their choice.

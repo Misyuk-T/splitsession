@@ -34,7 +34,7 @@ export interface Settings {
   /**
    * Tabs an agent opens itself (open_tab, open_in_container) go into one separate ordinary window of this profile, made on
    * the first open without taking focus and reused while it exists, instead of the window the user is working in. An explicit
-   * `windowId` from the agent wins. Off: they open in the current window. Full only. Default on.
+   * `windowId` from the agent wins. Off: they open in the current window, as background tabs. Full only. Default off.
    */
   agentWindow: boolean;
   /**
@@ -75,7 +75,7 @@ export const DEFAULT_SETTINGS: Readonly<Settings> = Object.freeze(
         showNameToPages: false,
         agentBridge: false,
         agentActivity: true,
-        agentWindow: true,
+        agentWindow: false,
         restoreTabs: true,
         markOutsideGroup: true,
         rememberTabs: true,

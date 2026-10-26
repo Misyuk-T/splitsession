@@ -138,7 +138,7 @@ export const TOOLS: readonly ToolSpec[] = [
           type: "integer",
           minimum: 0,
           description:
-            "Window to open the tab in. Default: the agents' window (a separate window for tabs agents open, made on demand), or the user's current window when the user switched that off. A windowId you pass always wins.",
+            "Window to open the tab in. Default: the user's current window (as a background tab), or the agents' window (a separate window made on demand) when the user switched that on. A windowId you pass always wins.",
         },
         wait,
       },
@@ -150,7 +150,7 @@ export const TOOLS: readonly ToolSpec[] = [
     title: "Open a tab",
     readOnly: false,
     description:
-      "Open a new ordinary tab (no container; the regular Chrome profile) in the agents' window (see windowId). Use open_in_container for a container. Accepts http(s), about:blank and chrome:// addresses. To work in a tab the user already has open, do not open a new one: use its tabId from list_tabs.",
+      "Open a new ordinary tab (no container; the regular Chrome profile) in the user's current window or, if the user enabled it, the agents' window (see windowId). Use open_in_container for a container. Accepts http(s), about:blank and chrome:// addresses. To work in a tab the user already has open, do not open a new one: use its tabId from list_tabs.",
     inputSchema: obj(
       {
         url: { type: "string", minLength: 1, maxLength: 8192 },
@@ -163,7 +163,7 @@ export const TOOLS: readonly ToolSpec[] = [
           type: "integer",
           minimum: 0,
           description:
-            "Window to open the tab in. Default: the agents' window (a separate window for tabs agents open, made on demand), or the user's current window when the user switched that off. A windowId you pass always wins.",
+            "Window to open the tab in. Default: the user's current window (as a background tab), or the agents' window (a separate window made on demand) when the user switched that on. A windowId you pass always wins.",
         },
         wait,
       },

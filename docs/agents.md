@@ -358,10 +358,10 @@ publishing queue. So the host gives a tab to **one session at a time**:
   and the host then neither leases nor refuses anything for it. Update both with `npx splitsession-bridge@latest install` and
   restart the AI clients.
 
-### The agents' window (extension after 0.1.8, on by default)
+### The agents' window (extension after 0.1.8, off by default)
 
-Tabs an agent opens **itself** (`open_tab`, `open_in_container`) go into one separate ordinary window of the profile, not the
-window you are working in:
+With the setting on, tabs an agent opens **itself** (`open_tab`, `open_in_container`) go into one separate ordinary window of
+the profile, not the window you are working in. **Off by default**: they open as background tabs in the current window.
 
 - **Made on demand.** The first such open creates the window without taking focus (`focused: false`, `state: "normal"`); the
   blank tab a new window starts with is closed once the agent's own tab is in it. The next opens reuse the window. If you close
@@ -369,11 +369,11 @@ window you are working in:
 - **Identified by its ID, not a title.** Chrome has no window-title API, so the window's ID is kept in `chrome.storage.session`
   (gone with the browser session, which is also when the window itself is gone).
 - **An explicit `windowId` always wins**, with the setting on or off.
-- **Setting.** Settings → For AI agents → "Open agent tabs in a separate window" (default **on**). Off: new tabs open in the
-  current window, as before 0.1.9.
+- **Setting.** Settings → For AI agents → "Open agent tabs in a separate window" (default **off**). Off: new tabs open in the
+  current window, as before 0.1.9. On: the behaviour described here.
 - **Working in a tab you already have open** is unchanged: any tab, including the one you are looking at. The tool descriptions
   tell the agent: *if the user says "this tab" or "the current tab", use the tab with `active: true` in the user's last-focused
-  window; tabs you open yourself go to the agents' window.*
+  window; tabs you open yourself go to the agents' window (when that setting is on).*
 - If Chrome cannot make the window, the tab opens where you are (the same as with the setting off).
 
 ### Per-site pacing (bridge 0.4+)
@@ -521,8 +521,8 @@ name looks wrong, `get_tab_html` with a `selector` shows the source.
 | `bridge_info` (`profile?`) | The connected Chrome profiles: `profiles: [{profileKey, label, windows, tabs, containers, extensionVersion}]` (`label`: the name the user set, or `null`). With one profile also `profileKey`, `profileLabel`, `windows`, `tabs`, `containers`, `extensionVersion` at the top level. Call it when the tabs are not the ones you expected. |
 | `list_containers` (`profile?`) | Containers of every connected profile: id, name, colour, number of tabs, `profile` (`{key, label}`). |
 | `list_tabs` (`windowId?`, `containerId?`, `profile?`) | Every tab of every window of every connected profile: `tabId`, `windowId`, `index`, `active`, `focused` (`true` on the one tab the user is looking at: the active tab of their last-focused ordinary window, or, when that is the agents' window, of the last non-agents window they used; absent elsewhere; "this tab" means it), `agentWindow` (`true` on tabs in the agents' window), `pinned`, `title`, `url`, `status`, `groupId`, `container` (`{id, name}` or `null`), `profile` (`{key, label}`). Start here. |
-| `open_in_container` (`url`, `container`, `createIfMissing?`, `active?`, `windowId?`, `wait?`, `profile?`) | New tab in a container through SplitSession's own open path: assigned before the first request, so the page loads with that container's cookies. Unknown container is an error unless `createIfMissing`. Opens in the background unless `active`, in the agents' window unless `windowId` says otherwise. `profile` is required when several profiles are connected (unless `windowId` says it). |
-| `open_tab` (`url`, `active?`, `windowId?`, `wait?`, `profile?`) | New plain tab (http(s), `about:blank`, `chrome://`) in the agents' window unless `windowId` says otherwise. `profile` as for `open_in_container`. |
+| `open_in_container` (`url`, `container`, `createIfMissing?`, `active?`, `windowId?`, `wait?`, `profile?`) | New tab in a container through SplitSession's own open path: assigned before the first request, so the page loads with that container's cookies. Unknown container is an error unless `createIfMissing`. Opens in the background unless `active`, in the current window (the agents' window when that setting is on) unless `windowId` says otherwise. `profile` is required when several profiles are connected (unless `windowId` says it). |
+| `open_tab` (`url`, `active?`, `windowId?`, `wait?`, `profile?`) | New plain tab (http(s), `about:blank`, `chrome://`) in the current window (the agents' window when that setting is on) unless `windowId` says otherwise. `profile` as for `open_in_container`. |
 | `navigate` (`tabId`, `url`, `wait?`) | Navigate a tab, keeping its container. A domain rule can still replace the tab (new `tabId`). |
 | `navigate_back`, `navigate_forward` (`tabId`, `wait?`) | The previous / next entry of the tab's history (exactly that entry, through the debugger; Chrome's Back button would skip pages nobody interacted with, which is every page the agent just opened). Container tabs get SplitSession's service-worker check first. |
 | `reload` (`tabId`, `bypassCache?`, `wait?`) | Reload, keeping the container. |
