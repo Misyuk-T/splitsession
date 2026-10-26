@@ -2026,3 +2026,51 @@ Three additions on top of the tab leases (bridge 0.3.0, together with the leases
   `rule-budget.spec.ts` opens 30 container tabs in 3 containers on 4 cookie-heavy stand sites (`/heavy`, with widgets that
   set partitioned cookies): one catch-all per container covering all its tabs (the old compile installs 12), no new rules
   for more tabs on the same sites, every tab sends only its container's cookies.
+
+## Rule compression: fewer session rules, same requests (2026-10-27)
+
+- **Goal.** Many accounts (containers) in one Chrome profile. Chrome caps an extension at 5000 session rules and 1000
+  regex rules; with 0.1.12 a heavy jar (the probe's ~54 cookie hosts) cost 556 rules, 1036 once the shared regex budget
+  (900) ran out, so about 6 heavy containers fit under the 4000 warning and the next tab was refused.
+- **Decision.** `compileContainerRules` plans the host rules first (host, EXACT or WIDE, schemes, SameSite category,
+  priority, cookies) and then:
+  - **prunes** (`pruneHostRules`) every rule, and every scheme of an EXACT rule, that no request needs: in each request
+    class the rule decides, the highest rule kept below it gives the same Cookie header. The classes are finite and cover
+    every request: for each rule host, "exactly it" and "a subdomain that is no rule host", × http/https/ws/wss ×
+    same-site / cross-site / cross-site top-level GET. Decided from the lowest priority up, so each step keeps every
+    class's outcome. Typical savings: a subdomain's WIDE rules that repeat its parent's (no Domain cookie of its own),
+    a plain-http rule that says what the catch-all says, the plain-http EXACT rule that answers http like the parent's
+    http WIDE rule (needed for `ws://` only), a secure EXACT rule's http and ws variants that the plain-http band
+    shadows. A WIDE rule is kept or dropped whole (it cannot answer a subset of schemes without becoming several rules).
+  - **spends the regex budget where it saves most:** an EXACT rule with one scheme left is one anchored `urlFilter` rule
+    (no regex); with several it is one `regexFilter` rule while the budget lasts, given first to the rules a regex saves
+    the most for (one per scheme), else one `urlFilter` per scheme;
+  - **coalesces** WIDE rules identical apart from the host (same priority, category, scheme, header, tabs) into one rule
+    with all those hosts in `requestDomains`.
+  Precedence, SameSite, Secure and CHIPS distinctions are untouched: nothing is merged that differs in what it sends.
+  Left as it was, on purpose: the WIDE plain-http rule still does not cover `ws://` (a Secure Domain cookie can still
+  reach `ws://` on a subdomain, as before; changing it would change requests).
+- **Proof.** `src/core/dnr/rule-compression.test.ts` keeps a frozen copy of the 0.1.12 compiler (`src/core/dnr/legacy/`,
+  test-only) and simulates (`dnr-simulator.ts`) every request of a matrix against both rule sets: all hosts of the jar, a
+  subdomain and a sub-subdomain of each, unrelated hosts; http, https, ws, wss; navigation, XHR, WebSocket; GET and POST;
+  no, same-site and cross-site initiator; a URL with a port and the host's own name in its query; the beacon from every
+  site; a tab of another container. Six jars (the heavy probe with tabs on four top-level sites and a blank tab;
+  host-only vs Domain cookies along a subdomain chain; Secure cookies on plain-http hosts and on localhost; all SameSite
+  kinds on host-only and Domain cookies; partitioned cookies on two top-level sites; path cookies and identical cookies
+  on sibling hosts) × regex budgets 0, 1, 5, 40, 300, 900: the deciding action (Cookie header, Set-Cookie removal, or
+  beacon answer) is identical for every request (about 160 000 simulated per heavy case), no rule names a foreign tab,
+  the regex count respects the budget. A deliberately broken pruning (cross-site rules dropped) fails it. An independent
+  review (GPT-6.1) found no differences in 54,432 extra URL probes.
+- **Numbers** (probe, `rule-budget.test.ts`; containers installed one after another share the 900 regex budget):
+
+  | | 0.1.12 | now |
+  |---|---|---|
+  | 1 heavy container | 556 (240 regex) | 352 (136 regex) |
+  | 1 heavy container, regex budget spent | 1036 | 488 |
+  | 6 heavy containers | 4356 | 2112 |
+  | 10 heavy containers | 8500 | 3980 |
+
+  The incident's 16 tabs in 6 containers: 3426 → 2184. About 10 heavy containers fit under the 4000 warning, about 11
+  before the 5000 limit.
+- **Not done.** Containers are not put to sleep when the limit is near; above 5000 rules a tab is still refused and the
+  popup says to close some container tabs.
