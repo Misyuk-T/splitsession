@@ -267,6 +267,33 @@ const server = createServer(async (req, res) => {
         { "set-cookie": values },
       );
     }
+    case "/heavy": {
+      // A cookie-heavy page (rule-budget e2e): Domain and host-only cookies of every SameSite kind, a `mark` naming the
+      // container that loaded it, and two embedded widgets that set partitioned (CHIPS) cookies under this top-level site.
+      const mark = url.searchParams.get("mark") ?? "none";
+      const set = [`mark=${encodeURIComponent(mark)}; Path=/; SameSite=Lax`];
+      ["Lax", "Strict", "None; Secure"].forEach((sameSite, i) => {
+        set.push(`d${i}=${i}; Domain=${host}; Path=/; SameSite=${sameSite}`);
+        set.push(`h${i}=${i}; Path=/; SameSite=${sameSite}`);
+        set.push(`s${i}=${i}; Path=/; Secure; HttpOnly; SameSite=${sameSite}`);
+      });
+      const widgets = ["w1.localhost", "w2.localhost"]
+        .map((w) => `<iframe src="${esc(at(w, "/heavy-widget"))}"></iframe>`)
+        .join("");
+      return send(
+        res,
+        200,
+        page(`${host} heavy`, `<pre id="mark">${esc(mark)}</pre>${widgets}`),
+        { "set-cookie": set },
+      );
+    }
+    case "/heavy-widget":
+      return send(res, 200, page("widget", "<p>widget</p>"), {
+        "set-cookie": [
+          `chips=${token()}; Path=/; Secure; SameSite=None; Partitioned`,
+          `wid=1; Path=/; Secure; SameSite=None`,
+        ],
+      });
     case "/doc-cookie": {
       const v = url.searchParams.get("v") ?? "x";
       return send(
