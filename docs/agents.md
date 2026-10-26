@@ -328,6 +328,36 @@ entry in your AI client) sees all of them.
 | new | 0.1.x | Works for one profile; the card asks to update the bridge; a second profile waits ("busy"). |
 | new | 0.2+ | Every profile at once. |
 
+### Several agents at once: tab leases (bridge 0.3+)
+
+Two AI sessions can use the same Chrome profile at the same time (each client starts its own MCP server; they meet at the
+profile's host). Without a guard one session's click or navigation lands between the other's steps, say in the middle of a
+publishing queue. So the host gives a tab to **one session at a time**:
+
+- **Who holds a tab.** The session that opened it (`open_tab`, `open_in_container`) or last **changed** it: `navigate`,
+  `navigate_back`, `navigate_forward`, `reload`, `click`, `drag`, `type`, `press_key`, `select_option`, `upload_file`,
+  `run_js`, `handle_dialog`, `assign_tab`, `resize_viewport`, `activate_tab`, `close_tab`. A tab nobody holds (your own tabs
+  too) is free for anyone; the first such action takes it.
+- **What is refused.** Another session's action from that list on a held tab fails before it reaches Chrome:
+  `tab 7 is in use by another agent session (claude-code-3f9a, last action 12s ago); open your own tab (open_tab /
+  open_in_container) or pass takeOver: true if the user asked you to work in it`.
+- **What is never refused.** Reading and looking: `snapshot`, `get_tab_text`, `get_tab_html`, `screenshot_tab`,
+  `console_messages`, `network_requests`, `wait_for`, `watch`, the list tools, and also `hover` and `scroll`. They neither take
+  nor need a lease.
+- **`takeOver: true`** on a changing tool takes the tab over (and the previous holder is then refused in turn). The tool
+  description tells the agent to use it only when you asked it to work in that very tab.
+- **`list_tabs`** adds `inUseBy: "<session>"` to a tab another session holds and `yours: true` to one the caller holds; other
+  fields are unchanged.
+- **When a lease ends.** The holder's MCP server exits (its connection to the host closes), the tab is closed, the holder does
+  nothing on the tab for **120 s**, or the bridge is switched off. Leases are per host (per Chrome profile) and live only in
+  memory.
+- **Session names.** Each MCP server calls itself `<name>-<4 hex>`: `CLAUDE_SESSION_NAME` from its environment, else the MCP
+  client's own name (`claude-code`, `codex`, …), else `agent`. Set `CLAUDE_SESSION_NAME` per session when you want readable names.
+- **Mixed versions.** The leases are entirely in the host plus the MCP server, so an extension of 0.1.x / 0.2.x needs no
+  update. A host older than 0.3 ignores the new request fields and leases nothing; an MCP server older than 0.3 names no session,
+  and the host then neither leases nor refuses anything for it. Update both with `npx splitsession-bridge@latest install` and
+  restart the AI clients.
+
 ### Seeing what the agent touches ("Show agent activity", on by default)
 
 While the agent works with one specific tab (every tool except `list_tabs`, `list_containers` and `bridge_info`), that

@@ -1897,3 +1897,31 @@ Goal: a container tab that is not in its container's tab group (dragged out, or 
   works), explicit `profile: Home` (works), scoped/filtered/incomplete lists (still refused), and an ID that becomes
   colliding through a later filtered list.
 
+
+## Tab leases: several agent sessions in one profile (2026-10-26)
+
+- **The incident.** Two agent sessions worked through the bridge at the same time. One navigated in the tab where the other was
+  running a publishing queue, and its actions landed between the other's steps. Nothing marked a tab as busy.
+- **Decision.** The host keeps a lease per tab (bridge 0.3.0, Full only): the session that opened a tab or last changed it holds
+  it; another session's changing action on it is refused with the holder's name and idle time, unless it passes `takeOver: true`.
+  Reads, `hover`, `scroll` and the list tools are never refused and take nothing. A lease ends when the holder's MCP server
+  disconnects, the tab is closed, or after 120 s without an action by the holder. Unleased tabs (the user's own) stay free; the
+  first changing action takes them. `list_tabs` gets `inUseBy` / `yours`. Details: `docs/agents.md`, "Several agents at once".
+- **Why in the host.** Every MCP server is a separate process per AI-client session, so they cannot see each other; the only
+  place all sessions of one Chrome profile meet is the host (`bridge/src/relay.ts`), and that covers every client, including ones
+  we do not know. Doing it in the extension would have meant a protocol bump and an extension release for a guard that has
+  nothing to do with the browser; in the host it also works with the 0.1.8 extension. In memory because a lease older than two
+  minutes is worth nothing anyway, and a restarted host starts with no sessions.
+- **Identity.** The MCP server puts its session name in the request envelope (`session`, `takeOver` next to `tool` and
+  `args`), never in `args`: the extension never sees them. Tool calls use a short connection each, so the name cannot come from
+  the connection; the long-lived presence connection (`__session`) carries the name too, and its closing is what releases the
+  leases. The name is `CLAUDE_SESSION_NAME`, else the MCP client's name, else `agent`, plus 4 random hex digits; `takeOver` is
+  a field of the MCP tool schemas (and stripped like `profile`).
+- **hover / scroll are free.** They do not change the page's state in a way that breaks another session's step, and a hover
+  often is how an agent reads a tooltip. `activate_tab` is treated as changing (it moves the user's window and, in a queue,
+  focus matters).
+- **Degrades.** Old host + new MCP: the host ignores the extra fields, no leases. New host + old MCP: no session name, so no
+  leases for it, and it is never refused. Not covered: two sessions that are not in the same profile (different hosts), or a
+  session that does everything with its own tabs (fine, nothing to guard).
+- **Not done.** Putting the session name into the extension's activity log / the page pill (needs a protocol change); a
+  lease-aware `wait` for a tab to come free.
