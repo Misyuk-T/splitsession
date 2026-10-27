@@ -6,36 +6,65 @@ import { defineConfig } from "wxt";
 import { KNOWN_COPY_IDS } from "./src/core/copies";
 
 /**
- * Two editions from one codebase (docs/decisions.md, "Two editions"). `FACET_EDITION=lite` selects Lite; anything else is
- * Full, the author's daily build and the default of `pnpm build`, `pnpm dev` and the e2e suite. Name and description per
- * edition live here and nowhere else (the product was called Facet until 2026-10-11; see docs/decisions.md, "Rename").
+ * Editions from one codebase (docs/decisions.md, "Two editions" and "The store item becomes Full"). `FACET_EDITION`:
+ * `lite` selects Lite; `store` selects the Chrome Web Store package of Full (Full code, no `key`: the store item's ID
+ * comes from the store); anything else is Full, the author's daily build (pinned ID) and the default of `pnpm build`,
+ * `pnpm dev` and the e2e suite. Everything that differs per edition lives in this one table (the product was called
+ * Facet until 2026-10-11; see docs/decisions.md, "Rename").
  */
-const edition = process.env.FACET_EDITION === "lite" ? "lite" : "full";
-const full = edition === "full";
 const EDITIONS = {
   full: {
+    full: true,
     name: "SplitSession (Full)",
     description:
       "Use several accounts of the same site side by side in one Chrome profile. Includes a local AI-agent bridge (off by default).",
+    // Public half of the key pair from `pnpm keygen`; pins the ID hapfikidacgfgnnajkgnaednpgnhmffk (docs/development.md).
+    pinnedKey: true,
+    outDir: ".output",
+  },
+  store: {
+    full: true,
+    name: "SplitSession: Multiple Logins per Site",
+    description:
+      "Use several accounts of the same site side by side in one Chrome profile. Optional local AI-agent bridge, off by default.",
+    // The store rejects a manifest with `key` and assigns the item's own ID (hhodioekcdmhpocjbkjnblmbmchddphf).
+    pinnedKey: false,
+    outDir: ".output/store",
   },
   lite: {
+    full: false,
     name: "SplitSession: Multiple Logins per Site",
     description:
       "Use several accounts of the same site side by side in one Chrome profile.",
+    // No key: a local unpacked Lite gets a path-derived ID, so it installs beside Full.
+    pinnedKey: false,
+    outDir: ".output/lite",
   },
 } as const;
+type Edition = keyof typeof EDITIONS;
+const edition: Edition =
+  process.env.FACET_EDITION === "lite" || process.env.FACET_EDITION === "store"
+    ? process.env.FACET_EDITION
+    : "full";
+const { full } = EDITIONS[edition];
 
-// Public half of the key pair from `pnpm keygen`; pins the Full extension's ID (see docs/development.md). Lite has no
-// key: the Chrome Web Store assigns its own ID, and a local Lite build gets a path-derived one, so Lite and Full can
-// be installed side by side.
-const extensionKey = full
-  ? readFileSync(new URL("./extension-key.pub", import.meta.url), "utf8").trim()
-  : undefined;
+// Test only: `FACET_TEST_KEY` (base64 SPKI) puts that public key into any edition, so a Lite and a store build share one ID
+// (e2e/store-upgrade.spec.ts, the Lite -> Full update on one store item). A release build never sets it; scripts/check-lite.mjs
+// and scripts/check-store.mjs fail a manifest with `key`.
+const testKey = process.env.FACET_TEST_KEY?.trim();
+const extensionKey =
+  testKey ||
+  (EDITIONS[edition].pinnedKey
+    ? readFileSync(
+        new URL("./extension-key.pub", import.meta.url),
+        "utf8",
+      ).trim()
+    : undefined);
 
 // Duplicate-copy detection (src/core/copies.ts): the copies that may talk to each other, in the manifest
 // (`externally_connectable`) and in the bundle (`__EXTRA_COPY_IDS__`). The e2e spec duplicate-copies.spec.ts builds
 // a Full with the path-derived ID of a local Lite added through FACET_TEST_COPY_IDS (and FACET_OUT_DIR); a release build
-// sets neither, and scripts/check-lite.mjs fails a Lite whose list is not exactly the two known IDs.
+// sets neither, and scripts/check-lite.mjs and scripts/check-store.mjs fail a list that is not exactly the two known IDs.
 const extraCopyIds = (process.env.FACET_TEST_COPY_IDS ?? "")
   .split(",")
   .map((id) => id.trim())
@@ -52,8 +81,9 @@ const iconSet = {
 
 export default defineConfig({
   srcDir: "src",
-  // Full keeps `.output/chrome-mv3` (the folder loaded unpacked in Chrome); Lite builds into `.output/lite/chrome-mv3`.
-  outDir: process.env.FACET_OUT_DIR ?? (full ? ".output" : ".output/lite"),
+  // Full keeps `.output/chrome-mv3` (the folder loaded unpacked in Chrome); Lite builds into `.output/lite/chrome-mv3`, the
+  // store package into `.output/store/chrome-mv3`.
+  outDir: process.env.FACET_OUT_DIR ?? EDITIONS[edition].outDir,
   zip: { artifactTemplate: `splitsession-${edition}-{{version}}.zip` },
   vite: () => ({
     plugins: [

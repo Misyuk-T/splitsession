@@ -1,5 +1,6 @@
 # SplitSession CI: lint, formatting, typecheck, unit tests and both editions on every push and pull request (no e2e here: it needs a headed
-# Chromium and the native bridge host, see docs/development.md). A tag `v*` also publishes a GitHub Release with both zips.
+# Chromium and the native bridge host, see docs/development.md). A tag `v*` also publishes a GitHub Release with the zips
+# (Lite, Full with the pinned key for load-unpacked, and the keyless store package of Full).
 name: CI
 
 on:
@@ -48,11 +49,15 @@ jobs:
       - name: Build Lite (includes scripts/check-lite.mjs)
         run: pnpm build:lite
 
-      - name: Zip both editions
+      - name: Build the store package (Full without key; includes scripts/check-store.mjs)
+        run: pnpm build:store
+
+      - name: Zip every edition
         run: |
           pnpm zip:full
           pnpm zip:lite
-          ls -l .output/splitsession-full-*.zip .output/lite/splitsession-lite-*.zip
+          pnpm zip:store
+          ls -l .output/splitsession-full-*.zip .output/lite/splitsession-lite-*.zip .output/store/splitsession-store-*.zip
 
       - uses: actions/upload-artifact@v4
         with:
@@ -62,6 +67,7 @@ jobs:
           path: |
             .output/splitsession-full-*.zip
             .output/lite/splitsession-lite-*.zip
+            .output/store/splitsession-store-*.zip
 
   release:
     if: startsWith(github.ref, 'refs/tags/v')
@@ -93,5 +99,6 @@ jobs:
           gh release create "${GITHUB_REF_NAME}" \
             "$(find zips -name 'splitsession-lite-*.zip')" \
             "$(find zips -name 'splitsession-full-*.zip')" \
+            "$(find zips -name 'splitsession-store-*.zip')" \
             --title "SplitSession ${GITHUB_REF_NAME}" \
             --generate-notes
