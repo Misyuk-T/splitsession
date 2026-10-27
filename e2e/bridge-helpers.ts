@@ -14,6 +14,7 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import { type BrowserContext, chromium, type Page } from "@playwright/test";
 
+import { BRIDGE_CONSENT_VERSION } from "../src/core/bridge-consent";
 import { EXTENSION_ID } from "./env";
 import { apiOf, extensionArgs, isOurWorker, popupPage } from "./extension";
 import { expect, type Facet } from "./fixtures";
@@ -208,6 +209,7 @@ export async function startSecondProfile(facet: Facet): Promise<SecondProfile> {
   const api = async <T>(method: string, ...args: unknown[]): Promise<T> =>
     apiOf(await worker())<T>(method, ...args);
   await api("listContainers"); // waits for the worker to be ready
+  await api("grantBridgeConsent", BRIDGE_CONSENT_VERSION); // a fresh profile: the disclosure is accepted, as in the main one
   return {
     ctx,
     api,

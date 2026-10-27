@@ -263,3 +263,20 @@ button.fx-bridge__main:focus-visible {
 .fx-bridge__hint p {
   margin: 0;
 }
+
+/* The agent bridge disclosure (BridgeConsentDialog): wider than a confirmation, it is read, not skimmed. */
+.fx-dialog:has(.fx-consent) {
+  width: min(520px, 100%);
+}
+.fx-consent p + p,
+.fx-consent__list + p {
+  margin-top: 10px;
+}
+.fx-consent__list {
+  margin: 8px 0 0;
+  padding-left: 20px;
+  list-style: disc;
+}
+.fx-consent__list li + li {
+  margin-top: 4px;
+}

@@ -44,7 +44,7 @@ export function createAgentSide(
     },
   );
   return {
-    bridgeApi: createBridgeApi(bridge, b),
+    bridgeApi: createBridgeApi(bridge, b, extras.bridgeConsent!),
     install(api) {
       // The activity mark of tab groups follows the activity display (its timers) and never has a clock of its own.
       const groupMark = new GroupActivityMark({

@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import type { browser } from "wxt/browser";
 
-import { STORE_ID,UNPACKED_FULL_ID } from "../core/copies";
+import { STORE_ID, UNPACKED_FULL_ID } from "../core/copies";
 import { createCopyDetector, registerCopyListeners } from "./copies";
 import { createLogger } from "./log";
 

@@ -2,6 +2,7 @@ import { browser } from "wxt/browser";
 
 import { type ContainerId, ruleKeyOf } from "../core";
 import type { StorageAreaLike } from "../engine/storage/storage-area";
+import { BridgeConsentStore } from "./bridge/consent";
 import { type ActionApi, BadgeIndicator } from "./badges";
 import { DomainRuleEngine } from "./domain-rule-engine";
 import type { FacetEvent } from "./events";
@@ -33,6 +34,8 @@ const START_SWEEP_DELAY_MS = 1_500;
  */
 export class Extras {
   readonly settings: SettingsStore;
+  /** Full only: the user's consent to the agent bridge, which gates the `agentBridge` setting. */
+  readonly bridgeConsent: BridgeConsentStore | null;
   readonly rules: RuleStore;
   readonly exemptions: ExemptionManager;
   readonly groups: TabGroupProjection;
@@ -51,7 +54,8 @@ export class Extras {
   ) {
     const local = b.storage.local as unknown as StorageAreaLike;
     const session = b.storage.session as unknown as StorageAreaLike;
-    this.settings = new SettingsStore(local);
+    this.bridgeConsent = __FULL__ ? new BridgeConsentStore(local) : null;
+    this.settings = new SettingsStore(local, this.bridgeConsent?.guard());
     this.rules = new RuleStore(
       local,
       () => new Set(facet.containers.list().map((c) => c.id)),

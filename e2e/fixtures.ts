@@ -10,6 +10,7 @@ import {
   type Worker,
 } from "@playwright/test";
 
+import { BRIDGE_CONSENT_VERSION } from "../src/core/bridge-consent";
 import { at, ext, EXTENSION_ID, TEST_PORT } from "./env";
 import { apiOf, extensionArgs, isOurWorker } from "./extension";
 
@@ -334,6 +335,9 @@ export const test = base.extend<
       markOutsideGroup: true,
       rememberTabs: true,
     });
+    // The bridge specs switch the bridge on through the API, which needs the disclosure accepted first (src/core/bridge-consent.ts);
+    // bridge-consent.spec.ts removes the record to test the dialog and the gate.
+    await api("grantBridgeConsent", BRIDGE_CONSENT_VERSION);
     // Container tabs closed by earlier tests are not reopened by this one.
     await api("forgetClosedTabs");
     // No container tab is open now: the content scripts go down to what that state needs at once (instead of after the

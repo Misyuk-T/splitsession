@@ -8,6 +8,7 @@ import type {
 import { UPDATE_COMMAND } from "../../bridge/protocol";
 import { IconChevron, IconSettings } from "../icons";
 import { useBridge } from "../useBridge";
+import { BridgeConsentDialog } from "./BridgeConsentDialog";
 import { Button } from "./Button";
 import { CopyBlock } from "./CopyBlock";
 import { Switch, SwitchControl } from "./Toggle";
@@ -258,6 +259,14 @@ export const BridgeSwitchCard = ({
         <p class="fx-notice fx-notice--error" role="alert">
           {error}
         </p>
+      )}
+      {bridge.consent.asking && (
+        <BridgeConsentDialog
+          busy={busy}
+          error={bridge.consent.error}
+          onAllow={() => void bridge.consent.allow()}
+          onCancel={bridge.consent.cancel}
+        />
       )}
     </div>
   );

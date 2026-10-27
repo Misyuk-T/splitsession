@@ -1,6 +1,6 @@
 // Fails when the Chrome Web Store package of Full is not what the store item may receive: a `key` (the store rejects it,
 // and it would also mean a test key leaked in), the Full edition's name, missing agent-bridge permissions, a copy-ID list
-// other than the two known IDs, or a bundle without the agent bridge. Run by `pnpm build:store` and
+// other than the two known IDs, or a bundle without the agent bridge and its consent gate. Run by `pnpm build:store` and
 // `pnpm zip:store` (and CI). The values are written out here, not derived from wxt.config.ts: a check that reads the same
 // source as the build cannot catch a mistake in it.
 //
@@ -25,6 +25,9 @@ const REQUIRED_PERMISSIONS = ["nativeMessaging", "debugger"];
 const FORBIDDEN_PERMISSIONS = ["userScripts", "management"];
 // [label, regex]: each must occur in some text file of the bundle.
 const REQUIRED_MARKERS = [
+  // The consent record (src/core/bridge-consent.ts): without it the switch could turn on without the disclosure.
+  ["agent bridge consent key (agentBridgeConsent)", /agentBridgeConsent/],
+  ["agent bridge disclosure (Allow agent access)", /Allow agent access/],
   ["native host name com.splitsession.bridge", /com\.splitsession\.bridge/],
 ];
 const TEXT = /\.(?:js|mjs|html|css|json|txt)$/;
@@ -107,5 +110,5 @@ if (problems.length > 0) {
   process.exit(1);
 }
 console.log(
-  `check-store: OK, ${files.length} files, ${(bytes / 1024).toFixed(0)} KiB, no key, nativeMessaging + debugger, agent bridge present`,
+  `check-store: OK, ${files.length} files, ${(bytes / 1024).toFixed(0)} KiB, no key, nativeMessaging + debugger, agent bridge and consent gate present`,
 );
