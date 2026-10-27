@@ -97,14 +97,27 @@ Two findings from the repository that matter before any submission:
 - **Since 1 August 2026** data collection must be "strictly necessary" for the disclosed single purpose, must be
   prominently disclosed even when it is clearly related to it, and later changes in data handling must be announced to
   users ([CWS policy updates 2026](https://developer.chrome.com/blog/cws-policy-updates-2026)).
-- **What to tick**:
-  - Lite: **Authentication information** (container cookies) and **Web history** (the FAQ defines browsing activity to
-    include cookies in browser storage and HTTP request and response content, and the extension reads tab addresses
-    for domain rules). Nothing else.
-  - Full: the same, plus **Website content** (page text, HTML, screenshots go to the local agent) and **User activity**
-    (the agent's input and the console and network capture). Say in the policy that the recipient is a program on the
-    user's own computer; transmissions to a native program on the same computer are exempt from the secure-transport
-    rule ([user-data FAQ, Q16](https://developer.chrome.com/docs/webstore/program-policies/user-data-faq)).
+- **What to tick** (since 2026-10-27 the store item is Full, so the Full list is the one to submit):
+  - Lite (history; up to 0.1.x): **Authentication information** (container cookies) and **Web history** (the FAQ defines
+    browsing activity to include cookies in browser storage and HTTP request and response content, and the extension reads
+    tab addresses for domain rules). Nothing else.
+  - **Full (the store item from the update that adds the bridge)**: tick exactly these four, nothing else:
+    - **Authentication information**: container cookies are captured and stored per container (both editions).
+    - **Web history**: tab addresses and titles (domain rules, restore, saved tabs; the agent's `list_tabs`).
+    - **Website content**: with the bridge on, page text, HTML, accessibility snapshots and screenshots are read and handed
+      to the local agent program (`get_tab_text`, `get_tab_html`, `snapshot`, `screenshot_tab`).
+    - **User activity**: the bridge records the page's console and network list for the agent (`console_messages`,
+      `network_requests`; these can include what the user typed or clicked as it shows up in requests and logs), and the
+      agent's own clicks and keystrokes are sent into pages. The FAQ's "user activity" covers network monitoring, clicks,
+      mouse position, scroll and keystroke logging; the network capture is the reason, not the input the agent sends.
+    - Not: personally identifiable information, health, financial and payment, personal communications, location. Page
+      content can *contain* such data, which is exactly what "Website content" declares; ticking those too would claim a
+      purposeful collection the extension does not do. (Judgement call; if a reviewer asks, the reviewer note already says
+      that page content can include anything the page shows.)
+  - Say in the policy that the recipient is a program on the user's own computer and that the extension sends nothing to a
+    server; transmissions to a native program on the same computer are exempt from the secure-transport rule
+    ([user-data FAQ, Q16](https://developer.chrome.com/docs/webstore/program-policies/user-data-faq)). docs/privacy.md does.
+  - Certifications: all three (not sold; not used or transferred for unrelated purposes; not for creditworthiness).
 - Over-declaring is safer than under-declaring here: a declaration that is narrower than what the code visibly does is
   the mismatch the policy punishes.
 
@@ -284,6 +297,11 @@ From [images](https://developer.chrome.com/docs/webstore/images) and
 - Mitigations: the listing says plainly that the bridge needs a separately installed companion program and that the
   extension works as a container extension without it; reviewer notes with a link to a short video of the bridge in use;
   set-up steps reachable from Settings (they are, "How to connect").
+- **Framing since the store item became Full (2026-10-27).** The item's title and promise stay "multiple logins per site";
+  the bridge is an optional, off-by-default extra for people who run a local agent. So the reviewer judges a container
+  extension that works fully without the companion program, and the bridge is tested with `npx splitsession-bridge install`
+  (reviewer notes and video script in listing-draft.md, section 2). "Not connected" without the program is the documented
+  state, not a broken feature.
 
 ### 2.6 Full: single purpose (high risk: Red Magnesium/Copper/Lithium/Argon)
 
@@ -291,7 +309,14 @@ From [images](https://developer.chrome.com/docs/webstore/images) and
   ([quality guidelines](https://developer.chrome.com/docs/webstore/program-policies/quality-guidelines)).
 - "Containers" and "let a local AI agent drive every tab" are two purposes on their face, and Lite existing as a
   separate item shows they *can* be separated, which is the policy's own test.
-- The best framing: one purpose, "account-aware browser access for the user's own local agent", where containers are
+- **Chosen framing (2026-10-27, store item = Full):** one purpose, "several accounts of the same site side by side", and
+  the bridge as a way for the user's own agent to *use those accounts*: it opens pages in a chosen container
+  (`open_in_container`), lists tabs with their containers and acts in a container tab as that account. The single-purpose
+  text leads with containers and names the bridge as optional and off by default (listing-draft.md). The alternative,
+  "account-aware browser access for the user's own local agent" with containers as the means, is the fallback if review
+  rejects the first: it is honest too, but it would retitle an item 432 users installed for containers. Lite remaining
+  buildable does not weaken the framing: it is no longer an item, so the store does not see the separation.
+- The older reading: one purpose, "account-aware browser access for the user's own local agent", where containers are
   what lets the agent act as a chosen account. That is honest (`open_in_container`, `list_tabs` with containers) but
   arguable. Closest precedent (2026-10-27): **EazySessions** is listed with isolated multi-account sessions *and* a
   built-in MCP server for Claude/ChatGPT/Cursor, plus a desktop agent on recent Chrome (4.1); its permissions and review
@@ -431,11 +456,13 @@ summary of each page, not checked against raw HTML; no written reviews were visi
   You cannot choose a store ID; the old key.pem-in-zip trick is undocumented (**UNVERIFIED**, do not rely on it).
 - **Lite**: no `key` today, nothing to do. The store assigns the ID. Optionally adopt the store key later for local
   Lite builds (not needed).
-- **Full on the store** (if ever): the store item gets a **new ID**. Consequences: (1) the store zip must be built
-  without `key`; (2) the native host manifest's `allowed_origins` must list both IDs (it accepts a list; from the
-  native-messaging docs, **UNVERIFIED** here) and `scripts/bridge-install.mjs` must write both; (3) docs/agents.md's
-  fixed `EXT` address differs per install; (4) containers do not move between IDs (storage is per extension), so
-  switching a user from the keyed build to the store build needs Export then Import.
+- **Full on the store (decided 2026-10-27: the existing item, updated in place).** Full ships on the Lite item's ID
+  `hhodioekcdmhpocjbkjnblmbmchddphf`, so existing users keep their data. Done: (1) the store zip is built without `key`
+  (`pnpm zip:store`, `FACET_EDITION=store`, checked by `scripts/check-store.mjs`); (2) the native host manifest's
+  `allowed_origins` lists both IDs (`ALLOWED_EXTENSION_IDS`; `splitsession-bridge install` 0.4.0 writes both, `status` marks
+  a missing one; a host installed by 0.3 or older must be installed again); (3) docs/agents.md gives both `EXT` addresses;
+  (4) containers still do not move between IDs: switching between the store install and an unpacked Full needs Export then
+  Import, and both installed in one profile warn about each other.
 - **Full off the store**: keep the key; nothing changes.
 
 ### 6.3 Permission increases
@@ -446,7 +473,12 @@ summary of each page, not checked against raw HTML; no written reviews were visi
   new required permission as a breaking release.
 - Optional permissions do not disable; `debugger` and `declarativeNetRequest` cannot be optional
   ([permissions API](https://developer.chrome.com/docs/extensions/reference/api/permissions)).
-- **Lite must never grow into Full's permissions by update**: that is exactly why Full is a separate item.
+- ~~**Lite must never grow into Full's permissions by update**: that is exactly why Full is a separate item.~~
+  **Superseded 2026-10-27** (decisions.md, "The store item becomes Full"): the item is updated from Lite to Full on purpose.
+  The update adds `nativeMessaging` and `debugger`, so every existing user's copy is disabled until they approve; while it
+  waits, container tabs are plain tabs (no cookie isolation). Mitigation: the last Lite release shows a one-time popup notice
+  before the update, the release notes say it, and the update goes out in a release of its own (6.1). What happens in that
+  window, measured: docs/release/upgrade-test.md.
 - Removing `cookies` (optional) has no user-visible effect.
 
 ### 6.4 Rollback
@@ -522,7 +554,10 @@ summary of each page, not checked against raw HTML; no written reviews were visi
 
 ### 7.2 Full
 
-**Recommended for v0.1.0: do not submit Full to the store; ship it as the GitHub Release zip (load unpacked).**
+**Superseded 2026-10-27:** Full goes to the store as an in-place update of the Lite item (6.2, 6.3; the texts to paste are
+in listing-draft.md, section 2). The checklist below is kept as history; items 1, 2, 4 and 5 are done.
+
+Was: **Recommended for v0.1.0: do not submit Full to the store; ship it as the GitHub Release zip (load unpacked).**
 
 1. Same code and verification steps as Lite 1 to 3 (cookies removal applies to both).
 2. Release notes on the GitHub Release: Developer mode required, no auto-update, how to update (replace folder,

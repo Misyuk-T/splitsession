@@ -36,24 +36,32 @@ More detail: [docs/features.md](docs/features.md).
 | Containers, isolation, tab groups, rules, restore, export / import | yes | yes |
 | Local AI agent bridge (MCP), off by default | no | yes |
 | Extra permissions | none | `nativeMessaging`, `debugger` |
-| Where | Chrome Web Store, GitHub Releases | GitHub Releases |
+| Where | build from source | Chrome Web Store, GitHub Releases |
 
-Lite is the Chrome Web Store edition. Full adds the agent bridge; its code is not compiled into Lite.
+The Chrome Web Store item carried Lite up to 0.1.x and carries Full from the update that adds the agent bridge (one item,
+updated in place: containers and settings carry over). That update asks for the two extra permissions, and Chrome pauses
+SplitSession until you approve them in the puzzle-piece menu or `chrome://extensions`; until then container tabs act like
+normal tabs. The bridge stays off until you switch it on and accept what it allows. Lite remains in the code base (its
+agent code is not compiled in) but is no longer uploaded.
+
+Full has one of two extension IDs: `hhodioekcdmhpocjbkjnblmbmchddphf` from the store, `hapfikidacgfgnnajkgnaednpgnhmffk`
+loaded unpacked (pinned by the manifest key). The bridge program (`npx splitsession-bridge install`, 0.4 or newer) accepts
+both.
 
 ## Install
 
-**Chrome Web Store (Lite), the easy way:** [SplitSession: Multiple Logins per Site](https://chromewebstore.google.com/detail/splitsession-multiple-log/hhodioekcdmhpocjbkjnblmbmchddphf). One click, updates automatically.
+**Chrome Web Store, the easy way:** [SplitSession: Multiple Logins per Site](https://chromewebstore.google.com/detail/splitsession-multiple-log/hhodioekcdmhpocjbkjnblmbmchddphf). One click, updates automatically.
 
-**From GitHub Releases** (Full, or Lite if you prefer a manual install):
+**From GitHub Releases** (Full, loaded unpacked; it never updates by itself):
 
 ![Install from a GitHub Release: download the zip, unzip it, open chrome://extensions, turn on Developer mode, Load unpacked, pin the toolbar button](docs/media/install.gif)
 
-1. Download `splitsession-lite-<version>.zip` or `splitsession-full-<version>.zip` from [Releases](https://github.com/Misyuk-T/splitsession/releases) and unzip it.
+1. Download `splitsession-full-<version>.zip` from [Releases](https://github.com/Misyuk-T/splitsession/releases) and unzip it. (`splitsession-store-<version>.zip` is the package uploaded to the Chrome Web Store, without the manifest key; `splitsession-lite-<version>.zip` is Lite.)
 2. Open `chrome://extensions` and turn on *Developer mode*.
 3. Choose *Load unpacked*.
 4. Select the unzipped folder.
 
-Keep one copy of SplitSession per Chrome profile (Store or GitHub, Lite or Full): two enabled copies fight over cookies, and SplitSession warns when it finds the other one.
+Keep one copy of SplitSession per Chrome profile (Store or GitHub, Lite or Full): two enabled copies fight over cookies, and SplitSession warns when it finds the other one (with its edition, version and where it came from). The store install and an unpacked Full are two copies too: their containers are separate (storage belongs to the extension ID), so moving from one to the other is Export, then Import.
 
 To build from source, see *Development* below.
 

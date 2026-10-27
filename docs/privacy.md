@@ -6,12 +6,13 @@ layout: page
 
 # SplitSession privacy policy
 
-Effective date: 2026-10-20
+Effective date: 2026-10-27
 
 SplitSession is a free, open-source Chrome extension by Taras Misiuk that lets you keep several accounts of the same
 website signed in side by side ("containers"). This policy covers both editions: **Lite** (containers only) and **Full**
-(containers plus an optional local AI agent bridge). The Chrome Web Store has the Lite edition, which contains none of the
-Full edition's features or extra permissions. The source code is public: <https://github.com/Misyuk-T/splitsession>.
+(containers plus an optional local AI agent bridge). The Chrome Web Store item "SplitSession: Multiple Logins per Site"
+carried Lite up to version 0.1.x and carries **Full** from the update that adds the agent bridge (announced in the extension
+beforehand); Full is also available from GitHub. The source code is public: <https://github.com/Misyuk-T/splitsession>.
 
 ## In short
 
@@ -21,7 +22,8 @@ Full edition's features or extra permissions. The source code is public: <https:
   another extension is a ping between two copies of SplitSession, answered with the edition and version only, so it can warn
   when two copies are on; no page, tab or cookie data is involved.
 - Full only: if **you switch on** the agent bridge, an AI agent on your own computer can read and operate your tabs. It is
-  off by default. See "The Full edition's agent bridge" below.
+  off by default, and before it turns on for the first time SplitSession tells you what the agent can do and where the data
+  goes, and asks you to allow it. See "The Full edition's agent bridge" below.
 
 ## What data SplitSession handles
 
@@ -60,6 +62,12 @@ Nothing leaves your device by SplitSession's own action. The developer runs no s
 The Full edition has an optional bridge for an AI agent that you run yourself on the same computer (for example Claude Code
 or Codex). It is **off by default** and is one all-or-nothing switch in the extension's Settings.
 
+- **Before the first switch-on** SplitSession shows a dialog that says what the agent program can do (the list below) and
+  where the data goes, with the buttons "Allow agent access" and "Cancel". Only "Allow agent access" turns the bridge on.
+  Your answer is kept on your device (`chrome.storage.local`, key `agentBridgeConsent`: the version of the text you accepted
+  and the time); if a later version of SplitSession changes what the bridge can access, it asks again. Settings imported
+  from elsewhere or carried over from another build never turn the bridge on without this consent.
+
 - **While it is off**: the extension holds no connection, no helper process runs and no socket exists. Nothing is reachable.
 - **While you have it on**: any program running as your user that can reach the bridge's private local socket, normally the
   agent you installed, can list your tabs and their containers and can read and operate them: page text and HTML, the
@@ -80,6 +88,7 @@ The helper program is the separate `splitsession-bridge` package (<https://www.n
 stores nothing except a small start/stop log next to its socket (`host.log`; no requests and no page content).
 
 The Lite edition has none of this: it does not contain the bridge code, and its package is checked for that at build time.
+Lite is no longer uploaded to the Chrome Web Store; it can still be built from the source code.
 
 ## Permissions, and why
 
@@ -115,7 +124,8 @@ The Lite edition has none of this: it does not contain the bridge code, and its 
 SplitSession's use of information received from Chrome APIs follows the
 [Chrome Web Store User Data Policy](https://developer.chrome.com/docs/webstore/program-policies/user-data-faq), including the
 Limited Use requirements. The data described above is used only to provide the extension's single purpose (keeping
-several accounts of one website signed in side by side). It is not sold or transferred to third parties, not used or
+several accounts of one website signed in side by side, and, in Full, letting your own local agent work in those accounts'
+tabs when you switch the bridge on). It is not sold or transferred to third parties, not used or
 transferred for purposes unrelated to that purpose, not used for advertising, and not used to determine creditworthiness
 or for lending. No human reads it, because it never reaches the developer.
 

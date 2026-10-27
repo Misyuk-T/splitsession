@@ -312,9 +312,10 @@ far less). Deleting a container closes its tabs and forgets its cookies, but lea
 **Two copies of SplitSession in one profile.** Not supported: both rewrite `Cookie` headers, both capture `Set-Cookie` into
 their own jars and both run the tab-group guard, so logins do not stick and tabs reload in a loop. SplitSession warns about
 it (the popup, and Settings > General) when it can see the other copy: each copy answers one ping from the other known IDs
-(the Chrome Web Store Lite and Full) and pings them itself, through `externally_connectable` (no permission). It does not
+(the Chrome Web Store item and the unpacked Full) and pings them itself, through `externally_connectable` (no permission). It does not
 cover two **unpacked Lites**: an unpacked extension's ID comes from its folder's path, so no copy can know it in advance
-(an unpacked Lite does find the Store Lite and Full, and they find each other). It also cannot see a copy from before this check existed (it does not answer the ping), and finds a
+(an unpacked Lite does find the store item and the unpacked Full, and those two find each other: the store Full and an
+unpacked Full in one profile are warned about like any two copies). It also cannot see a copy from before this check existed (it does not answer the ping), and finds a
 newly enabled copy within about ten seconds (a found copy is remembered for a minute). It never turns the other copy off:
 that is the person's call, in `chrome://extensions`.
 
@@ -433,8 +434,8 @@ full access to every tab, in containers or not (docs/agents.md, section 7). What
   0700 directory) keeps other users and web pages out, but not another program of yours, or malware running as you,
   while the switch is on. The MCP server is not authenticated beyond that: there is no token. Turn it off when you are
   not using it.
-- **Only this extension can start the host**: the host manifest's `allowed_origins` and the host itself pin SplitSession's fixed
-  extension ID. Anyone who can edit your `NativeMessagingHosts` folder or `~/Library/Application Support/SplitSession/host/` can
+- **Only this extension can start the host**: the host manifest's `allowed_origins` and the host itself pin SplitSession's two
+  extension IDs (the Chrome Web Store item and the unpacked Full). Anyone who can edit your `NativeMessagingHosts` folder or `~/Library/Application Support/SplitSession/host/` can
   already run code as you.
 - **The agent sees what the page shows, including container names** (titles carry the `[name] ` prefix when that
   setting is on), and `run_js` in the MAIN world runs in the page, where it can read the page's cookies that are not

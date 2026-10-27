@@ -11,7 +11,7 @@ Start with the [project README](../README.md).
 | [development.md](development.md) | Building, testing and the end-to-end stand; Lite and Full editions; the source layout by folder; test hooks; the extension ID and signing key. |
 | [decisions.md](decisions.md) | The decision log (ADRs): what was decided at each stage and why, including every security fix. Newest topics are at the end. |
 | [privacy.md](privacy.md) | The privacy policy (both editions): what is handled, what leaves the device (nothing), the agent bridge, permissions, deletion. Served by GitHub Pages as `/privacy` once the repository is public. |
-| [release/](release) | Release preparation: [chrome-web-store.md](release/chrome-web-store.md) (research and checklists), [listing-draft.md](release/listing-draft.md) (store texts), [npm.md](release/npm.md) (publishing `splitsession-bridge`). |
+| [release/](release) | Release preparation: [chrome-web-store.md](release/chrome-web-store.md) (research and checklists), [listing-draft.md](release/listing-draft.md) (store texts; section 2 is the update to Full), [upgrade-test.md](release/upgrade-test.md) (the Lite -> Full update on one ID: what was tested and the manual checklist), [npm.md](release/npm.md) (publishing `splitsession-bridge`). |
 | [commit-gap.md](commit-gap.md) | The one known isolation hole that is documented and not fixed (same-origin frames and popups during navigation), with measurements and the rejected fixes. |
 | [open-questions.md](open-questions.md) | Observations without a decision yet. |
 | [screenshots/](screenshots) | The pictures used in the README and features.md (`node scripts/screenshots.mjs`, see development.md). |

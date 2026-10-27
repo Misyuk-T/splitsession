@@ -8,13 +8,15 @@ This page is about the **Full** edition (README, "Two editions"). The Lite editi
 "Show the container name to pages" setting; only sections 1 and 2 (`open.html`, `#ctr=`) apply to it, and its extension ID is not
 the one below.
 
-The Full extension ID is fixed by the manifest key, so these addresses are the same on every machine:
+Full has one of two extension IDs, depending on where it came from (docs/decisions.md, "The store item becomes Full"):
 
 ```
-EXT = chrome-extension://hapfikidacgfgnnajkgnaednpgnhmffk
+EXT = chrome-extension://hhodioekcdmhpocjbkjnblmbmchddphf   (installed from the Chrome Web Store)
+EXT = chrome-extension://hapfikidacgfgnnajkgnaednpgnhmffk   (loaded unpacked: GitHub Release zip or a checkout; fixed by the manifest key)
 ```
 
-With the bridge on, `bridge_info` prints the ID SplitSession is running with.
+Both are the same on every machine. With the bridge on, `bridge_info` prints the ID SplitSession is running with. The
+examples below use the unpacked ID; for the store install put the other one in.
 
 ## 1. Open a page in a container: `open.html`
 
@@ -171,7 +173,8 @@ Needs Node.js 20 or newer, on macOS or Linux (Windows is not supported yet). The
 
 1. `npx splitsession-bridge install`. It copies the program to `~/Library/Application Support/SplitSession/host/` (macOS) or
    `$XDG_CONFIG_HOME/SplitSession/host/` (Linux, default `~/.config`), registers it with Chrome (`com.splitsession.bridge.json` in Chrome's
-   `NativeMessagingHosts` folder, `allowed_origins` = the Full extension's ID) and registers the MCP server with your AI client:
+   `NativeMessagingHosts` folder, `allowed_origins` = both IDs above, the store item and the unpacked Full) and registers the MCP
+   server with your AI client:
    - `--client <list>` (comma separated or repeated): `claude`, `codex`, `cursor`, `claude-desktop` (macOS), `gemini`, `vscode`,
      `all` or `none`. Without it: in a terminal, `install` finds the AI clients on your computer and asks Y/n for each
      ("Register SplitSession with: [x] Claude Code [x] Codex ..."); in a script (no terminal) it is `none`, which registers
@@ -188,11 +191,15 @@ Needs Node.js 20 or newer, on macOS or Linux (Windows is not supported yet). The
      printed for you to paste. Re-running `install` changes nothing when the entry is already right.
 
    Other options: `--browser chrome|chromium|brave|edge|arc|all` (default `chrome`; Arc is macOS only, its folder is
-   Chromium's usual one and has not been verified here), `--extension-id <id>` (default the Full extension; for another build,
-   e.g. a future Store ID). `install` is idempotent: run it again after changing Node versions (the launcher pins the Node that
-   installed it) or to update. `npx splitsession-bridge status` reports the manifests, the copied program and whether a host
-   is running (read-only).
-2. Open **Settings, "For AI agents"** (the second section of the options page, after General) and flip **Agent bridge**. Chrome starts the host when you do; no restart needed. The same section has a **"How to connect"** disclosure with step 1 (a copy block, live status, "Check again").
+   Chromium's usual one and has not been verified here), `--extension-id <id>` (adds one more allowed extension, e.g. a build
+   loaded unpacked from another folder without the key; the two IDs above are always allowed). `install` is idempotent: run it
+   again after changing Node versions (the launcher pins the Node that installed it) or to update. `npx splitsession-bridge
+   status` reports the manifests (with "ok" or "MISSING" for each of the two IDs), the copied program and whether a host is
+   running (read-only). A host installed by bridge 0.3 or older allows only the unpacked ID: run `install` again (0.4+) for
+   the store install to connect.
+2. Open **Settings, "For AI agents"** (the second section of the options page, after General) and flip **Agent bridge**. The
+   first time, a dialog says what the agent program can do and where the data goes; **"Allow agent access"** records your
+   consent and turns the bridge on, "Cancel" (or Esc) leaves it off. Chrome starts the host when you do; no restart needed. The same section has a **"How to connect"** disclosure with step 1 (a copy block, live status, "Check again").
 
 Remove it with `npx splitsession-bridge uninstall`: it takes down the host and the `splitsession` entry (only that key, with a
 backup) from every AI client above (`--client <list>` limits it). `npx splitsession-bridge status` lists which clients have it
@@ -220,8 +227,13 @@ Claude Code --stdio--> splitsession-bridge.mjs mcp --Unix socket--> splitsession
 ```
 
 - **Native Messaging** is Chrome's own mechanism for an extension to talk to a local program. The host manifest pins
-  `allowed_origins` to this extension's fixed ID (`chrome-extension://hapfikidacgfgnnajkgnaednpgnhmffk/`): no other
-  extension and no web page can start the host or talk to it through Chrome. The host also refuses any other origin.
+  `allowed_origins` to SplitSession's two IDs (the store item `chrome-extension://hhodioekcdmhpocjbkjnblmbmchddphf/` and the
+  unpacked Full `chrome-extension://hapfikidacgfgnnajkgnaednpgnhmffk/`, `ALLOWED_EXTENSION_IDS` in `src/bridge/protocol.ts`):
+  no other extension and no web page can start the host or talk to it through Chrome. The host also refuses any other origin.
+- **Consent first.** The switch turns on only after the disclosure dialog was accepted (`agentBridgeConsent` in
+  `chrome.storage.local`, with the version of the text). The background enforces it, not just the dialog: `agentBridge: true`
+  without consent is refused by the settings store, and a stored `true` without consent (an older install, data from another
+  build) loads as off.
 - **No network port.** The MCP server reaches each profile's host through a Unix socket:
   `~/Library/Application Support/SplitSession/bridges/<profile key>.sock` (one per Chrome profile whose switch is on; the
   shared `~/Library/Application Support/SplitSession/bridge.sock` only for an extension or host of 0.1.x). The directories are

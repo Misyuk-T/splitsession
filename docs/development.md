@@ -11,11 +11,13 @@ pnpm typecheck      # tsc --noEmit (src), tsc -p e2e, tsc -p bridge
 pnpm test           # vitest run (src/**/*.test.ts, bridge/**/*.test.ts)
 pnpm build          # Full edition: unpacked extension in .output/chrome-mv3 (= pnpm build:full)
 pnpm build:lite     # Lite edition: .output/lite/chrome-mv3, then scripts/check-lite.mjs
+pnpm build:store    # Chrome Web Store package of Full (no key): .output/store/chrome-mv3, then scripts/check-store.mjs
 pnpm e2e            # build both editions and the agent bridge, then Playwright e2e against the local stand (headless)
 pnpm e2e:lite       # build Lite and run only e2e/lite.spec.ts
 pnpm bridge:build   # bundle the agent bridge into bridge/dist/ (the npm package `splitsession-bridge`; bridge:install / bridge:uninstall run its install / uninstall from this checkout)
 pnpm zip:full       # release zip: .output/splitsession-full-<version>.zip (pnpm zip is the same)
 pnpm zip:lite       # release zip: .output/lite/splitsession-lite-<version>.zip (builds and checks Lite first)
+pnpm zip:store      # the zip to upload to the Chrome Web Store: .output/store/splitsession-store-<version>.zip (checked)
 pnpm dev            # WXT dev mode (Full) with a throwaway Chrome profile; pnpm dev:lite for Lite
 pnpm stand          # the e2e stand alone: http://a.localhost:47321/
 ```
@@ -39,8 +41,14 @@ Load `.output/chrome-mv3` (Full) or `.output/lite/chrome-mv3` (Lite) via `chrome
 
 ## Editions (Lite and Full)
 
-One codebase, two builds (the decision and its reasons: [decisions.md](decisions.md), "Two editions"). The edition is chosen
-by the environment variable `FACET_EDITION` (`lite`; anything else or unset is Full), read once in `wxt.config.ts`:
+One codebase, two editions, three builds (the decisions and their reasons: [decisions.md](decisions.md), "Two editions" and
+"The store item becomes Full"). The build is chosen by the environment variable `FACET_EDITION` (`lite`; `store`, the Full
+code without `key` for the Chrome Web Store item `hhodioekcdmhpocjbkjnblmbmchddphf`; anything else or unset is Full with the
+pinned key), read once in `wxt.config.ts`. Since 2026-10-27 the store item is updated with the `store` build; Lite stays
+buildable and tested but is no longer uploaded. `scripts/check-store.mjs` (run by `build:store`, `zip:store` and CI) fails a
+store package with a `key`, without `nativeMessaging` / `debugger`, with "(Full)" in the name, with another copy-ID list or
+without the bridge's consent gate. `FACET_TEST_KEY` (test only) puts a given public key into any build, so a Lite and a store
+build can share one ID (`e2e/store-upgrade.spec.ts`).
 
 - **Name and description** per edition: the `EDITIONS` table at the top of `wxt.config.ts` (the only place).
 - **Manifest**: Lite drops the `nativeMessaging` and `debugger` permissions, and has no `key`.
@@ -67,9 +75,9 @@ by the environment variable `FACET_EDITION` (`lite`; anything else or unset is F
 - **Tests**: every spec except `lite.spec.ts` and `duplicate-copies.spec.ts` runs the Full build. `lite.spec.ts` launches `.output/lite/chrome-mv3` in its own
   browser (skipped when it is not built) and checks the manifest, the missing APIs, the settings schema, 302 login isolation
   between two containers, and the popup and options pages. `pnpm e2e` builds both editions first.
-- **CI**: `.github/workflows/ci.yml`: typecheck, unit tests, both builds with the Lite check, both zips as artifacts; on a tag
-  `v<version>` (it must equal `package.json`'s version) a GitHub Release with `splitsession-lite-<version>.zip` and
-  `splitsession-full-<version>.zip`. No e2e there yet.
+- **CI**: `.github/workflows/ci.yml`: typecheck, unit tests, the three builds with the Lite and store checks, the three zips as
+  artifacts; on a tag `v<version>` (it must equal `package.json`'s version) a GitHub Release with `splitsession-lite-<version>.zip`,
+  `splitsession-full-<version>.zip` and `splitsession-store-<version>.zip` (the one to upload to the store). No e2e there yet.
 
 ## Layout
 

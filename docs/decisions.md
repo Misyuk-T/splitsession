@@ -2074,3 +2074,56 @@ Three additions on top of the tab leases (bridge 0.3.0, together with the leases
   before the 5000 limit.
 - **Not done.** Containers are not put to sleep when the limit is near; above 5000 rules a tab is still refused and the
   popup says to close some container tabs.
+
+## The store item becomes Full (2026-10-27)
+
+- **Decision (owner, 2026-10-27).** The Chrome Web Store item `hhodioekcdmhpocjbkjnblmbmchddphf` ("SplitSession: Multiple
+  Logins per Site", 432 users, live 0.1.7 Lite) is updated **in place** to the Full build. There is no separate Full item.
+  Lite stays buildable and tested (`pnpm build:lite`, `e2e/lite.spec.ts`) but is no longer uploaded.
+- **Why.** The developer account's item slot is needed for another extension, and one item for both editions is simpler to
+  maintain than two. Users keep their containers (storage belongs to the extension ID, which does not change), which a new
+  Full item could not offer (moving between IDs is Export then Import, chrome-web-store.md 6.2).
+- **Supersedes** chrome-web-store.md 6.3, "Lite must never grow into Full's permissions by update: that is exactly why
+  Full is a separate item", and 7.2's recommendation to keep Full off the store. It does not change "Two editions": the agent
+  side still compiles out of Lite, Full's code is unchanged.
+- **Builds.** `FACET_EDITION=store` (`pnpm build:store`, `pnpm zip:store`): Full code, no `key` (the store rejects one and
+  keeps the item's ID), the Lite title, the Lite sentence plus "Optional local AI-agent bridge, off by default." Output
+  `.output/store/`, so the author's unpacked Full in `.output/chrome-mv3` is never overwritten. `scripts/check-store.mjs`
+  asserts no `key`, `nativeMessaging` and `debugger` present, no "(Full)" in the name, exactly the two known IDs in
+  `externally_connectable`, and the consent gate in the bundle. CI attaches `splitsession-store-<version>.zip` to the GitHub
+  Release.
+- **Two IDs for Full.** The store ID and the unpacked Full's pinned ID (`hapfikidacgfgnnajkgnaednpgnhmffk`) are both Full now.
+  `ALLOWED_EXTENSION_IDS` (`src/bridge/protocol.ts`) lists both: `splitsession-bridge install` (0.4.0) writes both into
+  `allowed_origins`, the host accepts both, `status` marks each one "ok" or "MISSING". `--extension-id` now adds an ID instead
+  of replacing the default. Copy detection (`src/core/copies.ts`: `STORE_ID`, `UNPACKED_FULL_ID`) is unchanged in kind: the
+  store Full and an unpacked Full in one profile warn about each other like any two copies (both rewrite cookies), and the
+  warning names the source ("Full 0.1.13, Chrome Web Store" / "Full 0.1.12, unpacked"), since the edition alone no longer
+  tells them apart.
+- **Prominent disclosure and consent.** The store's disclosure rule (Purple Nickel, chrome-web-store.md 2.7) asks for
+  affirmative, informed consent before page content is handed to another program. The first switch-on opens a modal
+  (`BridgeConsentDialog`): what the agent program can do (read every tab's content including signed-in pages, screenshots,
+  console and network, type and click as the user in any container, run JavaScript), where the data goes (only to the
+  program on this computer through native messaging; SplitSession sends nothing to a server; the agent program may send what
+  it reads to its AI provider), how to stop. "Allow agent access" records `{version, at}` under `storage.local`
+  `agentBridgeConsent` (`BRIDGE_CONSENT_VERSION` = 1; raising it asks everybody again). The gate is in the background, not the
+  dialog: `SettingsStore` takes a guard (Full only) that refuses `agentBridge: true` without consent and turns a stored `true`
+  without consent off at load (written back as the default). That covers the options switch, the popup (which can only switch
+  off anyway), the API, settings in storage from another build or an older install (including the author's own unpacked Full:
+  the bridge is off after this update until the dialog is accepted once), and import (export files carry no settings at all).
+  The bridge's tools cannot change settings.
+- **Accepted residual risk: the permission prompt.** Adding the required `nativeMessaging` and `debugger` disables the
+  extension for every existing user until they approve. While it is disabled, container tabs are plain tabs: requests carry
+  the regular profile's cookies, nothing is captured into container jars, page storage is not namespaced. The mitigation is
+  the one-time notice in the last Lite release's popup ("Coming next: optional AI-agent access", `UpgradeNotice.tsx`) and the
+  release notes; the bridge itself stays off until the user turns it on and consents. `debugger` cannot be optional, and
+  `nativeMessaging` alone as optional would still leave `debugger`, so there is no way around the prompt. What exactly happens
+  during the window was tested where it could be (`e2e/store-upgrade.spec.ts`, docs/release/upgrade-test.md).
+- **Storage compatibility, rollback.** No stored format changes: Full reads Lite's settings (its five keys; Full-only keys
+  fall back to their defaults), containers, jars and rules as they are; the consent record is a new key Lite ignores. A
+  dashboard rollback to the last Lite package (chrome-web-store.md 6.4) therefore reads everything Full wrote; the Full-only
+  settings and the consent record simply stay unread. Rolling back removes the two permissions, so it does not prompt.
+- **Tests.** Unit: `src/background/bridge/consent.test.ts` (the record, the gate on update and load, an older text, Lite's
+  store without a guard, imports), `bridge/src/cli.test.ts` and `host.test.ts` (both IDs written, accepted, reported; another
+  refused), `core/copies.test.ts` (sources). e2e: `bridge-consent.spec.ts` (dialog text, focus trap, Cancel, Escape, keyboard
+  Allow, no second question, the API refuses without consent), `store-upgrade.spec.ts` (Lite data under the store build at
+  one ID, disable and enable).
