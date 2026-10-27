@@ -44,11 +44,13 @@ export const UpgradeNotice = () => {
           Coming next: optional AI-agent access
         </strong>
         <br />
-        The next update adds a bridge for your own local AI agent (off unless
-        you turn it on). Chrome will pause SplitSession once and ask you to
-        approve two new permissions. Until you approve, container tabs act like
-        normal tabs, so approve it from the puzzle-piece menu or
-        chrome://extensions. Your containers are kept.
+        The next update lets your own AI agent use your tabs. It stays off
+        unless you turn it on.
+      </p>
+      <p class="fx-copynotice__text">
+        Chrome will pause SplitSession once and ask for new permissions. Approve
+        them soon: until then, container tabs act like normal tabs. Your
+        containers are kept.
       </p>
       <Button small onClick={dismiss} data-testid="upgrade-notice-dismiss">
         Got it
