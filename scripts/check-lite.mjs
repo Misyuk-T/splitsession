@@ -14,8 +14,8 @@ const dir = path.resolve(root, process.argv[2] ?? ".output/lite/chrome-mv3");
 // The only extension IDs a copy may answer and ping (src/core/copies.ts), written out here on purpose: the Lite manifest's
 // `externally_connectable` must be exactly this list, so a test hook (FACET_TEST_COPY_IDS) cannot leak into a release.
 const COPY_IDS = [
-  "hapfikidacgfgnnajkgnaednpgnhmffk", // Full
-  "hhodioekcdmhpocjbkjnblmbmchddphf", // Lite on the Chrome Web Store
+  "hapfikidacgfgnnajkgnaednpgnhmffk", // Full, unpacked (pinned key)
+  "hhodioekcdmhpocjbkjnblmbmchddphf", // the Chrome Web Store item (Lite up to 0.1.x, then Full)
 ];
 const FORBIDDEN_PERMISSIONS = ["nativeMessaging", "debugger", "userScripts"];
 // [label, regex]: any hit in any text file of the bundle fails the check.

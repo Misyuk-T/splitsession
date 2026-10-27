@@ -141,7 +141,7 @@ test.describe("two copies in one profile", () => {
 
       const litePopup = await popupOf(context, liteId);
       await expect(notice(litePopup)).toContainText(
-        `Another copy of SplitSession is on (Full ${VERSION})`,
+        `Another copy of SplitSession is on (Full ${VERSION}, unpacked)`,
       );
       // The notice sits at the top, under the header and above the container list.
       const noticeTop = (await notice(litePopup).boundingBox())!.y;

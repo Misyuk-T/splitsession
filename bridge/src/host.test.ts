@@ -6,7 +6,7 @@ import { build } from "esbuild";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 
 import { encodeFrame, FrameReader } from "../../src/bridge/framing";
-import { EXTENSION_ORIGIN } from "../../src/bridge/protocol";
+import { ALLOWED_EXTENSION_ORIGINS } from "../../src/bridge/protocol";
 import { keepPresence, liveDispatcher } from "./mcp";
 
 const t0 = (r: { content?: unknown[] }) =>
@@ -69,8 +69,9 @@ class FakeExtension {
   constructor(
     env: NodeJS.ProcessEnv,
     private readonly handler: Handler = () => ({ ok: true }),
+    origin: string = ALLOWED_EXTENSION_ORIGINS[0]!,
   ) {
-    this.child = spawn(process.execPath, [bundle, "host", EXTENSION_ORIGIN], {
+    this.child = spawn(process.execPath, [bundle, "host", origin], {
       env: { ...process.env, ...env },
       stdio: ["pipe", "pipe", "ignore"],
     });
@@ -150,8 +151,8 @@ class FakeExtension {
   }
 }
 
-const start = (env: NodeJS.ProcessEnv, handler?: Handler) => {
-  const h = new FakeExtension(env, handler);
+const start = (env: NodeJS.ProcessEnv, handler?: Handler, origin?: string) => {
+  const h = new FakeExtension(env, handler, origin);
   hosts.push(h);
   return h;
 };
@@ -184,6 +185,30 @@ const tabsOf =
     }
     return { tool };
   };
+
+describe("the host's callers", () => {
+  it("runs for the Chrome Web Store item and for the unpacked Full, and refuses any other extension", async () => {
+    expect(ALLOWED_EXTENSION_ORIGINS).toEqual([
+      "chrome-extension://hhodioekcdmhpocjbkjnblmbmchddphf/",
+      "chrome-extension://hapfikidacgfgnnajkgnaednpgnhmffk/",
+    ]);
+    const dir = tmp();
+    const env = { FACET_BRIDGE_SOCKET: path.join(dir, "bridge.sock") };
+    for (const [i, origin] of ALLOWED_EXTENSION_ORIGINS.entries()) {
+      const h = start(env, undefined, origin).hello(`profile${i}aa`);
+      expect((await h.next("ready")).profileKey).toBe(`profile${i}aa`);
+    }
+    const other = start(
+      env,
+      undefined,
+      `chrome-extension://${"k".repeat(32)}/`,
+    ).hello("profile9aa");
+    expect(await other.exited).toBe(2);
+    expect(existsSync(path.join(dir, "bridges", "profile9aa.sock"))).toBe(
+      false,
+    );
+  });
+});
 
 describe("the host, one per Chrome profile", () => {
   it("with hello: listens on bridges/<key>.sock (0600 in a 0700 directory), says ready v2, counts profiles; removes its socket when switched off", async () => {

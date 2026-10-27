@@ -1,7 +1,7 @@
 import { useEffect, useState } from "preact/hooks";
 import { browser } from "wxt/browser";
 
-import type { OtherCopy } from "../../core/copies";
+import { copySource, type OtherCopy } from "../../core/copies";
 import { facetApi } from "../../engine/api-client";
 import { Button } from "./Button";
 
@@ -21,8 +21,15 @@ export function useOtherCopies(): OtherCopy[] {
   return copies;
 }
 
+const SOURCE = {
+  store: ", Chrome Web Store",
+  unpacked: ", unpacked",
+  other: "",
+} as const;
+
+/** "Full 0.1.13, Chrome Web Store": the store item and the unpacked Full can both be Full, so the source tells them apart. */
 const label = (c: OtherCopy) =>
-  `${c.edition === "full" ? "Full" : "Lite"} ${c.version}`;
+  `${c.edition === "full" ? "Full" : "Lite"} ${c.version}${SOURCE[copySource(c.id)]}`;
 
 /**
  * Two enabled copies of SplitSession fight over cookies and logins do not stick: say so, and offer chrome://extensions

@@ -11,7 +11,11 @@ import {
 import { homedir, platform } from "node:os";
 import path from "node:path";
 
-import { EXTENSION_ID } from "../../src/bridge/protocol";
+import {
+  ALLOWED_EXTENSION_IDS,
+  STORE_EXTENSION_ID,
+  UNPACKED_EXTENSION_ID,
+} from "../../src/bridge/protocol";
 import {
   CLIENT_KEYS,
   CLIENT_LABEL,
@@ -54,7 +58,7 @@ export { MCP_NAME };
 export type { ClientKey, Runner, RunResult } from "./clients";
 export const CLIENTS = [...CLIENT_KEYS, "all", "none"] as const;
 
-export const USAGE = `splitsession-bridge: the companion program of the SplitSession (Full) Chrome extension
+export const USAGE = `splitsession-bridge: the companion program of the SplitSession Chrome extension (agent bridge)
 
 usage:
   splitsession-bridge install [--browser chrome|chromium|brave|edge|arc|all] [--extension-id <id>] [--client <list>]
@@ -64,8 +68,9 @@ usage:
   splitsession-bridge mcp      (started by your AI client; do not run by hand)
 
 install  copies this program to a fixed per-user folder, registers it with the browser (Native Messaging) and with
-         your AI clients. --browser may repeat or be comma separated (default: chrome). --extension-id adds an allowed
-         extension (default: the SplitSession Full extension, ${EXTENSION_ID}).
+         your AI clients. --browser may repeat or be comma separated (default: chrome). Allowed extensions: the
+         Chrome Web Store item (${STORE_EXTENSION_ID}) and the unpacked Full (${UNPACKED_EXTENSION_ID});
+         --extension-id adds another one (may repeat).
          --client is a comma separated list of ${CLIENT_KEYS.join(", ")}, or all, or none. Each listed client gets
          the "${MCP_NAME}" MCP server registered (its own CLI or an edit of its config file; the old file is saved as
          <file>.bak-<time>); anything that cannot be done is printed for you to add by hand. Without --client:
@@ -202,9 +207,7 @@ export function parseArgs(
     command,
     browsers: chosen,
     browserGiven,
-    extensionIds: [
-      ...new Set(extensionIds.length ? extensionIds : [EXTENSION_ID]),
-    ],
+    extensionIds: [...new Set([...ALLOWED_EXTENSION_IDS, ...extensionIds])],
     clients,
     dir,
     hostDir,
@@ -600,9 +603,15 @@ export async function status(options: CliOptions, env: Env): Promise<number> {
       log(
         `  ${name.padEnd(9)} installed${launcherExists ? "" : " (but its launcher is missing: run install again)"}`,
       );
-      log(
-        `            allows ${(m.allowed_origins ?? []).join(", ") || "(nothing)"}`,
-      );
+      const allows = m.allowed_origins ?? [];
+      log(`            allows ${allows.join(", ") || "(nothing)"}`);
+      for (const [id, what] of [
+        [STORE_EXTENSION_ID, "the Chrome Web Store extension"],
+        [UNPACKED_EXTENSION_ID, "the unpacked Full extension"],
+      ] as const)
+        log(
+          `            ${allows.includes(originOf(id)) ? "ok     " : "MISSING"} ${what} (${id})${allows.includes(originOf(id)) ? "" : ": run install again"}`,
+        );
     } catch {
       log(`  ${name.padEnd(9)} unreadable manifest ${file}`);
     }

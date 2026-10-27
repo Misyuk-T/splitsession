@@ -1,9 +1,22 @@
 /** Messages of the SplitSession agent bridge. Shared by the extension, the native host and the MCP server. */
 
+import { STORE_ID, UNPACKED_FULL_ID } from "../core/copies";
+
 export const HOST_NAME = "com.splitsession.bridge";
-/** Fixed by the manifest key (docs/development.md); pinned in the host manifest's `allowed_origins`. */
-export const EXTENSION_ID = "hapfikidacgfgnnajkgnaednpgnhmffk";
-export const EXTENSION_ORIGIN = `chrome-extension://${EXTENSION_ID}/`;
+/** The Chrome Web Store item (Full since 2026-10-27; the store assigns this ID, docs/release/chrome-web-store.md 6.2). */
+export const STORE_EXTENSION_ID = STORE_ID;
+/** Full loaded unpacked: fixed by the manifest key (docs/development.md). */
+export const UNPACKED_EXTENSION_ID = UNPACKED_FULL_ID;
+/**
+ * The extensions that may start the host: both go into the host manifest's `allowed_origins` (`install`), and the host
+ * itself refuses any other caller. `install --extension-id` adds to these, it does not replace them.
+ */
+export const ALLOWED_EXTENSION_IDS: readonly string[] = [
+  STORE_EXTENSION_ID,
+  UNPACKED_EXTENSION_ID,
+];
+export const ALLOWED_EXTENSION_ORIGINS: readonly string[] =
+  ALLOWED_EXTENSION_IDS.map((id) => `chrome-extension://${id}/`);
 /**
  * 2: several Chrome profiles at once. The extension opens with `hello` (its profile key); the host listens on a socket of
  * its own per profile. 1: one socket for everybody (0.1.x). A host that gets no `hello` speaks 1 (an older extension).

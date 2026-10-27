@@ -3,12 +3,25 @@ import { describe, expect, it, vi } from "vitest";
 import {
   answerPing,
   CopyDetector,
+  copySource,
   findOtherCopies,
-  FULL_ID,
   KNOWN_COPY_IDS,
   parsePong,
-  STORE_LITE_ID,
+  STORE_ID,
+  UNPACKED_FULL_ID,
 } from "./copies";
+
+describe("known IDs", () => {
+  it("are the store item and the unpacked Full, and tell their source", () => {
+    expect(KNOWN_COPY_IDS).toEqual([
+      "hhodioekcdmhpocjbkjnblmbmchddphf",
+      "hapfikidacgfgnnajkgnaednpgnhmffk",
+    ]);
+    expect(copySource(STORE_ID)).toBe("store");
+    expect(copySource(UNPACKED_FULL_ID)).toBe("unpacked");
+    expect(copySource("k".repeat(32))).toBe("other");
+  });
+});
 
 const self = { edition: "full", version: "0.1.4" } as const;
 const ping = { type: "splitsession.ping" };
@@ -45,12 +58,12 @@ describe("answerPing", () => {
       { type: "facet/api", method: "listContainers", args: [] },
     ];
     for (const m of messages)
-      expect(answerPing(m, FULL_ID, KNOWN_COPY_IDS, self)).toBeNull();
+      expect(answerPing(m, UNPACKED_FULL_ID, KNOWN_COPY_IDS, self)).toBeNull();
   });
 
   it("names the edition and version of the answering copy", () => {
     expect(
-      answerPing(ping, STORE_LITE_ID, KNOWN_COPY_IDS, {
+      answerPing(ping, STORE_ID, KNOWN_COPY_IDS, {
         edition: "lite",
         version: "0.2.0",
       }),
@@ -94,9 +107,15 @@ describe("findOtherCopies", () => {
         "Could not establish connection. Receiving end does not exist.",
       );
     });
-    expect(await findOtherCopies(send, FULL_ID, KNOWN_COPY_IDS)).toEqual([]);
     expect(
-      await findOtherCopies(async () => undefined, FULL_ID, KNOWN_COPY_IDS),
+      await findOtherCopies(send, UNPACKED_FULL_ID, KNOWN_COPY_IDS),
+    ).toEqual([]);
+    expect(
+      await findOtherCopies(
+        async () => undefined,
+        UNPACKED_FULL_ID,
+        KNOWN_COPY_IDS,
+      ),
     ).toEqual([]);
   });
 
@@ -107,19 +126,19 @@ describe("findOtherCopies", () => {
         calls.push([id, message]);
         return undefined;
       },
-      FULL_ID,
+      UNPACKED_FULL_ID,
       KNOWN_COPY_IDS,
     );
-    expect(calls).toEqual([[STORE_LITE_ID, ping]]);
+    expect(calls).toEqual([[STORE_ID, ping]]);
   });
 
   it("lists a copy that answers with a pong", async () => {
     const send = async (id: string) =>
-      id === FULL_ID
+      id === UNPACKED_FULL_ID
         ? { type: "splitsession.pong", edition: "full", version: "0.1.4" }
         : Promise.reject(new Error("Receiving end does not exist"));
-    expect(await findOtherCopies(send, STORE_LITE_ID, KNOWN_COPY_IDS)).toEqual([
-      { id: FULL_ID, edition: "full", version: "0.1.4" },
+    expect(await findOtherCopies(send, STORE_ID, KNOWN_COPY_IDS)).toEqual([
+      { id: UNPACKED_FULL_ID, edition: "full", version: "0.1.4" },
     ]);
   });
 
@@ -127,7 +146,7 @@ describe("findOtherCopies", () => {
     expect(
       await findOtherCopies(
         async () => ({ hello: 1 }),
-        FULL_ID,
+        UNPACKED_FULL_ID,
         KNOWN_COPY_IDS,
       ),
     ).toEqual([]);
@@ -135,7 +154,9 @@ describe("findOtherCopies", () => {
 });
 
 describe("CopyDetector", () => {
-  const found = [{ id: FULL_ID, edition: "full" as const, version: "0.1.4" }];
+  const found = [
+    { id: UNPACKED_FULL_ID, edition: "full" as const, version: "0.1.4" },
+  ];
 
   it("caches a found copy for the ttl, refreshes after it, and shares a call under way", async () => {
     let t = 0;

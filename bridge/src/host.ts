@@ -20,8 +20,8 @@ import {
   LineReader,
 } from "../../src/bridge/framing";
 import {
+  ALLOWED_EXTENSION_ORIGINS,
   BUSY_REASON,
-  EXTENSION_ORIGIN,
   MULTI_PROFILE_PROTOCOL,
   PROFILE_KEY_RE,
   PROTOCOL_VERSION,
@@ -53,10 +53,10 @@ export async function runHost(args: string[]): Promise<void> {
     console.debug =
       (...parts: unknown[]) => process.stderr.write(`${parts.join(" ")}\n`);
 
-  // Chrome passes the caller's origin as an argument. The installer's launcher lists the origins its manifest allows
-  // (`--allow-origin=...`: the Full extension, plus an ID given to `install --extension-id`).
+  // Chrome passes the caller's origin as an argument. Allowed: the store item and the unpacked Full, plus what the installer's
+  // launcher lists (`--allow-origin=...`: an ID given to `install --extension-id`).
   const allowed = new Set([
-    EXTENSION_ORIGIN,
+    ...ALLOWED_EXTENSION_ORIGINS,
     ...args
       .filter((a) => a.startsWith("--allow-origin=chrome-extension://"))
       .map((a) => a.slice("--allow-origin=".length)),

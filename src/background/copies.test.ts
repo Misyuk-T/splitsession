@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import type { browser } from "wxt/browser";
 
-import { FULL_ID, STORE_LITE_ID } from "../core/copies";
+import { STORE_ID,UNPACKED_FULL_ID } from "../core/copies";
 import { createCopyDetector, registerCopyListeners } from "./copies";
 import { createLogger } from "./log";
 
@@ -45,13 +45,13 @@ const ask = (l: Listener, message: unknown, id?: string) => {
 
 describe("onMessageExternal listener", () => {
   it("answers the exact ping from a known ID with edition and version", () => {
-    const { b, external } = fakeBrowser(FULL_ID);
+    const { b, external } = fakeBrowser(UNPACKED_FULL_ID);
     registerCopyListeners(createCopyDetector(b), createLogger(), b);
     expect(external).toHaveLength(1);
     const { reply, result } = ask(
       external[0]!,
       { type: "splitsession.ping" },
-      STORE_LITE_ID,
+      STORE_ID,
     );
     expect(reply).toHaveBeenCalledExactlyOnceWith({
       type: "splitsession.pong",
@@ -62,18 +62,15 @@ describe("onMessageExternal listener", () => {
   });
 
   it("says nothing to an unknown sender or any other message", () => {
-    const { b, external } = fakeBrowser(FULL_ID);
+    const { b, external } = fakeBrowser(UNPACKED_FULL_ID);
     registerCopyListeners(createCopyDetector(b), createLogger(), b);
     for (const [message, id] of [
       [{ type: "splitsession.ping" }, "z".repeat(32)],
       [{ type: "splitsession.ping" }, undefined],
-      [
-        { type: "facet/api", method: "listContainers", args: [] },
-        STORE_LITE_ID,
-      ],
-      [{ type: "splitsession.ping", more: true }, STORE_LITE_ID],
-      ["splitsession.ping", STORE_LITE_ID],
-      [undefined, STORE_LITE_ID],
+      [{ type: "facet/api", method: "listContainers", args: [] }, STORE_ID],
+      [{ type: "splitsession.ping", more: true }, STORE_ID],
+      ["splitsession.ping", STORE_ID],
+      [undefined, STORE_ID],
     ] as Array<[unknown, string | undefined]>) {
       const { reply } = ask(external[0]!, message, id);
       expect(reply).not.toHaveBeenCalled();
@@ -83,27 +80,27 @@ describe("onMessageExternal listener", () => {
 
 describe("detection through the browser", () => {
   it("is none when the other copy is not there", async () => {
-    const { b, sent } = fakeBrowser(FULL_ID);
+    const { b, sent } = fakeBrowser(UNPACKED_FULL_ID);
     expect(await createCopyDetector(b).get()).toEqual([]);
-    expect(sent).toEqual([[STORE_LITE_ID, { type: "splitsession.ping" }]]);
+    expect(sent).toEqual([[STORE_ID, { type: "splitsession.ping" }]]);
   });
 
   it("finds the other copy that answers with a pong", async () => {
-    const { b } = fakeBrowser(FULL_ID, {
-      [STORE_LITE_ID]: {
+    const { b } = fakeBrowser(UNPACKED_FULL_ID, {
+      [STORE_ID]: {
         type: "splitsession.pong",
         edition: "lite",
         version: "0.1.3",
       },
     });
     expect(await createCopyDetector(b).get()).toEqual([
-      { id: STORE_LITE_ID, edition: "lite", version: "0.1.3" },
+      { id: STORE_ID, edition: "lite", version: "0.1.3" },
     ]);
   });
 
   it("looks once when the browser starts and logs a warning when it finds a copy", async () => {
-    const { b, started } = fakeBrowser(STORE_LITE_ID, {
-      [FULL_ID]: {
+    const { b, started } = fakeBrowser(STORE_ID, {
+      [UNPACKED_FULL_ID]: {
         type: "splitsession.pong",
         edition: "full",
         version: "0.1.4",
