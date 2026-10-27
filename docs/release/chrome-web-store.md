@@ -293,7 +293,9 @@ From [images](https://developer.chrome.com/docs/webstore/images) and
   separate item shows they *can* be separated, which is the policy's own test.
 - The best framing: one purpose, "account-aware browser access for the user's own local agent", where containers are
   what lets the agent act as a chosen account. That is honest (`open_in_container`, `list_tabs` with containers) but
-  arguable. No precedent either way was found.
+  arguable. Closest precedent (2026-10-27): **EazySessions** is listed with isolated multi-account sessions *and* a
+  built-in MCP server for Claude/ChatGPT/Cursor, plus a desktop agent on recent Chrome (4.1); its permissions and review
+  history are **UNVERIFIED**.
 
 ### 2.7 Limited Use and disclosure (both editions)
 
@@ -357,6 +359,24 @@ Containers (MAC) issues on GitHub, AlternativeTo and competitor blogs (marked as
 Signal to watch (**UNVERIFIED**): a small competitor says "recent Chrome versions require a small desktop agent"
 without saying why ([EazySessions](https://chromewebstore.google.com/detail/eazysessions-multilogin-t/oapglnlmpalfndoddlcefkjnccjomhlg)).
 Our e2e passes on current Chromium; re-run Lite against **Chrome stable** before submitting.
+
+### 4.1 Competitors (store listings read 2026-10-27)
+
+Full table and per-listing facts: [competitors-2026-10.md](competitors-2026-10.md) (9 listings; figures from a model
+summary of each page, not checked against raw HTML; no written reviews were visible).
+
+- **Closest to Full:** EazySessions (Box Labs, maker of SessionBox) has an MCP server for Claude/ChatGPT/Cursor,
+  per-session proxy and folders, $7.99/month after a trial, and its listing confirms a desktop agent on recent Chrome.
+  Our MCP bridge is free and needs no agent for Lite.
+- **Same idea, free:** SessionPilot (named coloured tab groups, workspaces, Chrome-sync, share to a teammate; 139
+  users), Session Switcher (disables service workers, tabs need reconnecting after restart), Multi Login (data is
+  deleted when the tab closes), SessionHub (4,000 users, unclear in-app purchases), multiAccounts (open source, beta).
+- **Different model:** SessionSync Pro and Quick User Switcher swap one account at a time; SessionBox One is an
+  anti-detect tool with a companion app.
+- **Where we lose:** no per-container proxy, no sync/sharing, no install base yet.
+- **Listing angles:** "several accounts of one site side by side, free, no account, nothing leaves your device";
+  screenshot of three named groups on one site; honest limits line (same IP and fingerprint, no push); "survives
+  restart, export/import, open source".
 
 ---
 
