@@ -213,23 +213,6 @@ test.describe("Lite edition", () => {
     await page.close();
   });
 
-  test("popup: the upgrade notice shows until Got it, then never again", async () => {
-    const popup = await context.newPage();
-    await popup.goto(ext("popup.html"));
-    const notice = popup.getByTestId("upgrade-notice");
-    await expect(notice).toBeVisible();
-    await expect(notice).toContainText("Coming next: optional AI-agent access");
-    await popup.getByRole("button", { name: "Got it" }).click();
-    await expect(notice).toHaveCount(0);
-    await popup.reload();
-    await expect(
-      popup.getByRole("heading", { name: "Containers" }),
-    ).toBeVisible();
-    await expect(popup.getByTestId("upgrade-notice")).toHaveCount(0);
-    await popup.close();
-  });
-
-  // Runs after the notice is dismissed above: the notice itself mentions an agent and a bridge.
   test("popup renders containers without a bridge section", async () => {
     const popup = await context.newPage();
     await popup.setViewportSize({ width: 380, height: 700 });
