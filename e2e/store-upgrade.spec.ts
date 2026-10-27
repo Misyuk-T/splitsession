@@ -24,7 +24,9 @@ import { at } from "./fixtures";
  * on the same profile and must find all of it, with the Full-only settings at their defaults and the bridge off.
  *
  * Then the extension is disabled and enabled again from chrome://extensions, which is what a user goes through while
- * Chrome holds the update for the new permissions (disabled until approved): the tabs survive and isolation returns.
+ * Chrome holds the update for the new permissions (disabled until approved): the tabs survive and isolation returns. Also
+ * with a browser restart while it is off: the restored container tabs load as ordinary tabs (the real profile's cookies;
+ * asserted, so a change is noticed), and once it is on again they are back in their containers.
  *
  * The store build gets a higher version (as every store update does) and is started with one `runtime.reload()`: loaded
  * from the command line, Chromium takes the new manifest but keeps the old service worker until the extension reloads.
@@ -460,6 +462,71 @@ test("disabled and enabled again (the wait for the permission prompt): tabs surv
         async () => {
           const tag = `after-enable-${tabId}-${n++}`;
           await echoFrom(sw, tabId, tag);
+          return (await cookiesFor(`/echo?${tag}`)).at(-1);
+        },
+        { timeout: 15_000 },
+      )
+      .toBe(cookie);
+  }
+});
+
+test("disabled across a browser restart, then enabled: the container tabs come back to their containers", async () => {
+  test.skip(buildError !== "" || !ctx, `builds failed: ${buildError}`);
+  test.setTimeout(120_000);
+  let context = ctx!;
+  const extensions = await context.newPage();
+  await extensions.goto(`chrome://extensions/?id=${extId}`);
+  let toggle = extensions.locator("extensions-detail-view #enableToggle");
+  await toggle.click();
+  await expect(toggle).toHaveAttribute("aria-checked", "false");
+  await extensions.close();
+  await context.close();
+  await fetch(`http://127.0.0.1:${TEST_PORT}/__log?clear=1`);
+
+  // The browser starts with the extension still off (a user who restarts before approving the new permissions): the
+  // restored tabs load as ordinary tabs.
+  ctx = context = await launch(STORE_PATH);
+  await expect
+    .poll(async () => (await cookiesFor("/whoami?w=work")).length, {
+      timeout: 15_000,
+    })
+    .toBeGreaterThan(0);
+  expect(context.serviceWorkers().filter(isOurs)).toHaveLength(0);
+  // The gap: a container tab restored while the extension is off loads with the real profile's cookies.
+  expect(await cookiesFor("/whoami?w=work")).toEqual(["who=real"]);
+
+  const page = await context.newPage();
+  await page.goto(`chrome://extensions/?id=${extId}`);
+  toggle = page.locator("extensions-detail-view #enableToggle");
+  await expect(toggle).toHaveAttribute("aria-checked", "false");
+  const started = context.waitForEvent("serviceworker", {
+    predicate: isOurs,
+    timeout: 15_000,
+  });
+  await toggle.click();
+  await expect(toggle).toHaveAttribute("aria-checked", "true");
+  const sw = context.serviceWorkers().find(isOurs) ?? (await started);
+  const api = apiOf(sw);
+  await api("listContainers");
+  await page.close();
+  await api("flushRestore");
+
+  const tabs = await containerTabs(sw);
+  expect([tabs.work?.containerId, tabs.home?.containerId]).toEqual([
+    A.id,
+    B.id,
+  ]);
+  // Back in their containers, and their own requests carry the containers' cookies again.
+  for (const [w, cookie] of [
+    ["work", "who=alice"],
+    ["home", "who=bob"],
+  ] as const) {
+    let n = 0;
+    await expect
+      .poll(
+        async () => {
+          const tag = `after-restart-${w}-${n++}`;
+          await echoFrom(sw, tabs[w]!.tabId, tag);
           return (await cookiesFor(`/echo?${tag}`)).at(-1);
         },
         { timeout: 15_000 },
