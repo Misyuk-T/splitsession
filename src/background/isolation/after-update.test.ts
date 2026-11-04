@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { type AfterUpdateDeps,restoreTabsAfterUpdate } from "./after-update";
+import { type AfterUpdateDeps, restoreTabsAfterUpdate } from "./after-update";
 import { singleFlight } from "./single-flight";
 
 /** One container tab that is in the backup and still open; the registry starts empty (a reload wiped `storage.session`). */
