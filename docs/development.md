@@ -46,12 +46,17 @@ One codebase, two editions, three builds (the decisions and their reasons: [deci
 code without `key` for the Chrome Web Store item `hhodioekcdmhpocjbkjnblmbmchddphf`; anything else or unset is Full with the
 pinned key), read once in `wxt.config.ts`. Since 2026-10-27 the store item is updated with the `store` build; Lite stays
 buildable and tested but is no longer uploaded. `scripts/check-store.mjs` (run by `build:store`, `zip:store` and CI) fails a
-store package with a `key`, without `nativeMessaging` / `debugger`, with "(Full)" in the name, with another copy-ID list or
-without the bridge's consent gate. `FACET_TEST_KEY` (test only) puts a given public key into any build, so a Lite and a store
+store package with a `key`, with `nativeMessaging` or `debugger` in `permissions` (the store build adds no required permission over
+Lite: `nativeMessaging` is optional and `debugger` is not there at all), with DevTools-protocol code in any file, with "(Full)" in the
+name, with another copy-ID list or without the bridge's consent gate. The store build is the bridge's **basic mode**: the
+compile-time flag `__CDP__` (`wxt.config.ts`, `src/env.d.ts`; true only for the unpacked Full) removes the CDP modules from it.
+`FACET_TEST_GRANT_NM=1` (test only) makes `nativeMessaging` required in a store build so headless e2e can run the bridge
+(`e2e/store-basic.spec.ts`); check-store refuses it. `FACET_TEST_KEY` (test only) puts a given public key into any build, so a Lite and a store
 build can share one ID (`e2e/store-upgrade.spec.ts`).
 
 - **Name and description** per edition: the `EDITIONS` table at the top of `wxt.config.ts` (the only place).
-- **Manifest**: Lite drops the `nativeMessaging` and `debugger` permissions, and has no `key`.
+- **Manifest**: Lite drops the `nativeMessaging` and `debugger` permissions, and has no `key`. The store build has Lite's `permissions`
+  and `optional_permissions: ["nativeMessaging"]`.
 - **Output**: Full `.output/chrome-mv3` (the folder the author loads unpacked; unchanged), Lite `.output/lite/chrome-mv3`.
   Zips are named `splitsession-<edition>-<version>.zip`.
 - **Code**: `wxt.config.ts` defines the compile-time constant `__FULL__` (declared in `src/env.d.ts`; `vitest.config.ts` sets it

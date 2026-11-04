@@ -197,7 +197,8 @@ If you use an AI agent on your own computer (Claude Code, Codex, Cursor or anoth
 • Off until you switch on "Agent bridge" in Settings. Before it turns on the first time, SplitSession shows exactly what the agent can do and where the data goes, and asks you to allow it.
 • Needs a small companion program on your computer (one command: npx splitsession-bridge install; macOS and Linux). Without it nothing connects, and everything else works as described above.
 • Talks only to that program on the same computer, through Chrome's native messaging. No network port, no server, no cloud. SplitSession itself sends nothing anywhere; your agent may send what it reads to its AI provider under that provider's terms.
-• While the agent acts, you see it: a mark on the tab and the toolbar button, and Chrome's own "started debugging this browser" bar. Switch it off and the connection closes at once.
+• When you switch it on, SplitSession asks Chrome for permission to talk to a program on your computer ("Communicate with cooperating native applications"; Chrome may show its own prompt); switching it off gives that permission back. The extension has no debugger access and does not run scripts an agent sends it, so it works in a basic mode: it reads pages, clicks, types, scrolls and takes screenshots of the tab you are looking at, but cannot run JavaScript, press keys or read the console and network.
+• While the agent acts, you see it: a mark on the tab and the toolbar button. Switch it off and the connection closes at once.
 • While it is on, the agent can do in your tabs whatever you can do, including on sites where you are signed in. Turn it on only for an agent you trust.
 
 PRIVACY
@@ -213,7 +214,7 @@ GOOD TO KNOW
 • The full list of what is and is not isolated is in the documentation (docs/limits.md on GitHub).
 
 PERMISSIONS, IN SHORT
-Chrome will say SplitSession can "read and change all your data on all websites". That is needed to give each tab its own cookies on whatever site you open in it. SplitSession reads cookie headers only of tabs you put in a container, keeps them on your device and never sends them anywhere. "Communicate with cooperating native applications" and "Access the page debugger backend" are for the optional agent bridge: they are used only while you have it switched on.
+Chrome will say SplitSession can "read and change all your data on all websites". That is needed to give each tab its own cookies on whatever site you open in it. SplitSession reads cookie headers only of tabs you put in a container, keeps them on your device and never sends them anywhere. "Communicate with cooperating native applications" is asked for only when you switch on the optional agent bridge, and is used only while it is on.
 
 Source code, issues and documentation: https://github.com/Misyuk-T/splitsession
 
@@ -250,20 +251,15 @@ agent's tabs account-specific. That would change the title's promise, so try the
 | `browsingData` | Used only with the "serviceWorkers" data type: removes service workers of sites used in containers (and, in the optional strict mode, of all sites), because a service worker's requests bypass per-tab isolation and would leak the regular profile's logins into a container. No history, cookies or other browsing data are removed. |
 | `alarms` | Runs short periodic maintenance in the background service worker: removes expired cookies from container jars (every minute), re-checks tab-group membership (every 30 seconds, only when tab groups are on) and, while the agent bridge is on, retries its local connection. |
 | `sessions` | Recognises a tab or window the user reopens (Reopen closed tab, History, restore after restart) so that a container tab comes back in its container instead of opening with the regular profile's logins. |
-| `nativeMessaging` | Connects to one companion program, com.splitsession.bridge, which the user installs separately (npx splitsession-bridge install, open source) and which runs on the same computer. The connection is opened only after the user switches on "Agent bridge" in Settings and accepts a disclosure of what the agent can access, and it closes when the switch is turned off. It carries the requests of the user's own local AI agent (MCP) and their results. Nothing is sent over the network by the extension. |
-| `debugger` | Used only while the user has switched on the agent bridge, and only when the user's local agent runs a tool a content script cannot do: trusted mouse and keyboard input, file upload into a file field, screenshots of background tabs, answering JavaScript dialogs, the page's console and network list, and evaluating JavaScript the agent asked for in that tab. It attaches to one tab at a time, Chrome shows its "started debugging this browser" bar meanwhile, and it detaches a minute after the last such action. It is never used to read or change cookies, headers or storage, and never attaches to chrome:// pages, the Web Store or extension pages. |
+| `nativeMessaging` (optional) | Asked for only when the user switches on "Agent bridge" in Settings and has accepted a disclosure of what the agent can access; given back when the switch is turned off. It connects to one companion program, com.splitsession.bridge, which the user installs separately (npx splitsession-bridge install, open source) and which runs on the same computer. It carries the requests of the user's own local AI agent (MCP) and their results. Nothing is sent over the network by the extension. |
 | Host permission `<all_urls>` | Containers work on whatever site the user opens in a container tab, so the cookie header rules and the storage-separation script need access to any site. With the optional agent bridge on, the user's own agent can read and operate any tab the user has open. Without the bridge, SplitSession acts only on tabs the user has put in a container (plus removing service workers of those sites); it sends no data anywhere. |
 
 ### Remote code (dashboard question)
 
-Answer **"Yes, I am using remote code"** and paste:
-
-```
-Only through the Debugger API, which the Manifest V3 policy permits for this purpose. When the user has switched on the optional agent bridge and accepted its disclosure, the user's own AI agent running on the same computer can ask for a JavaScript expression to be evaluated in a tab (Runtime.evaluate via chrome.debugger), as Chrome DevTools or Playwright would. The expression comes from that local program through native messaging, never from a server. All other agent actions inject functions bundled in the package (chrome.scripting.executeScript with func), not strings. The extension's own logic is entirely in the package: no eval, no new Function, no remotely loaded scripts.
-```
-
-If the dashboard treats "Yes" as needing a server URL, answer "No" and put the same text in the reviewer notes
-(chrome-web-store.md 2.3: a judgement call, "Yes" is the safer one).
+Answer **"No"**. The store build has no `debugger` permission and no tool that runs code from the agent: its actions are bundled
+functions injected with chrome.scripting.executeScript (func), and selectors, text and values are passed as data. The extension's
+own logic is entirely in the package: no eval, no new Function, no remotely loaded scripts. If a reviewer asks: "The optional
+agent bridge sends commands such as 'click this element' from the user's local program; none of them is evaluated as code."
 
 ### Privacy practices: data usage
 
@@ -285,7 +281,7 @@ This update adds an optional "agent bridge" for the user's own local AI agent. I
 4. Switch the bridge off: the connection and the companion process end at once. npx splitsession-bridge uninstall removes the program.
 Without step 1 the bridge shows "not connected" by design; every other feature works.
 
-Data: nothing is sent to any server by the extension. With the bridge on, page content goes only to the local companion program through native messaging, and from there to the user's agent. Remote code: only Runtime.evaluate through chrome.debugger, for expressions from the user's local agent (see the remote-code answer).
+Data: nothing is sent to any server by the extension. With the bridge on, page content goes only to the local companion program through native messaging, and from there to the user's agent. Remote code: none; the extension runs only code in its package (see the remote-code answer).
 
 Source code (unminified, MIT): https://github.com/Misyuk-T/splitsession  — bridge program: bridge/ in the same repository, also on npm as splitsession-bridge. Video of the bridge in use: <link>
 ```
@@ -299,7 +295,7 @@ Source code (unminified, MIT): https://github.com/Misyuk-T/splitsession  — bri
 | 0:18-0:24 | Settings → "For AI agents": "Agent bridge" is off, status "Off". | "The agent bridge is off by default." |
 | 0:24-0:32 | Terminal: `npx splitsession-bridge install --client none` and its output. | "The companion program is installed separately." |
 | 0:32-0:40 | Switch on → the disclosure dialog, scrolled slowly → "Allow agent access" → status "Connected". | "Before it turns on, the user sees what it allows." |
-| 0:40-0:52 | An MCP client (Claude Code) asked "open example.com in container B and tell me the heading": the tab opens in B's group, the page shows the agent mark, Chrome's debugging bar appears for a click; the answer appears in the terminal. | "The user's own agent acts in the chosen account." |
+| 0:40-0:52 | An MCP client (Claude Code) asked "open example.com in container B and tell me the heading": the tab opens in B's group, the page shows the agent mark; the answer appears in the terminal. | "The user's own agent acts in the chosen account." |
 | 0:52-0:60 | Popup → switch off → status gone; terminal: the next tool call says the bridge is off. | "Off: the connection closes at once." |
 
 ---

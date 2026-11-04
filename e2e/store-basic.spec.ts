@@ -5,8 +5,8 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { type BrowserContext, chromium, expect, test } from "@playwright/test";
 
-import { BRIDGE_CONSENT_VERSION } from "../src/core/bridge-consent";
 import { TOOLS } from "../src/bridge/spec";
+import { BRIDGE_CONSENT_VERSION } from "../src/core/bridge-consent";
 import { hostPids, installHost, type Mcp, startMcp } from "./bridge-helpers";
 import { at, EXTENSION_ID } from "./env";
 import { apiOf, extensionArgs, isOurWorker } from "./extension";

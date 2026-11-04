@@ -74,7 +74,9 @@ or Codex). It is **off by default** and is one all-or-nothing switch in the exte
   accessibility snapshot, screenshots, console and network lists (cookie and authorization header values are always
   hidden), clicks, typing, file uploads and running scripts, in every tab of every window, signed-in pages included. It can
   act as you on those sites. Chrome shows its own "started debugging this browser" bar while the debugger is in use, and
-  the extension shows that the agent is working (a glow on the page, a badge on the toolbar button).
+  the extension shows that the agent is working (a glow on the page, a badge on the toolbar button). The Chrome Web Store
+  build has no debugger permission ("basic mode"): it cannot run scripts an agent sends, press keys, upload files, or read
+  console and network lists; clicks and typing are events the extension sends to the page.
 - **Where that data goes**: it travels from the extension to a helper program on your computer through Chrome's native
   messaging, and from there over a local Unix socket (never a network port) to your agent. SplitSession itself sends it
   nowhere else. What your agent then does with it, including sending it to an AI provider you chose, is governed by that
@@ -101,8 +103,8 @@ Lite is no longer uploaded to the Chrome Web Store; it can still be built from t
 | `storage` | keeping your containers, jars, rules and settings on your device |
 | `browsingData` | removing service workers (which could answer a container tab with another account's data); it removes service workers only |
 | `alarms` | housekeeping timers in the extension's background worker |
-| `nativeMessaging` (Full only) | talking to the local helper program of the agent bridge |
-| `debugger` (Full only) | trusted clicks and typing, file uploads, screenshots and the console and network lists for your agent, only while the bridge is on and a tool needs it |
+| `nativeMessaging` (Full only; optional in the Chrome Web Store build, asked for when you switch the bridge on and given back when you switch it off) | talking to the local helper program of the agent bridge |
+| `debugger` (the unpacked Full from GitHub only; the Chrome Web Store build does not have it) | trusted clicks and typing, file uploads, screenshots and the console and network lists for your agent, only while the bridge is on and a tool needs it |
 
 ## Keeping and deleting your data
 

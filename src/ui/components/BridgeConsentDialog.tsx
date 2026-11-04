@@ -58,9 +58,9 @@ export const BridgeConsentDialog = ({
       </ul>
       {!__CDP__ && (
         <p>
-          Chrome will ask once to let SplitSession talk to a program on this
-          computer. The extension does not run scripts an agent sends it, and
-          has no debugger access.
+          Chrome may ask to let SplitSession talk to a program on this computer.
+          The extension does not run scripts an agent sends it, and has no
+          debugger access.
         </p>
       )}
       <p>

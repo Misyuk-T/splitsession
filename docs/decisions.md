@@ -2111,7 +2111,7 @@ Three additions on top of the tab leases (bridge 0.3.0, together with the leases
   off anyway), the API, settings in storage from another build or an older install (including the author's own unpacked Full:
   the bridge is off after this update until the dialog is accepted once), and import (export files carry no settings at all).
   The bridge's tools cannot change settings.
-- **Accepted residual risk: the permission prompt.** Adding the required `nativeMessaging` and `debugger` disables the
+- **Accepted residual risk: the permission prompt. Superseded 2026-11-04** ("The store item is Full in basic mode": the store build adds no required permission, so there is no prompt and no gap). Adding the required `nativeMessaging` and `debugger` disables the
   extension for every existing user until they approve. While it is disabled, container tabs are plain tabs: requests carry
   the regular profile's cookies, nothing is captured into container jars, page storage is not namespaced. The mitigation is
   the one-time notice in the last Lite release's popup ("Coming next: optional AI-agent access", `UpgradeNotice.tsx`) and the
@@ -2127,3 +2127,61 @@ Three additions on top of the tab leases (bridge 0.3.0, together with the leases
   refused), `core/copies.test.ts` (sources). e2e: `bridge-consent.spec.ts` (dialog text, focus trap, Cancel, Escape, keyboard
   Allow, no second question, the API refuses without consent), `store-upgrade.spec.ts` (Lite data under the store build at
   one ID, disable and enable).
+
+## The store item is Full in basic mode (2026-11-04)
+
+Amends "The store item becomes Full" (2026-10-27): the item is still updated in place from Lite to the `store` build, but that
+build no longer asks for `debugger`, and `nativeMessaging` is optional.
+
+- **Why.** The publisher has two store slots and both are taken (an increase was denied), so Full cannot be a separate item.
+  A new *required* permission disables the extension for every user until they approve, and while it is disabled container tabs
+  send the real profile's cookies (the accepted residual risk of 2026-10-27; open P1 in `e2e/store-upgrade.spec.ts`).
+  `debugger` cannot be an optional permission; `nativeMessaging` can
+  ([permissions API](https://developer.chrome.com/docs/extensions/reference/api/permissions)). So the store build has exactly
+  Lite's required permissions, nothing to approve, and the bridge works in a reduced "basic mode". "Full hands" (the
+  DevTools protocol) stay in the unpacked Full from GitHub, which is unchanged (both permissions required, pinned ID).
+- **Manifest.** `store`: `permissions` identical to Lite's, `optional_permissions: ["nativeMessaging"]`. `full`, `lite`
+  unchanged. `scripts/check-store.mjs` fails a store package with `debugger` or `nativeMessaging` in `permissions`, without
+  exactly `["nativeMessaging"]` in `optional_permissions`, with any DevTools-protocol marker in a file of the bundle, or with a
+  `key`. The test hook `FACET_TEST_GRANT_NM=1` (headless Chrome cannot accept a prompt) puts `nativeMessaging` into
+  `permissions` of a store build; check-store refuses that, so it cannot reach a release.
+- **Compile-time flag `__CDP__`** (`wxt.config.ts`, `src/env.d.ts`): true for the unpacked Full, false for `store` and `lite`.
+  The CDP code (`cdp.ts`, `cdp-tools.ts`, `tools/devtools.ts`, `tools/hands.ts`) is behind `if (__CDP__)` and is not in the
+  store bundle; `CdpSessions` is never constructed without `chrome.debugger` (its constructor registers listeners and would
+  throw). `refusedUrl` moved to `operable.ts` because both modes use it.
+- **Switching on** (store). The permission is requested from the options page only (a click is needed, and the popup would
+  close when Chrome's prompt takes the focus; the popup can only switch the bridge off). The disclosure comes first (our own
+  dialog, text without the console, network and JavaScript lines, plus a sentence that Chrome may ask). Then
+  `permissions.request({permissions: ["nativeMessaging"]})`; only if granted the consent is recorded and `agentBridge: true` is
+  written. A refusal leaves everything off and shows a message in the page (no native dialogs).
+- **Background guards.** The settings guard (`consent.ts`) refuses `agentBridge: true` without consent **and** without the
+  granted permission (`permissions.contains`; always true in the unpacked Full), and turns a stored `true` without either off at
+  load. `permissions.onRemoved` for `nativeMessaging` switches the bridge off (after checking again that it is really gone).
+  Switching the bridge off gives the permission back (`permissions.remove`, only when the manifest lists it as optional).
+  **Chrome may grant it again without a prompt on the next request**, so that removal is tidiness, not a lock: the lock is our
+  own consent dialog, which is shown whenever consent is missing, and the settings guard. `connect()` reports a clear error
+  instead of throwing when `runtime.connectNative` is missing.
+- **What basic mode serves.** Tabs and containers (`bridge_info`, `list_containers`, `list_tabs`, `open_in_container`,
+  `open_tab`, `navigate`, `reload`, `close_tab`, `activate_tab`, `assign_tab`), reading (`get_tab_text`, `get_tab_html`,
+  `snapshot`: the snapshot is built from the DOM, so refs work), `select_option`, `scroll`, `wait_for`, `extension_log`.
+  `click` and `type` send script events (`isTrusted` is false) to a ref, a selector or a point; `type` has no `slowly`.
+  `screenshot_tab` captures the visible part of the tab on show (`fullPage` or a background tab is an error, not a silent
+  viewport or a tab switch). `navigate_back` / `navigate_forward` use `tabs.goBack` / `goForward` on tabs outside containers;
+  on a container tab they are refused (the target of Back is unknown, so it cannot be prepared: no service worker may answer
+  a container's request). Not served: `run_js`, `handle_dialog`, `watch`, `console_messages`, `network_requests`,
+  `resize_viewport`, `hover`, `drag`, `press_key`, `upload_file`.
+- **Telling the agent.** `bridge_info` reports `mode: "basic" | "full"`, `notAvailable` and a sentence on what differs and where
+  full mode is. The extension also lists the tools it serves in its answer to the host's `__profile` question (a new optional
+  field `tools`), and the host's `tools/list` offers the union over the connected profiles (all of them when any profile does
+  not say, or none is reachable). An older host with a new extension lists everything and a tool that is not served answers
+  "not available in basic mode ..."; a new host with an older extension (no field) lists everything. (The first plan put the
+  list into `ready`; `ready` is sent by the host, so the extension's answer to `__profile`, which the MCP server already asks
+  of every profile, carries it.)
+- **Store policy: no agent-supplied code runs.** Audited: no served tool evaluates a string. Selectors go to `querySelector`,
+  `wait_for` text is compared as text, `type` sets a value, and the page functions are bundled and injected with
+  `scripting.executeScript({func})`. `run_js` (the one tool that evaluates agent code) is only in the unpacked Full.
+- **Tests.** Unit: `consent.test.ts` (permission in the guard), `native-permission.test.ts` (contains, release, onRemoved),
+  `agent-bridge.test.ts` (`tools` in `__profile`, no `connectNative`), `router.test.ts` (basic screenshot, back on a container
+  tab), `bridge/src/dispatch.test.ts` and `mcp.test.ts` (served tools). e2e: `store-basic.spec.ts` (the real store manifest and
+  gate; a refusal in the options page; the real host and MCP server against a store build: tool list, snapshot, click and type by
+  ref, select, scroll, wait, screenshot, refusals), `store-upgrade.spec.ts` (same `permissions` as Lite after the update).

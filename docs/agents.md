@@ -146,7 +146,7 @@ Sections 1-6 need nothing but a browser tool. The **agent bridge** is the other 
 an AI coding agent running on your Mac (Claude Code) **list your Chrome tabs across all windows, see each tab's
 container, and operate them like a Playwright-class agent**: accessibility snapshots with element refs, real (trusted)
 mouse and keyboard input, file uploads, JavaScript dialogs, screenshots of background tabs, console and network, all
-through the Chrome DevTools Protocol (`chrome.debugger`). It exists for the case where the agent should work in the
+through the Chrome DevTools Protocol (`chrome.debugger`; the Chrome Web Store build has no debugger and runs in a reduced "basic mode", below). It exists for the case where the agent should work in the
 browser you are already using, with the accounts you are already logged in to.
 
 ### What "on" means
@@ -251,9 +251,39 @@ Claude Code --stdio--> splitsession-bridge.mjs mcp --Unix socket--> splitsession
   `screenshot_tab`/`type`/`run_js` 30 s, `wait_for` 35 s), and is written to SplitSession's log (Advanced, Diagnostics in the options
   page): tool, tab ID, site, ok/error, time. **Never page content or typed text.**
 - The extension's permissions for the bridge: `nativeMessaging`, **`debugger`** (Chrome asks you to accept it when you
-  reload the extension).
+  reload the extension). That is the **unpacked Full** from GitHub. The **Chrome Web Store** build has neither as a required
+  permission (see "Basic mode" below).
 
-### The debugger ("full hands")
+### Basic mode (the Chrome Web Store build)
+
+The store item is the same Full code built without `debugger` (`pnpm build:store`; decisions.md, "The store item is Full in
+basic mode"): its required permissions are exactly Lite's, so updating from Lite does not disable the extension, and the DevTools
+protocol code is not in the bundle at all.
+
+- **Switching on.** Settings, For AI agents, "Agent bridge": the disclosure, then Chrome's own prompt for `nativeMessaging`
+  (an optional permission), then the bridge turns on. If you refuse, it stays off. Switching it off closes the connection and
+  gives the permission back; Chrome may hand it out again without asking, so the lock is the disclosure and the consent record,
+  which are asked again whenever the consent is missing. If Chrome (or you, in chrome://extensions) takes the permission away
+  while the bridge is on, the bridge switches itself off.
+- **Served:** `bridge_info`, `list_containers`, `list_tabs`, `open_in_container`, `open_tab`, `navigate`, `reload`, `close_tab`,
+  `activate_tab`, `assign_tab`, `get_tab_text`, `get_tab_html`, `snapshot` (refs work: the snapshot is read from the DOM),
+  `select_option`, `scroll`, `wait_for`, `extension_log`, `click`, `type`, `screenshot_tab`, `navigate_back`, `navigate_forward`.
+- **With limits.** `click` and `type` send the events a page script could (`isTrusted` is false; a few pages ignore them), by
+  ref, selector or point; `type` has no `slowly`. `screenshot_tab` captures the visible part of the tab on show: `fullPage` and a
+  background tab are refused with a message (`activate_tab` first), never a silent viewport or a tab switch.
+  `navigate_back` / `navigate_forward` use Chrome's own Back and Forward on tabs outside containers; on a container tab they are
+  refused (where Back goes is unknown, so it cannot be prepared the way `navigate` does; use `navigate` with the address).
+  A JavaScript dialog is not seen: a script event that opens one blocks the page until you answer it yourself.
+- **Not served:** `run_js`, `handle_dialog`, `watch`, `console_messages`, `network_requests`, `resize_viewport`, `hover`, `drag`,
+  `press_key`, `upload_file`. They are not in the host's `tools/list` (bridge 0.4+: the extension lists what it serves in its
+  answer to `__profile`, the host offers the union over the connected profiles); an older host lists them and they answer
+  "not available in basic mode".
+- **The agent can tell.** `bridge_info` has `mode` (`basic` or `full`), `notAvailable` and a sentence on what differs. Full mode
+  is the unpacked Full from the project's GitHub page.
+- **No agent code runs.** Selectors reach `querySelector`, `wait_for` text is compared as text, `type` sets a value; the page
+  functions are bundled and injected with `scripting.executeScript({func})`. Nothing evaluates a string from the agent.
+
+### The debugger ("full hands"; the unpacked Full only)
 
 - Chrome shows **"SplitSession started debugging this browser"** (and moves the page content down and up) for as long as an
   extension is attached with `chrome.debugger`. So SplitSession uses the debugger **only for what a plain script cannot do**:
@@ -484,6 +514,9 @@ that was still under way is undone as soon as it completes). A script already ru
 be recalled.
 
 ### Tools
+
+Basic mode (the Chrome Web Store build, see above) serves part of this list and `bridge_info` says which; rows that mention the
+debugger or a tool listed as "not served" are for the unpacked Full.
 
 The way to work with a page: **`snapshot`, then act by ref, then `snapshot` again** when the page has changed.
 

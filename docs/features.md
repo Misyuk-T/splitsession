@@ -42,7 +42,7 @@ One codebase, two editions. **Lite** is containers only; it was the Chrome Web S
 | Agent bridge (native messaging, MCP server, Chrome DevTools Protocol), off by default | not in the bundle | yes |
 | Agent activity display (glow, label, toolbar dot that blinks when the agent acts on a tab) | not in the bundle | yes |
 | "Show the container name to pages" (`data-ctr`, `[name]` title prefix), off by default | not in the bundle | yes |
-| Extra permissions | none | `nativeMessaging`, `debugger` |
+| Extra permissions | none | `nativeMessaging`, `debugger` (unpacked Full); the Chrome Web Store build: optional `nativeMessaging` only, no `debugger` (agent bridge in basic mode, docs/agents.md) |
 | Extension ID | path-derived (local build) | Chrome Web Store: `hhodioekcdmhpocjbkjnblmbmchddphf`; unpacked: fixed `hapfikidacgfgnnajkgnaednpgnhmffk` |
 | Build output | `.output/lite/chrome-mv3` | `.output/chrome-mv3` (unpacked, with the key), `.output/store/chrome-mv3` (store package, no key) |
 

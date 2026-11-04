@@ -11,11 +11,11 @@ Facts about our builds (from `pnpm build` and `pnpm build:lite` on 2026-10-14, `
 
 | | Lite | Full |
 | --- | --- | --- |
-| `permissions` | declarativeNetRequest, webRequest, scripting, tabs, tabGroups, storage, webNavigation, browsingData, alarms, sessions | the same + `nativeMessaging`, `debugger` |
+| `permissions` | declarativeNetRequest, webRequest, scripting, tabs, tabGroups, storage, webNavigation, browsingData, alarms, sessions | the same + `nativeMessaging`, `debugger` (unpacked Full). The **store build** (`pnpm build:store`, basic mode, from 2026-11-04) has Lite's list exactly and `optional_permissions: ["nativeMessaging"]`; no `debugger` |
 | `host_permissions` | `<all_urls>` | `<all_urls>` |
 | `optional_permissions` | `cookies` | `cookies` |
 | `key` | none | yes (fixed ID `hapfikidacgfgnnajkgnaednpgnhmffk`) |
-| `eval` / `new Function` in the bundle | none | none (agent JS goes only through `chrome.debugger` `Runtime.evaluate`) |
+| `eval` / `new Function` in the bundle | none | none (agent JS goes only through `chrome.debugger` `Runtime.evaluate`; the store build has no `run_js` and no CDP code at all) |
 | Package size | 848 KB unzipped | 980 KB unzipped |
 
 Two findings from the repository that matter before any submission:
@@ -238,7 +238,9 @@ From [images](https://developer.chrome.com/docs/webstore/images) and
   `serviceWorkers` type only (`src/engine/sw-policy.ts`). The justification must say "service workers only, because
   their requests bypass per-tab isolation; no history or cookies are removed".
 
-### 2.3 Remote code (Blue Argon): Lite none, Full `run_js`
+### 2.3 Remote code (Blue Argon): Lite none, store build none, unpacked Full `run_js`
+
+> From 2026-11-04 the store item has no `debugger` and no `run_js` (decisions.md, "The store item is Full in basic mode"), so the answer for it is "No", as for Lite. What follows is the reasoning for a build with `run_js`, kept for the day it returns.
 
 - Rule: code "loaded from someplace other than the extension's own files" is forbidden, except through a documented API
   that permits it: the **Debugger API** and the **User Scripts API**; the exemption covers "solely" the code those APIs
@@ -259,7 +261,7 @@ From [images](https://developer.chrome.com/docs/webstore/images) and
   reviewers score either answer); the draft in listing-draft.md has both texts.
 - Lite: answer "No". Bundle has no `eval`/`new Function` (checked on the build output).
 
-### 2.4 Full: `debugger` (accepted on the store, slow review)
+### 2.4 Full: `debugger` (accepted on the store, slow review; **not used by the store item since 2026-11-04**)
 
 - Install warnings: "Access the page debugger backend" and "Read and change all your data on all websites"
   ([permissions list](https://developer.chrome.com/docs/extensions/reference/permissions-list)).
@@ -475,10 +477,11 @@ summary of each page, not checked against raw HTML; no written reviews were visi
   ([permissions API](https://developer.chrome.com/docs/extensions/reference/api/permissions)).
 - ~~**Lite must never grow into Full's permissions by update**: that is exactly why Full is a separate item.~~
   **Superseded 2026-10-27** (decisions.md, "The store item becomes Full"): the item is updated from Lite to Full on purpose.
-  The update adds `nativeMessaging` and `debugger`, so every existing user's copy is disabled until they approve; while it
-  waits, container tabs are plain tabs (no cookie isolation). Mitigation: the last Lite release shows a one-time popup notice
-  before the update, the release notes say it, and the update goes out in a release of its own (6.1). What happens in that
-  window, measured: docs/release/upgrade-test.md.
+  ~~The update adds `nativeMessaging` and `debugger`, so every existing user's copy is disabled until they approve.~~
+  **Superseded 2026-11-04** (decisions.md, "The store item is Full in basic mode"): the store build adds **no** required
+  permission. `debugger` is dropped (it cannot be optional) and `nativeMessaging` is optional, requested from the options page
+  when the user switches the agent bridge on, so Chrome does not disable anyone on update and there is no isolation gap. The
+  prompt-window measurements in docs/release/upgrade-test.md apply only if a required permission is ever added again.
 - Removing `cookies` (optional) has no user-visible effect.
 
 ### 6.4 Rollback
@@ -570,6 +573,6 @@ Was: **Recommended for v0.1.0: do not submit Full to the store; ship it as the G
 2. A store zip without `key`; `install --extension-id` writes the Store ID into `allowed_origins` (repeat it to allow both IDs); docs/agents.md explains the two IDs (6.2).
 3. Single-purpose framing decided (2.6) and the description rewritten around it.
 4. Privacy policy section for the bridge; data usage adds website content and user activity (1.4).
-5. Remote-code answer "Yes" with the Debugger API explanation (2.3).
+5. Remote-code answer: **"No"** for the store build (basic mode has no `run_js`, no Debugger API, nothing that evaluates a string from the agent; listing-draft.md has the text). The "Yes" explanation (2.3) is for a build with `debugger`, which the store item no longer is.
 6. Reviewer notes with a short screen recording of `npx splitsession-bridge install` → switch on → an agent clicking in a container tab.
 7. Visibility **Unlisted** first; promote to Public after a few weeks without problems.

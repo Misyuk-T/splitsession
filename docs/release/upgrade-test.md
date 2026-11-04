@@ -1,10 +1,13 @@
 # Lite → Full on one store item: the packed-update test (manual, 2026-10-27)
 
 The store item `hhodioekcdmhpocjbkjnblmbmchddphf` goes from Lite to the store build of Full in place
-(docs/decisions.md, "The store item becomes Full"). Full adds the required `nativeMessaging` and `debugger`, so Chrome
-disables the extension after the update until the user approves the new permissions
+(docs/decisions.md, "The store item becomes Full", amended by "The store item is Full in basic mode", 2026-11-04). The store
+build adds **no required permission** over Lite (`debugger` is gone, `nativeMessaging` is optional), so Chrome must **not**
+disable the extension after the update and must show **no permission prompt**
 ([permission warnings](https://developer.chrome.com/docs/extensions/develop/concepts/permission-warnings#update_permissions)).
-This page is the check of that path with real packed builds, to run by hand before the upload.
+This page is the check of that, with real packed builds, to run by hand before the upload. Steps 3 to 6 were written for the
+earlier plan (a prompt and a disabled extension); they now say what to expect instead, and keep the pending-approval steps as
+the procedure to follow if a required permission is ever added again.
 
 ## What is automated and what is not
 
@@ -66,14 +69,15 @@ In the scratch profile:
 
 Drag `store/chrome-mv3.crx` onto chrome://extensions. Chrome treats it as an update of the same ID.
 
-- [ ] Expected: the card shows the new version, and the extension is **disabled** with a notice that it needs new
-      permissions ("Read and change … / Communicate with cooperating native applications / Access the page debugger
-      backend"); the toolbar puzzle-piece menu offers to re-enable. Record the exact wording and take a screenshot (for
-      the release notes and the Lite notice). If Chrome instead shows an install prompt and the extension stays enabled,
-      the drag path behaves like a fresh user-accepted install; then test the real path with a store **Unlisted** or
+- [ ] Expected: the card shows the new version, the extension stays **enabled**, and Chrome shows **no permission
+      prompt** and no "needs new permissions" notice (the required permissions are identical; chrome://extensions → Details →
+      Permissions lists no debugger and no native applications; "Communicate with cooperating native applications" appears only
+      as an optional permission). Record what you saw. If Chrome does disable it or prompt, stop: a required permission has
+      slipped in (`node scripts/check-store.mjs` should have caught it), and the steps below (the pending-approval window)
+      apply. If the drag path behaves like a fresh user-accepted install, test the real path with a store **Unlisted** or
       staged rollout to a test account instead (6.4 in chrome-web-store.md), and note that here.
 
-### 4. While approval is pending
+### 4. While approval is pending (only if step 3 disabled the extension)
 
 - [ ] Work and Home tabs are still open, still in their tab groups (the groups stay; their colours stay).
 - [ ] Reload the Work tab and open `/whoami`: record what it shows. Expected per the automated test: the **real**
@@ -82,18 +86,22 @@ Drag `store/chrome-mv3.crx` onto chrome://extensions. Chrome treats it as an upd
 - [ ] A new tab opened from the Work group: also a plain tab (expected).
 - [ ] Logins made now in those tabs land in the **real** profile (expected; worth one line in the release notes).
 
-### 5. Restart while pending
+### 5. Restart while pending (same condition)
 
 - [ ] Quit Chrome (Cmd+Q) without approving; start it again. The extension is still disabled.
 - [ ] The Work and Home tabs come back (Continue where you left off) and load as ordinary tabs (`who=real`).
 
-### 6. Approve
+### 6. Approve (same condition); with no prompt, check the same list right after step 3
 
 - [ ] Re-enable from the puzzle-piece menu or chrome://extensions and accept the permissions.
 - [ ] Within a few seconds the Work and Home tabs are back in their containers (popup shows their tab counts; the
       groups are SplitSession's again). Reload them: `/whoami` shows `alice` and `bob`. A plain tab still shows `anonymous`.
 - [ ] Popup and Settings open without errors; containers, names, colours are Lite's; the two changed settings are kept.
-- [ ] Settings → For AI agents: "Agent bridge" is **off**. Switching it on shows the consent dialog first.
+- [ ] Settings → For AI agents: "Agent bridge" is **off**. Switching it on shows the consent dialog first; "Allow agent
+      access" then makes Chrome ask for the optional native-applications permission (accept it: the bridge connects if the
+      host is installed; refuse it in a second try: the bridge stays off and the page says so). Switching the bridge off
+      gives the permission back (chrome://extensions → Details → Permissions).
+- [ ] With the bridge on, `bridge_info` says `"mode": "basic"` and the agent's tool list has no `run_js`, `press_key`, ...
 - [ ] Diagnostics log: no errors around the update; one service worker running the new version (chrome://extensions →
       "service worker" link → console: `chrome.runtime.getManifest().version` is the new version and
       `typeof facet.getBridgeState === "function"`, i.e. the Full code runs without a manual reload).

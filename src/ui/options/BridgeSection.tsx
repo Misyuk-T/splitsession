@@ -311,11 +311,12 @@ export const BridgeSection = () => {
                   extension sends to the page (a few pages ignore them), and
                   running JavaScript, key presses, hovering, dragging, file
                   uploads, dialogs, and the console and network records are not
-                  available. Switching the bridge on makes Chrome ask once for
-                  permission to talk to a program on this computer; switching it
-                  off gives that permission back. Nothing here can read or
-                  change cookies, so containers stay separate. Full mode is the
-                  unpacked Full edition from the project’s GitHub page.
+                  available. Switching the bridge on asks Chrome for permission
+                  to talk to a program on this computer (Chrome may show a
+                  prompt); switching it off gives that permission back. Nothing
+                  here can read or change cookies, so containers stay separate.
+                  Full mode is the unpacked Full edition from the project’s
+                  GitHub page.
                 </p>
               )}
               <p>
