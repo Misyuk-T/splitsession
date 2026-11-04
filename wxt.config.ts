@@ -15,6 +15,7 @@ import { KNOWN_COPY_IDS } from "./src/core/copies";
 const EDITIONS = {
   full: {
     full: true,
+    cdp: true,
     name: "SplitSession (Full)",
     description:
       "Use several accounts of the same site side by side in one Chrome profile. Includes a local AI-agent bridge (off by default).",
@@ -24,6 +25,9 @@ const EDITIONS = {
   },
   store: {
     full: true,
+    // Basic mode: the store item cannot hold `debugger` (it is not an optional permission, and a new required permission
+    // disables the extension on update), so the CDP code is not in this bundle at all.
+    cdp: false,
     name: "SplitSession: Multiple Logins per Site",
     description:
       "Use several accounts of the same site side by side in one Chrome profile. Optional local AI-agent bridge, off by default.",
@@ -33,6 +37,7 @@ const EDITIONS = {
   },
   lite: {
     full: false,
+    cdp: false,
     name: "SplitSession: Multiple Logins per Site",
     description:
       "Use several accounts of the same site side by side in one Chrome profile.",
@@ -46,7 +51,7 @@ const edition: Edition =
   process.env.FACET_EDITION === "lite" || process.env.FACET_EDITION === "store"
     ? process.env.FACET_EDITION
     : "full";
-const { full } = EDITIONS[edition];
+const { full, cdp } = EDITIONS[edition];
 
 // Test only: `FACET_TEST_KEY` (base64 SPKI) puts that public key into any edition, so a Lite and a store build share one ID
 // (e2e/store-upgrade.spec.ts, the Lite -> Full update on one store item). A release build never sets it; scripts/check-lite.mjs
@@ -60,6 +65,12 @@ const extensionKey =
         "utf8",
       ).trim()
     : undefined);
+
+// Test only: `FACET_TEST_GRANT_NM=1` makes `nativeMessaging` a required permission of a store build, because headless Chrome
+// cannot accept the prompt of an optional one (e2e/store-basic.spec.ts). A release build never sets it; scripts/check-store.mjs
+// fails a store manifest that has `nativeMessaging` in `permissions`.
+const grantNativeMessaging =
+  edition === "store" && process.env.FACET_TEST_GRANT_NM === "1";
 
 // Duplicate-copy detection (src/core/copies.ts): the copies that may talk to each other, in the manifest
 // (`externally_connectable`) and in the bundle (`__EXTRA_COPY_IDS__`). The e2e spec duplicate-copies.spec.ts builds
@@ -105,10 +116,12 @@ export default defineConfig({
             },
           ]),
     ],
-    // Compile-time edition flag (src/env.d.ts): the bundler removes every `if (__FULL__)` branch from Lite, and with it the
-    // modules only those branches use (agent bridge, CDP, activity overlay, page-name features).
+    // Compile-time edition flags (src/env.d.ts): the bundler removes every `if (__FULL__)` branch from Lite, and with it the
+    // modules only those branches use (agent bridge, CDP, activity overlay, page-name features); `__CDP__` does the same for
+    // the DevTools-protocol code in the store build, which keeps the rest of the agent bridge.
     define: {
       __FULL__: JSON.stringify(full),
+      __CDP__: JSON.stringify(cdp),
       __EXTRA_COPY_IDS__: JSON.stringify(extraCopyIds),
     },
   }),
@@ -153,11 +166,17 @@ export default defineConfig({
       // Container tabs that come back: which recently-closed tab or window was just reopened (docs/decisions.md).
       "sessions",
       // Full only. Agent bridge (off by default): talk to the local native host `com.splitsession.bridge` (docs/agents.md).
-      ...(full ? ["nativeMessaging"] : []),
-      // Full only. Agent bridge "full hands": trusted input, accessibility snapshots, screenshots of background tabs,
-      // console and network capture through the Chrome DevTools Protocol. Attached only while the bridge is on and a tool runs.
-      ...(full ? ["debugger"] : []),
+      // The store build asks for it at runtime instead (`optional_permissions`), so the update from Lite adds no required permission.
+      ...(full && (edition !== "store" || grantNativeMessaging)
+        ? ["nativeMessaging"]
+        : []),
+      // Full (unpacked) only. Agent bridge "full hands": trusted input, background screenshots, console and network capture
+      // through the Chrome DevTools Protocol. Attached only while the bridge is on and a tool runs.
+      ...(cdp ? ["debugger"] : []),
     ],
+    ...(edition === "store" && !grantNativeMessaging
+      ? { optional_permissions: ["nativeMessaging"] }
+      : {}),
     // v0.1 asks for every host up front: header rewriting needs host access, and
     // headless e2e cannot click permission prompts. Optional-permission onboarding is deferred.
     host_permissions: ["<all_urls>"],

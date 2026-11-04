@@ -1,6 +1,8 @@
 // Fails when the Chrome Web Store package of Full is not what the store item may receive: a `key` (the store rejects it,
-// and it would also mean a test key leaked in), the Full edition's name, missing agent-bridge permissions, a copy-ID list
-// other than the two known IDs, or a bundle without the agent bridge and its consent gate. Run by `pnpm build:store` and
+// and it would also mean a test key leaked in), the Full edition's name, a required permission beyond Lite's (the update
+// from Lite would disable the extension: `debugger` and `nativeMessaging` must not be in `permissions`; `nativeMessaging`
+// must be optional), DevTools-protocol code in the bundle (basic mode has none), a copy-ID list other than the two known
+// IDs, or a bundle without the agent bridge and its consent gate. Run by `pnpm build:store` and
 // `pnpm zip:store` (and CI). The values are written out here, not derived from wxt.config.ts: a check that reads the same
 // source as the build cannot catch a mistake in it.
 //
@@ -19,16 +21,30 @@ const COPY_IDS = [
   "hapfikidacgfgnnajkgnaednpgnhmffk", // Full, unpacked (pinned key)
   "hhodioekcdmhpocjbkjnblmbmchddphf", // the Chrome Web Store item
 ];
-// Full's agent bridge: required, and on the store item these two are the permission increase over Lite 0.1.x.
-const REQUIRED_PERMISSIONS = ["nativeMessaging", "debugger"];
+// The permission increase over Lite 0.1.x that would disable the store item on update (docs/decisions.md, "The store item
+// becomes Full"). `debugger` cannot be optional, so basic mode has none; `nativeMessaging` is asked for at runtime.
+const FORBIDDEN_REQUIRED_PERMISSIONS = ["nativeMessaging", "debugger"];
+const OPTIONAL_PERMISSIONS = ["nativeMessaging"];
 // Removed 2026-10-13 (docs/decisions.md); must not come back unnoticed in the store package.
-const FORBIDDEN_PERMISSIONS = ["userScripts", "management"];
+const FORBIDDEN_PERMISSIONS = ["userScripts", "management", "debugger"];
 // [label, regex]: each must occur in some text file of the bundle.
 const REQUIRED_MARKERS = [
   // The consent record (src/core/bridge-consent.ts): without it the switch could turn on without the disclosure.
   ["agent bridge consent key (agentBridgeConsent)", /agentBridgeConsent/],
   ["agent bridge disclosure (Allow agent access)", /Allow agent access/],
   ["native host name com.splitsession.bridge", /com\.splitsession\.bridge/],
+];
+// [label, regex]: none may occur in any text file of the bundle (same list as scripts/check-lite.mjs): the DevTools-protocol
+// code is not in the store build.
+const CDP_MARKERS = [
+  ["chrome.debugger / debugger API", /\.debugger\b|["'`]debugger["'`]/],
+  ["CDP Input.dispatch* (Input.dispatchMouseEvent, ...)", /Input\.dispatch/],
+  ["CDP Accessibility domain", /Accessibility\.(?:enable|getFullAXTree)/],
+  ["CDP Page.captureScreenshot", /Page\.captureScreenshot/],
+  ["CDP Page history (getNavigationHistory)", /Page\.getNavigationHistory/],
+  ["CDP Runtime.evaluate", /Runtime\.evaluate/],
+  ["CDP DOM.setFileInputFiles", /DOM\.setFileInputFiles/],
+  ["CDP debugging handle (facetCdp)", /facetCdp/],
 ];
 const TEXT = /\.(?:js|mjs|html|css|json|txt)$/;
 
@@ -57,6 +73,13 @@ for (const file of files) {
   const text = readFileSync(file, "utf8");
   for (const [label, re] of REQUIRED_MARKERS)
     if (re.test(text)) found.add(label);
+  for (const [label, re] of CDP_MARKERS) {
+    const m = re.exec(text);
+    if (m)
+      problems.push(
+        `${path.relative(dir, file)}: ${label} (…${text.slice(Math.max(0, m.index - 30), m.index + 40).replace(/\s+/g, " ")}…)`,
+      );
+  }
 }
 for (const [label] of REQUIRED_MARKERS)
   if (!found.has(label)) problems.push(`bundle lacks the ${label}`);
@@ -81,9 +104,19 @@ else {
   )
     problems.push("manifest description is missing or over 132 characters");
   const permissions = manifest.permissions ?? [];
-  for (const permission of REQUIRED_PERMISSIONS)
-    if (!permissions.includes(permission))
-      problems.push(`manifest permissions: "${permission}" is missing`);
+  for (const permission of FORBIDDEN_REQUIRED_PERMISSIONS)
+    if (permissions.includes(permission))
+      problems.push(
+        `manifest permissions: "${permission}" must not be required (the update from Lite would disable the extension; the test hook FACET_TEST_GRANT_NM must never reach a store build)`,
+      );
+  const optional = manifest.optional_permissions ?? [];
+  if (
+    JSON.stringify([...optional].sort()) !==
+    JSON.stringify([...OPTIONAL_PERMISSIONS].sort())
+  )
+    problems.push(
+      `manifest optional_permissions must be exactly [${OPTIONAL_PERMISSIONS.join(", ")}], got ${JSON.stringify(optional)}`,
+    );
   for (const field of ["permissions", "optional_permissions"])
     for (const permission of manifest[field] ?? [])
       if (FORBIDDEN_PERMISSIONS.includes(permission))
@@ -110,5 +143,5 @@ if (problems.length > 0) {
   process.exit(1);
 }
 console.log(
-  `check-store: OK, ${files.length} files, ${(bytes / 1024).toFixed(0)} KiB, no key, nativeMessaging + debugger, agent bridge and consent gate present`,
+  `check-store: OK, ${files.length} files, ${(bytes / 1024).toFixed(0)} KiB, no key, no debugger, nativeMessaging optional only, no CDP code, agent bridge and consent gate present`,
 );
