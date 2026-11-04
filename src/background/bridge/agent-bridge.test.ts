@@ -715,5 +715,36 @@ describe("AgentBridge", () => {
       expect(run).not.toHaveBeenCalled();
       expect(bridge.state()).toMatchObject({ actions: 0, recent: [] });
     });
+    it("tells the MCP server which tools this build serves, when the runner knows", async () => {
+      const { bridge, ports } = setup(identity(["k1abc23def"], "Work"));
+      bridge.setRunner({
+        run: async () => ({ content: [] }),
+        servedTools: () => ["list_tabs", "click"],
+      });
+      await bridge.sync(true, true);
+      const port = ports[0]!;
+      port.receive({ type: "ready", version: 2, socket: "/b/k.sock" });
+      port.receive({ type: "request", id: 1, tool: "__profile", args: {} });
+      await vi.advanceTimersByTimeAsync(0);
+      expect(
+        JSON.parse(port.sent.find((m) => m.id === 1)?.result.content[0].text),
+      ).toEqual({
+        profileKey: "k1abc23def",
+        profileLabel: "Work",
+        tools: ["list_tabs", "click"],
+      });
+    });
+  });
+
+  it("without Chrome's nativeMessaging permission (no connectNative) it reports an error and does not throw", async () => {
+    const { bridge, b } = setup();
+    (b.runtime as { connectNative?: unknown }).connectNative = undefined;
+    await bridge.sync(true, true);
+    expect(bridge.state()).toMatchObject({
+      status: "error",
+      error: expect.stringContaining("nativeMessaging"),
+    });
+    await bridge.sync(false); // and it can still be switched off
+    expect(bridge.state().status).toBe("off");
   });
 });

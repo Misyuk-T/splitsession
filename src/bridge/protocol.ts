@@ -112,7 +112,7 @@ export const PING_TOOL = "__ping";
 export const SESSION_TOOL = "__session";
 /**
  * Asked by the MCP server, answered by the extension itself (protocol 2): never an agent action, so never counted or listed.
- * `__profile`: `{profileKey, profileLabel}`. `__tabs`: `[{tabId, windowId}]` of every tab, to find which profile has a tab.
+ * `__profile`: `{profileKey, profileLabel, tools?}` (`tools`: the names this extension serves; absent from an older extension: all). `__tabs`: `[{tabId, windowId}]` of every tab, to find which profile has a tab.
  * An extension of 0.1.x answers "pong" to both (it treats every `__` tool as internal).
  */
 export const PROFILE_TOOL = "__profile";

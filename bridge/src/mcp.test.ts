@@ -6,7 +6,7 @@ import { afterEach, describe, expect, it } from "vitest";
 
 import { encodeLine, LineReader } from "../../src/bridge/framing";
 import { TOOLS } from "../../src/bridge/spec";
-import { callHost, MCP_TOOLS, unreachableMessage } from "./mcp";
+import { callHost, MCP_TOOLS, servedTools, unreachableMessage } from "./mcp";
 import { MANIFEST_DIRS_ENV, SOCKET_ENV, socketPath } from "./paths";
 
 const dirs: string[] = [];
@@ -115,5 +115,24 @@ describe("mcp side of the bridge", () => {
     expect(open.inputSchema.properties.profile!.description).toMatch(
       /Needed when several/,
     );
+  });
+});
+
+describe("servedTools: the list the agent gets", () => {
+  it("only what the connected profiles serve; all of them when that is not known or the answer is late or fails", async () => {
+    const some = new Set(["click", "snapshot"]);
+    expect(
+      (await servedTools({ servedTools: async () => some })).map((t) => t.name),
+    ).toEqual(MCP_TOOLS.filter((t) => some.has(t.name)).map((t) => t.name));
+    expect(await servedTools({ servedTools: async () => null })).toBe(
+      MCP_TOOLS,
+    );
+    expect(
+      await servedTools({
+        servedTools: async () => {
+          throw new Error("down");
+        },
+      }),
+    ).toBe(MCP_TOOLS);
   });
 });

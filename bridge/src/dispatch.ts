@@ -60,6 +60,8 @@ export interface ProfileInfo {
   legacy?: true;
   /** The profile did not answer `bridge_info`. */
   error?: string;
+  /** The tools this profile's extension serves (`__profile`, extension 0.2+); absent: an older extension, which serves all of them. */
+  tools?: string[];
 }
 
 type Outcome =
@@ -331,7 +333,8 @@ export class Dispatcher {
     const old: Endpoint[] = [];
     for (const o of outcomes) {
       const v = o.ok
-        ? (firstJson(o.result) as { profileLabel?: unknown } | undefined)
+        ? (firstJson(o.result) as
+            { profileLabel?: unknown; tools?: unknown } | undefined)
         : undefined;
       if (v && typeof v === "object" && "profileLabel" in v)
         found.set(o.ep.socket, {
@@ -341,6 +344,10 @@ export class Dispatcher {
               ? v.profileLabel
               : null,
           ...(o.ep.legacy ? { legacy: true as const } : {}),
+          ...(Array.isArray(v.tools) &&
+          v.tools.every((t) => typeof t === "string")
+            ? { tools: v.tools as string[] }
+            : {}),
         });
       else old.push(o.ep);
     }
@@ -349,6 +356,20 @@ export class Dispatcher {
       if (ep) found.set(ep.socket, info);
     }
     return endpoints.flatMap((e) => found.get(e.socket) ?? []);
+  }
+
+  /**
+   * The tools to offer the agent: those some connected profile serves (basic mode serves fewer than full mode). Null means
+   * "all of them": nobody is reachable, or some profile did not say (an older extension serves everything), and a tool that
+   * is not served answers with an error that says why.
+   */
+  async servedTools(): Promise<Set<string> | null> {
+    const endpoints = this.d.discover();
+    if (endpoints.length === 0) return null;
+    const infos = await this.labels(endpoints);
+    if (infos.length !== endpoints.length || infos.some((i) => !i.tools))
+      return null;
+    return new Set(infos.flatMap((i) => i.tools!));
   }
 
   /**

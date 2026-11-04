@@ -91,6 +91,8 @@ export interface ToolRunner {
   run(tool: string, args: unknown, meta: ActionMeta): Promise<ToolResult>;
   /** No agent is connected any more: let go of whatever it left behind (viewport overrides, debugger sessions). */
   release?(): Promise<void>;
+  /** The tools this build serves (basic mode serves fewer than the spec lists); the host's tool list follows it. */
+  servedTools?(): string[];
 }
 
 interface PortLike {
@@ -268,6 +270,11 @@ export class AgentBridge {
       this.publish({ status: "connecting", error: null });
     let port: PortLike;
     try {
+      // The store build has the permission only after the user granted it; without it Chrome leaves the API out.
+      if (typeof this.b.runtime.connectNative !== "function")
+        throw new Error(
+          "Chrome has not granted SplitSession the permission to talk to a program on this computer (nativeMessaging)",
+        );
       port = this.b.runtime.connectNative(HOST_NAME) as unknown as PortLike;
     } catch (error) {
       this.fail(error instanceof Error ? error.message : String(error));
@@ -463,6 +470,10 @@ export class AgentBridge {
         profileKey: this.profileKey,
         profileLabel:
           this.current.profileLabel === "" ? null : this.current.profileLabel,
+        // Bridge 0.4+ lists only these to the agent. An older host lists all of them, and the rest answer with an error.
+        ...(this.runner?.servedTools
+          ? { tools: this.runner.servedTools() }
+          : {}),
       });
     if (tool === TABS_TOOL) {
       const tabs = await this.b.tabs.query({});

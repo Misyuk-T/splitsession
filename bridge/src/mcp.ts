@@ -36,7 +36,7 @@ const INSTRUCTIONS =
   'Start with list_tabs. A tab\'s "container" says which account it is, its "profile" which Chrome profile (several can be connected at once; bridge_info lists them). ' +
   "Tools on a tab find the tab's profile by its tabId; to open a new tab while several profiles are connected, pass profile (its name or key). " +
   'If the user says "this tab" or "the current tab", use the tab with active: true in the user\'s last-focused window (list_tabs); tabs you open yourself go to the agents\' window, not the user\'s. ' +
-  "To work with a page: snapshot (accessibility tree with refs), then click / type / press_key / select_option by ref; snapshot again after the page changes. Screenshots for what the tree cannot tell. " +
+  "To work with a page: snapshot (accessibility tree with refs), then click / type / select_option (and press_key in full mode) by ref; snapshot again after the page changes. Screenshots for what the tree cannot tell. " +
   "These tools act inside the user's real, logged-in browser: do only what the user asked for.";
 
 /** Why the socket could not be reached, in words the user can act on. */
@@ -336,6 +336,23 @@ export function liveDispatcher(
   });
 }
 
+/** How long `tools/list` waits for the profiles to say what they serve before it lists everything. */
+const SERVED_WAIT_MS = 3_000;
+
+/** The tools to list: the ones a connected profile serves (basic mode serves fewer), all of them when that is not known. */
+export async function servedTools(
+  dispatcher: Pick<Dispatcher, "servedTools">,
+): Promise<typeof MCP_TOOLS> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const served = await Promise.race([
+    dispatcher.servedTools().catch(() => null),
+    new Promise<null>((resolve) => {
+      timer = setTimeout(resolve, SERVED_WAIT_MS, null);
+    }),
+  ]).finally(() => clearTimeout(timer));
+  return served ? MCP_TOOLS.filter((t) => served.has(t.name)) : MCP_TOOLS;
+}
+
 const failure = (text: string): CallToolResult => ({
   isError: true,
   content: [{ type: "text", text }],
@@ -361,7 +378,7 @@ export async function runMcp(): Promise<void> {
   };
 
   server.setRequestHandler(ListToolsRequestSchema, async () => ({
-    tools: MCP_TOOLS.map((tool) => ({
+    tools: (await servedTools(dispatcher)).map((tool) => ({
       name: tool.name,
       title: tool.title,
       description: tool.description,

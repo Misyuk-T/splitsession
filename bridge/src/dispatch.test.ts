@@ -16,6 +16,8 @@ interface FakeProfile {
   old?: boolean;
   /** The host process's session, stamped on every answer (none: a host of 0.1.x). */
   session?: string;
+  /** The tools this extension serves, as `__profile` reports them (none: an extension that does not say). */
+  tools?: string[];
 }
 
 const ep = (key: string, ino = 1, legacy = false): Endpoint => ({
@@ -62,7 +64,11 @@ function answer(
       result: { content: [{ type: "text", text: "pong" }] },
     };
   if (tool === "__profile")
-    return text({ profileKey: p.ep.key, profileLabel: p.label });
+    return text({
+      profileKey: p.ep.key,
+      profileLabel: p.label,
+      ...(p.tools ? { tools: p.tools } : {}),
+    });
   if (tool === "__tabs")
     return text(p.tabs.map((t) => ({ tabId: t.tabId, windowId: t.windowId })));
   if (tool === "bridge_info")
@@ -563,6 +569,40 @@ describe("Dispatcher: one MCP server, several Chrome profiles", () => {
       expect(
         json(await d.run("click", { tabId: 7, ref: "e1", profile: "Home" })),
       ).toMatchObject({ by: "bbbbbbbbbb" });
+    });
+  });
+
+  describe("servedTools: which tools to list", () => {
+    it("nothing connected, or a profile that does not say (an older extension): all of them (null)", async () => {
+      expect(await world([]).d.servedTools()).toBeNull();
+      const a = profile("aaaaaaaaaa", "Work", [1]);
+      expect(await world([a]).d.servedTools()).toBeNull();
+      const old = { ...profile("bbbbbbbbbb", null, [2]), old: true };
+      expect(await world([old]).d.servedTools()).toBeNull();
+    });
+
+    it("one profile in basic mode: exactly what it serves", async () => {
+      const a = {
+        ...profile("aaaaaaaaaa", "Work", [1]),
+        tools: ["list_tabs", "click"],
+      };
+      expect([...(await world([a]).d.servedTools())!].sort()).toEqual([
+        "click",
+        "list_tabs",
+      ]);
+    });
+
+    it("several profiles: the union, and all of them as soon as one does not say", async () => {
+      const basic = { ...profile("aaaaaaaaaa", "A", [1]), tools: ["click"] };
+      const full = {
+        ...profile("bbbbbbbbbb", "B", [2]),
+        tools: ["click", "run_js"],
+      };
+      expect([...(await world([basic, full]).d.servedTools())!].sort()).toEqual(
+        ["click", "run_js"],
+      );
+      const silent = profile("cccccccccc", "C", [3]);
+      expect(await world([basic, silent]).d.servedTools()).toBeNull();
     });
   });
 });
