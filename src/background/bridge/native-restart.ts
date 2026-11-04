@@ -72,7 +72,8 @@ export class NativeRestart {
   /**
    * First thing at worker start. A fresh marker means the previous worker restarted the extension for the bridge: the
    * reload closed the options page the user was on, so open it again at "For AI agents". The marker is consumed here,
-   * which is what makes the reload one-shot.
+   * which is what makes the reload one-shot. The container-tab restore runs for a marker of any age, because the reload
+   * wiped the isolation whenever the worker came back (the machine may have slept in between); only the reopen is age-gated.
    */
   async start(): Promise<void> {
     let at: unknown;
@@ -89,10 +90,7 @@ export class NativeRestart {
       );
       return;
     }
-    if (typeof at !== "number" || this.now() - at > RESTART_MARKER_MAX_AGE_MS)
-      return;
-    this.cameBack = true;
-    this.log("info", "agent bridge: restarted to finish turning on");
+    if (typeof at !== "number") return;
     // Before the page is reopened and the bridge connects. `onInstalled` is not relied on to do this for a reload.
     await this.afterOwnReload().catch((error) =>
       this.log(
@@ -101,6 +99,9 @@ export class NativeRestart {
         String(error),
       ),
     );
+    if (this.now() - at > RESTART_MARKER_MAX_AGE_MS) return;
+    this.cameBack = true;
+    this.log("info", "agent bridge: restarted to finish turning on");
     await this.reopenOptions().catch((error) =>
       this.log(
         "warn",

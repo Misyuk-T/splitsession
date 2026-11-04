@@ -189,9 +189,11 @@ describe("NativeRestart", () => {
     expect(b.tabs.create).toHaveBeenCalledTimes(1);
   });
 
-  it("no marker, or a stale one: no restore from here", async () => {
+  it("no marker: no restore from here; a stale marker (machine slept) still restores, but does not reopen", async () => {
     const none = vi.fn(async () => {});
     await setup(true, { t: 1_000_000 }, none).restart.start();
+    expect(none).not.toHaveBeenCalled();
+
     const stale = vi.fn(async () => {});
     const s = setup(true, { t: 1_000_000 }, stale);
     s.area.data.set(
@@ -199,7 +201,9 @@ describe("NativeRestart", () => {
       s.now.t - RESTART_MARKER_MAX_AGE_MS - 1,
     );
     await s.restart.start();
-    expect(none).not.toHaveBeenCalled();
-    expect(stale).not.toHaveBeenCalled();
+    expect(stale).toHaveBeenCalledTimes(1);
+    expect(s.b.tabs.create).not.toHaveBeenCalled();
+    expect(s.area.data.has(RESTART_MARKER_KEY)).toBe(false);
+    expect(await s.restart.decide()).toBe("restart"); // cameBack stayed false
   });
 });
