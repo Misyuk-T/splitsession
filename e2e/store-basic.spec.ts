@@ -396,6 +396,9 @@ test.describe("store build, basic mode", () => {
       A.id,
     );
     const page = await created;
+    // openInContainer is still loading the /set page that stores the cookie; navigating before it has loaded races it
+    // (goto "interrupted by another navigation", or the /set response landing after /whoami was read).
+    await expect(page.locator("#set")).toBeVisible();
     await page.goto(at("a.localhost", "/whoami?t=own-reload"));
     await expect(page.locator("#cookies")).toHaveText("who=alice");
     await api("flushRestore");
