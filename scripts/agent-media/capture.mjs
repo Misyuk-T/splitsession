@@ -4,7 +4,7 @@
 /* eslint-disable import/extensions -- local .mjs modules, run directly by node */
 /* global chrome -- the callbacks of worker.evaluate run inside the extension's service worker */
 import { execFileSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
@@ -25,11 +25,16 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 /**
  * @param {string} root repository root
+ * @param {object} [options]
+ * @param {string} [options.extension] built extension folder (default: the Full build, `.output/chrome-mv3`)
+ * @param {{width: number, height: number}} [options.viewport] page area of the captured tab, CSS pixels
+ * @param {boolean} [options.consent] grant the bridge's consent first (the store build asks for it)
  * @returns the 2x picture of the brand tab while the agent works in it, the tab strip as Chrome has it, the toolbar dot,
  *   the favicon the extension drew, and the answers of the tool calls
  */
-export async function captureAgent(root) {
-  const extension = resolve(root, ".output/chrome-mv3");
+export async function captureAgent(root, options = {}) {
+  const extension = options.extension ?? resolve(root, ".output/chrome-mv3");
+  const viewport = options.viewport ?? VIEWPORT;
   const bridge = resolve(root, "bridge/dist/splitsession-bridge.mjs");
   const server = await startDemoSite(PORT);
   const profile = mkdtempSync(resolve(tmpdir(), "splitsession-agent-"));
@@ -55,7 +60,7 @@ export async function captureAgent(root) {
     channel: "chromium",
     headless: true,
     deviceScaleFactor: 2,
-    viewport: VIEWPORT,
+    viewport,
     args: [
       `--disable-extensions-except=${extension}`,
       `--load-extension=${extension}`,
@@ -104,8 +109,18 @@ export async function captureAgent(root) {
     for (const p of ctx.pages()) if (p.url() === "about:blank") await p.close();
     await brandTab.page.bringToFront();
     // The bridge: the setting (Settings, "Agent bridge"), then the MCP server connects.
+    if (options.consent) {
+      // The version of the disclosure text, read from its source (node cannot import the .ts file).
+      const version = Number(
+        /BRIDGE_CONSENT_VERSION = (\d+)/.exec(
+          readFileSync(resolve(root, "src/core/bridge-consent.ts"), "utf8"),
+        )?.[1],
+      );
+      if (!version) throw new Error("BRIDGE_CONSENT_VERSION not found");
+      await api("grantBridgeConsent", version);
+    }
     await api("updateSettings", { agentBridge: true, agentActivity: true });
-    const client = new Client({ name: "agent-media", version: "0.0.0" });
+    const client = new Client({ name: "agent", version: "0.0.0" });
     await client.connect(
       new StdioClientTransport({
         command: process.execPath,
@@ -207,7 +222,10 @@ export async function captureAgent(root) {
       });
       return r.result;
     }, tabId);
-    if (!overlay.boosted || overlay.text !== "Agent: reading")
+    if (
+      !overlay.boosted ||
+      !/^[\w .-]*(Agent|-[0-9a-f]{4}): reading$/.test(overlay.text)
+    )
       throw new Error(`the overlay is not showing: ${JSON.stringify(overlay)}`);
     // What Chrome has in the tab strip and on the toolbar button right now.
     const favicon = await brandTab.page.evaluate(

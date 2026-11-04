@@ -7,6 +7,7 @@ import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 
 import {
+  caption,
   esc,
   ICON_48,
   INTER,
@@ -53,6 +54,15 @@ const CSS = `
 .band .brand img{width:44px;height:44px}
 `;
 
+// The store picture (1280x800): the same panel, smaller type.
+const STORE_CSS = `
+.term.sm .tb{height:38px}
+.term.sm .body{padding:18px 20px 0;font-size:14.5px;line-height:23px}
+.term.sm .row>.g{height:23px}
+.term.sm .out{padding-left:22px;margin-bottom:8px}
+.term.sm .cur{height:16px;width:8px;vertical-align:-2px}
+`;
+
 const check = `<svg viewBox="0 0 16 16"><path d="M2.5 8.5l3.5 3.5 7.5-8"/></svg>`;
 
 /** One tool call of the session: a bullet, the tool, its argument, and what came back (a line or two). */
@@ -61,8 +71,9 @@ const call = (tool, arg, out) =>
 <div class="out">${out.map((l) => `<div><i class="elb"></i>${esc(l)}</div>`).join("")}</div>`;
 
 /** The terminal panel; `session` is what the real tool calls returned (see ../agent-media.mjs). */
-function terminal({ top, h, ask, steps, done }) {
-  return `<div class="term" style="top:${top}px;height:${h}px"><div class="tb"><i></i><i></i><i></i><span>AI agent  ·  splitsession (MCP)</span></div>
+function terminal({ top, h, ask, steps, done, cls = "", left, w }) {
+  const box = `top:${top}px;height:${h}px${left === undefined ? "" : `;left:${left}px;width:${w}px`}`;
+  return `<div class="term ${cls}" style="${box}"><div class="tb"><i></i><i></i><i></i><span>AI agent  ·  splitsession (MCP)</span></div>
 <div class="body"><div class="row ask"><span class="gt">&gt;</span><div>${esc(ask)}</div></div>
 ${steps.map((s) => call(s.tool, s.arg, s.out)).join("")}
 <div class="row done"><div class="g">${check}</div><div>${esc(done)}</div></div>
@@ -99,3 +110,40 @@ export function shotAgent({ shot, strip, badge, ask, steps, done, headline }) {
 }
 
 export { INTER, THEMES };
+
+/**
+ * The Chrome Web Store picture (1280x800, scripts/store-agent.mjs): the caption of the other store pictures on top, the terminal
+ * panel on the left and the drawn window with the real page on the right.
+ * @param {Buffer} p.shot 2x picture of the page (width = `PAGE.w` CSS pixels)
+ */
+export function shotAgentStore({
+  shot,
+  strip,
+  badge,
+  ask,
+  steps,
+  done,
+  headline,
+  sub,
+  win,
+}) {
+  const top = 170;
+  const h = 612;
+  const w = win.w - 2;
+  const content = `<div class="pane" style="width:${w}px;height:100%"><img src="${dataUri(shot)}" width="${w}" alt=""></div>`;
+  return page(
+    "light",
+    `${caption(headline, sub, 3)}${terminal({ top, h, ask, steps, done, cls: "sm", left: 40, w: win.x - 40 - 20 })}${windowHtml(
+      {
+        x: win.x,
+        y: top,
+        w: win.w,
+        h,
+        strip,
+        address: "loop.example",
+        content,
+        badge,
+      },
+    )}`,
+  ).replace("</style>", `${CSS}${STORE_CSS}</style>`);
+}

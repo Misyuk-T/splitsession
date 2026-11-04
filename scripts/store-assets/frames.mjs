@@ -103,7 +103,7 @@ const fwdSvg = `<svg viewBox="0 0 24 24"><path d="M5 12h14m-6-6 6 6-6 6"/></svg>
 const reloadSvg = `<svg viewBox="0 0 24 24"><path d="M20 12a8 8 0 1 1-2.5-5.8M20 4v5h-5"/></svg>`;
 
 /** Headline and sub-line; the last `accent` words of the headline are in the accent colour. */
-const caption = (headline, sub, accent = 2) => {
+export const caption = (headline, sub, accent = 2) => {
   const words = headline.split(" ");
   const last = words.splice(-accent).join(" ");
   return `<div class="cap"><h1>${esc(words.join(" "))} <em>${esc(last)}</em></h1><p>${esc(sub)}</p></div>
