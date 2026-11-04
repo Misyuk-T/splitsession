@@ -1,21 +1,38 @@
 import type { ToolResult } from "../../../bridge/protocol";
-import * as hands from "../cdp-tools";
 import * as dom from "../dom-tools";
 import { ToolError } from "../errors";
 import { pageClick, type PageRect, pageScroll, pageType } from "../inject";
-import type { Modifier } from "../keys";
 import { tabUrl, type ToolContext, type ToolHandler } from "../tool-context";
 import { type ActionMeta, type Args, json, live } from "../tool-kit";
+import * as hands from "./hands";
 
-/** Without the debugger (unit tests of the old paths): an injected click on a selector or a point. */
-async function legacyClick(
+/**
+ * Basic mode (no debugger) click: events a page script could send, on a ref from snapshot, a selector (top frame) or a point.
+ * Pages that check `isTrusted` ignore it; full mode (the unpacked Full from GitHub) clicks with the browser's own input.
+ */
+async function basicClick(
   c: ToolContext,
   a: Args,
   meta: ActionMeta,
+  url: string | undefined,
 ): Promise<ToolResult> {
+  const t = c.target(a);
+  if (t?.ref !== undefined) {
+    if (a.x !== undefined || a.y !== undefined)
+      throw new ToolError("click: give a ref, a selector or x+y, not several");
+    c.operable(url);
+    const r = await c.onElement<{ label: string; rect: PageRect | null }>(
+      a.tabId,
+      meta,
+      t,
+      (target) => ({ op: "click", target }),
+    );
+    await c.touch(a.tabId, "click", r.rect, meta);
+    return json({ clicked: r.label });
+  }
   const hasPoint = a.x !== undefined && a.y !== undefined;
   if (a.selector === undefined && !hasPoint)
-    throw new ToolError("click: give a selector, or both x and y");
+    throw new ToolError("click: give a ref, a selector, or both x and y");
   if (a.selector === undefined && (a.x === undefined) !== (a.y === undefined))
     throw new ToolError("click: x and y go together");
   const { rect, ...result } = (await c.inPage(
@@ -30,123 +47,53 @@ async function legacyClick(
 }
 
 const click: ToolHandler = async (c, a, meta) => {
-  const tab = await c.tab(a.tabId, meta);
-  if (!c.d.cdp) return legacyClick(c, a, meta);
-  c.operable(tabUrl(tab));
-  // Where to click is the page's own DOM work; the debugger is attached only for the click itself (and not at all for a mistake).
-  c.noDialog(a.tabId);
-  const p = await c.point(a.tabId, meta, a);
-  await c.onPage(a.tabId, meta, async (s) => {
-    live(meta);
-    await hands.mouseClick(
-      s,
-      p,
-      a.button,
-      a.clickCount,
-      (a.modifiers ?? []) as Modifier[],
-    );
-  });
-  await c.touch(a.tabId, "click", p.rect, meta); // the ring at the spot that was clicked
-  return c.withDialogNote(a.tabId, json({ clicked: p.label }));
-};
-
-const hover: ToolHandler = async (c, a, meta) => {
-  const tab = await c.tab(a.tabId, meta);
-  c.operable(tabUrl(tab));
-  c.noDialog(a.tabId);
-  const p = await c.point(a.tabId, meta, a);
-  await c.onPage(a.tabId, meta, async (s) => {
-    live(meta);
-    await hands.mouseMove(s, p);
-  });
-  await c.touch(a.tabId, "hover", p.rect, meta);
-  return c.withDialogNote(a.tabId, json({ hovered: p.label }));
-};
-
-const drag: ToolHandler = async (c, a, meta) => {
-  const tab = await c.tab(a.tabId, meta);
-  c.operable(tabUrl(tab));
-  if (!c.target(a, "to") && (a.toX === undefined || a.toY === undefined))
-    throw new ToolError(
-      "drag: give where to drop: toRef, toSelector, or toX+toY",
-    );
-  c.noDialog(a.tabId);
-  const from = await c.point(a.tabId, meta, a);
-  const to = await c.point(a.tabId, meta, a, "to");
-  await c.onPage(a.tabId, meta, async (s) => {
-    live(meta);
-    await hands.mouseDrag(s, from, to);
-  });
-  await c.touch(a.tabId, "drag", to.rect, meta);
-  return c.withDialogNote(a.tabId, json({ dragged: from.label, to: to.label }));
+  if (__CDP__ && c.d.cdp) return hands.cdpClick(c, a, meta);
+  return basicClick(c, a, meta, tabUrl(await c.tab(a.tabId, meta)));
 };
 
 const type: ToolHandler = async (c, a, meta) => {
-  await c.tab(a.tabId, meta);
-  if (!c.d.cdp) {
-    if (a.selector === undefined) throw new ToolError("type: give a selector");
-    const { rect, ...result } = (await c.inPage(
+  const tab = await c.tab(a.tabId, meta);
+  if (__CDP__ && c.d.cdp) return hands.cdpType(c, a, meta);
+  // Basic mode (no debugger): the value is set the way a page script would (the page's own setter, input and change events).
+  // `slowly` (one key press per character) is the browser's input and is not available.
+  if (a.slowly)
+    throw new ToolError(
+      "type: slowly needs full mode (the debugger); send the text without it",
+    );
+  const t = c.target(a);
+  if (!t)
+    throw new ToolError(
+      "type: give a ref (from snapshot) or a selector of the field",
+    );
+  let rect: PageRect | null;
+  let typed: number;
+  if (t.ref === undefined) {
+    const r = (await c.inPage(
       a.tabId,
       pageType,
       [a.selector, a.text, a.append, a.submit],
       "ISOLATED",
       meta,
     )) as { typed: number; rect: PageRect | null };
-    await c.touch(a.tabId, "type", rect, meta);
-    return json(result);
+    ({ rect, typed } = r);
+  } else {
+    c.operable(tabUrl(tab));
+    const r = await c.onElement<{ typed: number; rect: PageRect | null }>(
+      a.tabId,
+      meta,
+      t,
+      (target) => ({
+        op: "typeInto",
+        target,
+        text: a.text,
+        append: a.append,
+        submit: a.submit,
+      }),
+    );
+    ({ rect, typed } = r);
   }
-  const t = c.target(a);
-  if (!t)
-    throw new ToolError(
-      "type: give a ref (from snapshot) or a selector of the field",
-    );
-  if (a.slowly && a.text.length > 2000)
-    throw new ToolError(
-      "slowly types at most 2000 characters; send longer text without slowly",
-    );
-  const rect = await c.onPage(a.tabId, meta, async (s) => {
-    // The field gets the focus (and its text is selected) from the page's own side; the keys are the debugger's.
-    const prepared = await c.onElement<{
-      empty: boolean;
-      rect: PageRect | null;
-    }>(a.tabId, meta, t, (target) => ({
-      op: "prepareType",
-      target,
-      append: a.append,
-    }));
-    live(meta);
-    await hands.typeText(s, a.text, prepared, {
-      append: a.append,
-      slowly: a.slowly,
-      submit: a.submit,
-      isMac: !!c.d.isMac,
-    });
-    return prepared.rect;
-  });
   await c.touch(a.tabId, "type", rect, meta);
-  return c.withDialogNote(a.tabId, json({ typed: a.text.length }));
-};
-
-const pressKey: ToolHandler = async (c, a, meta) => {
-  await c.tab(a.tabId, meta);
-  const t = c.target(a);
-  const rect = await c.onPage(a.tabId, meta, async (s) => {
-    let focused: PageRect | null = null;
-    if (t)
-      focused = (
-        await c.onElement<{ rect: PageRect | null }>(
-          a.tabId,
-          meta,
-          t,
-          (target) => ({ op: "focus", target }),
-        )
-      ).rect;
-    live(meta);
-    await hands.pressShortcut(s, a.key, !!c.d.isMac, a.repeat);
-    return focused;
-  });
-  await c.touch(a.tabId, "press_key", rect, meta);
-  return c.withDialogNote(a.tabId, json({ pressed: a.key, times: a.repeat }));
+  return json({ typed });
 };
 
 /** Choosing an option is the page's own DOM work (the same events a script would send); no debugger. */
@@ -169,44 +116,6 @@ const selectOption: ToolHandler = async (c, a, meta) => {
   }));
   await c.touch(a.tabId, "select_option", r.rect, meta);
   return json({ selected: r.selected });
-};
-
-const uploadFile: ToolHandler = async (c, a, meta) => {
-  await c.tab(a.tabId, meta);
-  const t = c.target(a);
-  if (!t)
-    throw new ToolError(
-      'upload_file: give a ref (from snapshot) or a selector of the <input type="file">',
-    );
-  const marker = `data-facet-up-${Math.random().toString(36).slice(2)}`;
-  const rect = await c.onPage(a.tabId, meta, async (s) => {
-    // The input is marked for a moment (an attribute no page has a reason to look for) so the debugger can take hold of it.
-    const marked = await c.onElement<{
-      multiple: boolean;
-      rect: PageRect | null;
-    }>(a.tabId, meta, t, (target) => ({ op: "mark", target, name: marker }));
-    try {
-      if ((a.paths as string[]).length > 1 && !marked.multiple)
-        throw new ToolError(
-          'this file input takes one file (it has no "multiple")',
-        );
-      live(meta);
-      await hands.setFilesByMarker(s, marker, a.paths);
-    } finally {
-      await c
-        .domHost(meta)
-        .tryCall(a.tabId, dom.frameOf(c.refs.get(a.tabId), t), {
-          op: "unmark",
-          name: marker,
-        });
-    }
-    return marked.rect;
-  });
-  await c.touch(a.tabId, "upload_file", rect, meta);
-  return c.withDialogNote(
-    a.tabId,
-    json({ uploaded: (a.paths as string[]).map((p) => p.split("/").pop()) }),
-  );
 };
 
 const scroll: ToolHandler = async (c, a, meta) => {
@@ -280,12 +189,10 @@ const waitFor: ToolHandler = async (c, a, meta) => {
 /** Tools that act on a page as a user would: pointer, keyboard, form fields, scrolling, waiting. */
 export const INPUT_TOOLS: Record<string, ToolHandler> = {
   click,
-  hover,
-  drag,
   type,
-  press_key: pressKey,
   select_option: selectOption,
-  upload_file: uploadFile,
   scroll,
   wait_for: waitFor,
+  // Hover, drag, key presses and uploads are the browser's own input: the debugger.
+  ...(__CDP__ ? hands.HANDS_INPUT_TOOLS : {}),
 };

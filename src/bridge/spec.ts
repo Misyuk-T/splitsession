@@ -186,7 +186,7 @@ export const TOOLS: readonly ToolSpec[] = [
     title: "Go back",
     readOnly: false,
     description:
-      "Go back one page in a tab's history (like the Back button), keeping its container.",
+      "Go back one page in a tab's history (like the Back button), keeping its container. In basic mode (no debugger, see bridge_info) it works on tabs outside containers only: in a container tab use navigate with the address.",
     inputSchema: obj({ tabId, wait }, ["tabId"]),
   },
   {
@@ -194,7 +194,7 @@ export const TOOLS: readonly ToolSpec[] = [
     title: "Go forward",
     readOnly: false,
     description:
-      "Go forward one page in a tab's history, keeping its container.",
+      "Go forward one page in a tab's history, keeping its container. In basic mode (no debugger, see bridge_info) it works on tabs outside containers only: in a container tab use navigate with the address.",
     inputSchema: obj({ tabId, wait }, ["tabId"]),
   },
   {
@@ -282,7 +282,7 @@ export const TOOLS: readonly ToolSpec[] = [
     readOnly: true,
     timeoutMs: 25_000,
     description:
-      'THE way to see a page: its accessibility tree as compact YAML-like lines, one element per line, each with a ref: `- button "Join" [ref=e12]`, `- textbox "Search" [ref=e13]: current value`, `- link "Docs" [ref=e14] /url=/docs`. Iframes are included where Chrome lets the extension reach them (also cross-site ones). Pass the ref to click, hover, drag, type, press_key, select_option, upload_file, scroll or wait_for. Refs stay valid until the page navigates (a later snapshot keeps the ref of an element that is still there). Prefer this over get_tab_html and screenshots.',
+      'THE way to see a page: its accessibility tree as compact YAML-like lines, one element per line, each with a ref: `- button "Join" [ref=e12]`, `- textbox "Search" [ref=e13]: current value`, `- link "Docs" [ref=e14] /url=/docs`. Iframes are included where Chrome lets the extension reach them (also cross-site ones). Pass the ref to click, type, select_option, scroll or wait_for (and, in full mode, hover, drag, press_key or upload_file). Refs stay valid until the page navigates (a later snapshot keeps the ref of an element that is still there). Prefer this over get_tab_html and screenshots.',
     inputSchema: obj({ tabId, maxChars: maxChars(60_000) }, ["tabId"]),
   },
   {
@@ -291,7 +291,7 @@ export const TOOLS: readonly ToolSpec[] = [
     readOnly: true,
     timeoutMs: 30_000,
     description:
-      'Screenshot of a tab, returned as an image, WITHOUT switching tabs: background tabs are captured in place. Only if Chrome hands back a blank picture of a background tab is the tab activated for a moment and the previously active tab restored (the result says which way it went: "background", "screencast" or "activated"). fullPage captures the whole scrollable page (up to 16384 px tall).',
+      'Screenshot of a tab, returned as an image, WITHOUT switching tabs: background tabs are captured in place. Only if Chrome hands back a blank picture of a background tab is the tab activated for a moment and the previously active tab restored (the result says which way it went: "background", "screencast" or "activated"). fullPage captures the whole scrollable page (up to 16384 px tall). Basic mode (no debugger, see bridge_info) captures only the visible part of the tab on show: fullPage and background tabs are refused with an error (activate_tab first).',
     inputSchema: obj(
       {
         tabId,
@@ -317,7 +317,7 @@ export const TOOLS: readonly ToolSpec[] = [
     title: "Click",
     readOnly: false,
     description:
-      "Click like a user: real mouse events from Chrome (isTrusted true). Target: a ref from snapshot (best), a CSS selector (top frame), or viewport coordinates x, y. The element is scrolled into view and clicked in the middle of its box. button left (default), right or middle; clickCount 2 for a double click; modifiers held during the click. If the click opens a JavaScript dialog, the result says so: answer it with handle_dialog.",
+      "Click like a user: real mouse events from Chrome (isTrusted true; in basic mode, see bridge_info, they are script-sent events with isTrusted false, which a few pages ignore). Target: a ref from snapshot (best), a CSS selector (top frame), or viewport coordinates x, y. The element is scrolled into view and clicked in the middle of its box. button left (default), right or middle; clickCount 2 for a double click; modifiers held during the click. If the click opens a JavaScript dialog, the result says so: answer it with handle_dialog (full mode; basic mode does not see dialogs).",
     inputSchema: obj(
       {
         tabId,
@@ -389,7 +389,7 @@ export const TOOLS: readonly ToolSpec[] = [
     readOnly: false,
     timeoutMs: 30_000,
     description:
-      "Type text into an input, textarea or contenteditable element (ref or selector) the way a user does: Chrome inserts the text (trusted input events), so React-style controlled inputs see it. Replaces the current value unless append is true. slowly sends one key press per character (for pages that react to each key; at most 2000 characters). submit presses Enter afterwards.",
+      "Type text into an input, textarea or contenteditable element (ref or selector) the way a user does: Chrome inserts the text (trusted input events), so React-style controlled inputs see it (basic mode, see bridge_info, sets the value with input and change events instead, and has no slowly). Replaces the current value unless append is true. slowly sends one key press per character (for pages that react to each key; at most 2000 characters). submit presses Enter afterwards.",
     inputSchema: obj(
       {
         tabId,

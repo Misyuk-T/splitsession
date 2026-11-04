@@ -7,9 +7,9 @@ import {
   type DebuggerApi,
   IDLE_MS,
   redactHeaders,
-  refusedUrl,
   remoteText,
 } from "./cdp";
+import { refusedUrl } from "./operable";
 
 type EventCb = (source: Debuggee, method: string, params?: any) => void;
 type DetachCb = (source: Debuggee, reason: string) => void;

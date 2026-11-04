@@ -1,11 +1,12 @@
 import type { ToolResult } from "../../../bridge/protocol";
 import { withoutAgentMark } from "../../../core/indicators";
-import * as hands from "../cdp-tools";
 import * as dom from "../dom-tools";
 import { ToolError } from "../errors";
 import { pageHtml, pageText } from "../inject";
 import { tabUrl, type ToolContext, type ToolHandler } from "../tool-context";
-import { type ActionMeta, type Args, live, messageOf } from "../tool-kit";
+import { type ActionMeta, type Args, live } from "../tool-kit";
+import { takeScreenshot } from "./capture";
+import * as hands from "./hands";
 
 /** The tool's JSON header and the page's text, as two content items. */
 const headerAndBody = (head: unknown, body: string): ToolResult => ({
@@ -91,156 +92,29 @@ const snapshot: ToolHandler = async (c, a, meta) => {
   );
 };
 
-/** The tab is the one on show in a window that is not minimised: Chrome can capture it as it is, with no debugger and no tab switch. */
-async function onShow(
-  c: ToolContext,
-  a: Args,
-  tab: { active: boolean; windowId: number },
-): Promise<boolean> {
-  if (a.fullPage || !tab.active) return false;
-  if (c.d.cdp?.isPinned(a.tabId) || c.d.cdp?.current(a.tabId)?.dialog)
-    return false; // a viewport override or a dialog: the debugger sees what the page does
-  try {
-    const w = await c.b.windows.get(tab.windowId);
-    return !!w && w.state !== "minimized";
-  } catch {
-    return false;
-  }
-}
-
-async function cdpScreenshot(
+/** The picture of the visible part of the tab on show: all that basic mode (no debugger) can take. */
+async function basicScreenshot(
   c: ToolContext,
   a: Args,
   meta: ActionMeta,
 ): Promise<ToolResult> {
   const tab = await c.tab(a.tabId, meta);
-  if (await onShow(c, a, tab)) {
-    try {
-      return await takeScreenshot(c, a, meta, tab);
-    } catch (error) {
-      if (meta.signal?.aborted) throw error;
-      // Chrome would not capture it (a window that is not drawn): the debugger can.
-    }
-  }
-  const format: "png" | "jpeg" = a.format === "jpeg" ? "jpeg" : "png";
-  let shot: hands.Shot;
-  await c.d.activity?.hide(a.tabId); // the picture shows the page, not our frame and pill
-  try {
-    shot = await c.onPage(a.tabId, meta, (s) =>
-      hands.capture(s, {
-        format,
-        quality: a.quality,
-        fullPage: a.fullPage,
-        activate: async () => {
-          live(meta);
-          const previous = tab.active
-            ? undefined
-            : (
-                await c.b.tabs.query({
-                  active: true,
-                  windowId: tab.windowId,
-                })
-              )[0];
-          if (!tab.active) await c.b.tabs.update(a.tabId, { active: true });
-          return async () => {
-            if (previous?.id !== undefined && previous.id !== a.tabId)
-              await c.b.tabs
-                .update(previous.id, { active: true })
-                .catch(() => {});
-          };
-        },
-      }),
-    );
-  } catch (error) {
-    if (
-      error instanceof ToolError &&
-      /cannot operate this tab|busy/.test(error.message) &&
-      !meta.signal?.aborted
-    ) {
-      await c.d.activity?.unhide(a.tabId);
-      return await takeScreenshot(c, a, meta, tab); // a page SplitSession may not debug: the old way (activates the tab for a moment)
-    }
-    throw error;
-  } finally {
-    await c.d.activity?.unhide(a.tabId);
-  }
-  return c.withDialogNote(a.tabId, {
-    content: [
-      { type: "image", data: shot.data, mimeType: `image/${format}` },
-      {
-        type: "text",
-        text: JSON.stringify({
-          tabId: a.tabId,
-          path: shot.path,
-          fullPage: shot.fullPage,
-          ...(shot.clipped ? { clipped: true } : {}),
-        }),
-      },
-    ],
-  });
-}
-
-async function takeScreenshot(
-  c: ToolContext,
-  a: Args,
-  meta: ActionMeta,
-  known?: { id?: number; active: boolean; windowId: number },
-): Promise<ToolResult> {
-  const tab = known ?? (await c.tab(a.tabId, meta));
-  const previous = tab.active
-    ? undefined
-    : (await c.b.tabs.query({ active: true, windowId: tab.windowId }))[0];
-  if (!tab.active) {
-    await c.b.tabs.update(a.tabId, { active: true });
-    await c.sleep(250); // let the compositor present the tab before it is captured
-  }
-  try {
-    live(meta); // after the 250 ms pause: nothing is captured once the switch is off
-    const format = a.format === "jpeg" ? "jpeg" : "png";
-    await c.d.activity?.hide(a.tabId); // the picture shows the page, not our frame and pill
-    let dataUrl: string;
-    try {
-      dataUrl = await c.b.tabs.captureVisibleTab(tab.windowId, {
-        format,
-        ...(format === "jpeg" ? { quality: a.quality } : {}),
-      });
-    } finally {
-      await c.d.activity?.unhide(a.tabId);
-    }
-    const match = /^data:(image\/[a-z+]+);base64,(.*)$/s.exec(dataUrl);
-    if (!match)
-      throw new ToolError("Chrome returned an unexpected screenshot format");
-    return {
-      content: [
-        { type: "image", data: match[2]!, mimeType: match[1]! },
-        ...(c.d.cdp
-          ? [
-              {
-                type: "text" as const,
-                text: JSON.stringify({
-                  tabId: a.tabId,
-                  path: known?.active ? "visible" : "activated",
-                  fullPage: false,
-                }),
-              },
-            ]
-          : []),
-      ],
-    };
-  } catch (error) {
-    if (error instanceof ToolError) throw error;
+  if (a.fullPage)
     throw new ToolError(
-      `could not capture the tab: ${messageOf(error)} (a minimised window cannot be captured)`,
+      "screenshot_tab: fullPage needs full mode (the debugger); this build captures the visible part of the tab on show only",
     );
-  } finally {
-    if (previous?.id !== undefined && previous.id !== a.tabId)
-      await c.b.tabs.update(previous.id, { active: true }).catch(() => {});
-  }
+  if (!tab.active)
+    throw new ToolError(
+      "screenshot_tab: this tab is in the background; basic mode captures only the tab on show. Call activate_tab first, or use get_tab_text / snapshot, which need no picture",
+    );
+  return takeScreenshot(c, a, meta, tab);
 }
 
 const screenshot: ToolHandler = (c, a, meta) =>
   c.oneShotAtATime(() =>
-    c.d.cdp ? cdpScreenshot(c, a, meta) : takeScreenshot(c, a, meta),
+    __CDP__ && c.d.cdp
+      ? hands.cdpScreenshot(c, a, meta)
+      : basicScreenshot(c, a, meta),
   );
 
 /** Tools that read a page: its text, HTML, accessibility snapshot, a screenshot. */

@@ -31,6 +31,16 @@ export type DomCommand =
   | { op: "owner"; target: DomTarget }
   | { op: "prepareType"; target: DomTarget; append: boolean }
   | { op: "focus"; target: DomTarget }
+  /** Basic mode (no debugger): the pointer and click events a page script could send, to the element a ref names. */
+  | { op: "click"; target: DomTarget }
+  /** Basic mode: sets the value of a text field (or contenteditable) the way a script would, with input and change events. */
+  | {
+      op: "typeInto";
+      target: DomTarget;
+      text: string;
+      append: boolean;
+      submit: boolean;
+    }
   | { op: "select"; target: DomTarget; values: string[] }
   | { op: "mark"; target: DomTarget; name: string }
   | { op: "unmark"; name: string }
@@ -92,6 +102,15 @@ export function pageDom(cmd: DomCommand): any {
   const MAX_FRAMES = 40;
 
   // ---------------------------------------------------------------- small helpers
+  const PLAIN_TEXT_TYPES = [
+    "text",
+    "search",
+    "url",
+    "tel",
+    "email",
+    "password",
+    "number",
+  ];
   const norm = (s: string): string => s.replace(/\s+/g, " ").trim();
   const label = (el: Element): string =>
     `<${el.localName}${el.id ? `#${el.id}` : ""}>`;
@@ -281,6 +300,100 @@ export function pageDom(cmd: DomCommand): any {
       return { rect: rectOf(el) };
     });
   }
+  if (cmd.op === "click") {
+    return withEl(cmd.target, (el: any) => {
+      const b = boxOf(el, true);
+      if (!("rect" in b)) return b;
+      const own = bestBox(el)!; // this frame's own coordinates, which the page's events carry
+      const init = {
+        bubbles: true,
+        cancelable: true,
+        composed: true,
+        clientX: own.l + own.w / 2,
+        clientY: own.t + own.h / 2,
+        button: 0,
+      };
+      const pointer = {
+        ...init,
+        pointerId: 1,
+        pointerType: "mouse",
+        isPrimary: true,
+      };
+      el.dispatchEvent(new PointerEvent("pointerdown", pointer));
+      el.dispatchEvent(new MouseEvent("mousedown", init));
+      if (typeof el.focus === "function") el.focus({ preventScroll: true });
+      el.dispatchEvent(new PointerEvent("pointerup", pointer));
+      el.dispatchEvent(new MouseEvent("mouseup", init));
+      if (typeof el.click === "function") el.click();
+      else el.dispatchEvent(new MouseEvent("click", init));
+      return { label: label(el), rect: b.rect };
+    });
+  }
+  if (cmd.op === "typeInto") {
+    return withEl(cmd.target, (el: any) => {
+      const tag = el.localName;
+      const fire = () => {
+        el.dispatchEvent(
+          new InputEvent("input", {
+            bubbles: true,
+            composed: true,
+            inputType: "insertText",
+            data: cmd.text,
+          }),
+        );
+        el.dispatchEvent(new Event("change", { bubbles: true }));
+      };
+      reveal(el);
+      const rect = rectOf(el);
+      if (tag === "input" || tag === "textarea") {
+        if (tag === "input" && !PLAIN_TEXT_TYPES.includes(el.type))
+          return fail(`<input type="${el.type}"> is not a text field`);
+        if (el.disabled) return fail("the field is disabled");
+        if (el.readOnly) return fail("the field is read-only");
+        el.focus({ preventScroll: true });
+        // The page's own setter (not an own property a framework may have shadowed), so controlled inputs see the change.
+        const win = winOf(el);
+        const proto = (
+          tag === "input" ? win.HTMLInputElement : win.HTMLTextAreaElement
+        ).prototype;
+        const setter = Object.getOwnPropertyDescriptor(proto, "value")?.set;
+        if (!setter) return fail("this element has no settable value");
+        setter.call(el, cmd.append ? el.value + cmd.text : cmd.text);
+        fire();
+      } else if (el.isContentEditable) {
+        el.focus({ preventScroll: true });
+        el.textContent = cmd.append
+          ? (el.textContent ?? "") + cmd.text
+          : cmd.text;
+        fire();
+      } else {
+        return fail(
+          `<${tag}> is not a text field (input, textarea or contenteditable)`,
+        );
+      }
+      if (cmd.submit) {
+        const key = {
+          key: "Enter",
+          code: "Enter",
+          keyCode: 13,
+          which: 13,
+          bubbles: true,
+          cancelable: true,
+        };
+        const notCancelled = el.dispatchEvent(
+          new KeyboardEvent("keydown", key),
+        );
+        el.dispatchEvent(new KeyboardEvent("keypress", key));
+        const form = el.form ?? el.closest("form");
+        if (notCancelled && form) {
+          if (typeof form.requestSubmit === "function") form.requestSubmit();
+          else form.submit();
+        }
+        el.dispatchEvent(new KeyboardEvent("keyup", key));
+      }
+      return { typed: cmd.text.length, rect };
+    });
+  }
   if (cmd.op === "scrollTo") {
     return withEl(cmd.target, (el) => {
       el.scrollIntoView({
@@ -299,18 +412,9 @@ export function pageDom(cmd: DomCommand): any {
   if (cmd.op === "prepareType") {
     return withEl(cmd.target, (el: any) => {
       const tag = el.localName;
-      const textTypes = [
-        "text",
-        "search",
-        "url",
-        "tel",
-        "email",
-        "password",
-        "number",
-      ];
       reveal(el);
       if (tag === "input" || tag === "textarea") {
-        if (tag === "input" && !textTypes.includes(el.type))
+        if (tag === "input" && !PLAIN_TEXT_TYPES.includes(el.type))
           return fail(`<input type="${el.type}"> is not a text field`);
         if (el.disabled) return fail("the field is disabled");
         if (el.readOnly) return fail("the field is read-only");

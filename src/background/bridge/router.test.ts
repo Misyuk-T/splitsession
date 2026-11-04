@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
 import { SWITCHED_OFF } from "../../bridge/protocol";
+import { TOOLS } from "../../bridge/spec";
 import {
   type ActionMeta,
   BridgeRouter,
@@ -594,11 +595,67 @@ describe("bridge_info", () => {
       tabs: 2,
       containers: 1,
       extensionVersion: "1.2.3",
+      // These tests build the router without a debugger: it says so, as the store build does.
+      mode: "basic",
+      notAvailable: [],
+      basicMode: expect.stringContaining("full mode"),
     });
     setLabel("  ");
     expect(
       JSON.parse((await run(router, "bridge_info", {}))[0]!).profileLabel,
     ).toBeNull();
+  });
+});
+
+describe("basic mode (no debugger)", () => {
+  it("serves every tool of the spec in these tests (the unit tests compile the full-hands code in)", () => {
+    const { router } = setup([tab()]);
+    expect([...router.servedTools()].sort()).toEqual(
+      TOOLS.map((t) => t.name).sort(),
+    );
+  });
+
+  it("screenshot_tab takes the visible part of the tab on show, and refuses fullPage and a background tab with a clear error", async () => {
+    const { router, b } = setup([tab(), tab({ id: 2, active: false })]);
+    (b.tabs as any).captureVisibleTab = vi.fn(
+      async () => "data:image/png;base64,AAAA",
+    );
+    expect(await run(router, "screenshot_tab", { tabId: 1 })).toEqual([
+      "[image]",
+    ]);
+    await expect(
+      run(router, "screenshot_tab", { tabId: 1, fullPage: true }),
+    ).rejects.toThrow(/fullPage needs full mode/);
+    await expect(run(router, "screenshot_tab", { tabId: 2 })).rejects.toThrow(
+      /in the background; basic mode captures only the tab on show/,
+    );
+    expect((b.tabs as any).captureVisibleTab).toHaveBeenCalledTimes(1);
+    expect(b.tabs.update).not.toHaveBeenCalled(); // no silent tab switch
+  });
+
+  it("type has no slowly, and click refuses a ref and a point together", async () => {
+    const { router } = setup([tab()]);
+    await expect(
+      run(router, "type", {
+        tabId: 1,
+        selector: "input",
+        text: "a",
+        slowly: true,
+      }),
+    ).rejects.toThrow(/slowly needs full mode/);
+    await expect(
+      run(router, "click", { tabId: 1, ref: "e1", x: 1, y: 2 }),
+    ).rejects.toThrow(/not several/);
+  });
+
+  it("navigate_back on a container tab is refused (its target cannot be prepared), on another tab Chrome's own Back is used", async () => {
+    const { router, b } = setup([tab(), tab({ id: 2 })]);
+    (b.tabs as any).goBack = vi.fn(async () => {});
+    await expect(run(router, "navigate_back", { tabId: 1 })).rejects.toThrow(
+      /container tab needs full mode/,
+    );
+    await run(router, "navigate_back", { tabId: 2 });
+    expect((b.tabs as any).goBack).toHaveBeenCalledWith(2);
   });
 });
 

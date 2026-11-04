@@ -1,19 +1,19 @@
 import type { ToolResult } from "../../../bridge/protocol";
+import { TOOLS } from "../../../bridge/spec";
 import { withoutAgentMark } from "../../../core/indicators";
-import type { TabSession } from "../cdp";
 import { ToolError } from "../errors";
 import { tabUrl, type ToolContext, type ToolHandler } from "../tool-context";
 import {
   type ActionMeta,
   type Args,
   checkUrl,
-  hostOf,
   isWebUrl,
   json,
   live,
   messageOf,
   OPEN_SCHEMES,
 } from "../tool-kit";
+import * as hands from "./hands";
 
 /** Long enough to see "closing" on the tab before it goes. */
 const CLOSE_PAUSE_MS = 600;
@@ -26,6 +26,10 @@ const bridgeInfo: ToolHandler = async (c) => {
     c.b.tabs.query({}),
     c.d.profileKey?.().catch(() => null) ?? null,
   ]);
+  const basic = !__CDP__ || !c.d.cdp;
+  const missing = TOOLS.map((t) => t.name).filter(
+    (name) => !c.served.includes(name),
+  );
   return json({
     profileLabel: label === "" ? null : label,
     ...(key ? { profileKey: key } : {}),
@@ -33,6 +37,15 @@ const bridgeInfo: ToolHandler = async (c) => {
     tabs: tabs.length,
     containers: c.d.facet.listContainers().length,
     extensionVersion: c.b.runtime.getManifest().version,
+    // Basic mode: the build from the Chrome Web Store has no debugger permission. Full mode is the unpacked Full from GitHub.
+    mode: basic ? "basic" : "full",
+    ...(basic
+      ? {
+          notAvailable: missing,
+          basicMode:
+            "Clicks and typing are script events (isTrusted is false), screenshots show only the tab on show, and scripts, dialogs, the console, the network and key presses need full mode: the unpacked Full from https://github.com/Misyuk-T/splitsession",
+        }
+      : {}),
   });
 };
 
@@ -197,34 +210,18 @@ async function history(
   await c.tab(a.tabId, meta);
   const inContainer = c.d.facet.getTabContainer(a.tabId) !== null;
   const where = step < 0 ? "back" : "forward";
-  type History = {
-    currentIndex: number;
-    entries: Array<{ id: number; url: string }>;
-  };
-  const go = async (s: TabSession) => {
-    const h = await s.send<History>("Page.getNavigationHistory");
-    const entry = h.entries[h.currentIndex + step];
-    if (!entry)
-      throw new ToolError(
-        step < 0
-          ? "there is no previous page in this tab's history"
-          : "there is no next page in this tab's history",
-      );
-    meta.host = hostOf(entry.url) ?? meta.host;
-    // Same as every navigation SplitSession starts: no service worker of the target may answer a container's request.
-    if (inContainer && isWebUrl(entry.url))
-      await c.d.facet.prepareNavigation(entry.url);
-    live(meta);
-    // The exact entry (the Back button would skip pages the user never interacted with).
-    await s.send("Page.navigateToHistoryEntry", { entryId: entry.id });
-  };
   // The exact history entry needs the debugger (`Page.getNavigationHistory`): Chrome's own Back skips pages nobody interacted
   // with, which is every page an agent has just opened, so `tabs.goBack` would often find "no previous page" where there is one.
+  // Basic mode has only `tabs.goBack`, which cannot be told where it goes, so a container tab (whose target must be prepared
+  // first: no service worker may answer its request) is refused there, and so is a page SplitSession may not debug.
   try {
-    if (!c.d.cdp) throw new ToolError("no debugger");
-    await c.onPage(a.tabId, meta, go, { dialogOk: true });
+    if (!__CDP__ || !c.d.cdp)
+      throw new ToolError(
+        `${where === "back" ? "navigate_back" : "navigate_forward"} on a container tab needs full mode (the debugger); use navigate with the address instead`,
+      );
+    await hands.goToHistoryEntry(c, a, meta, step, inContainer);
   } catch (error) {
-    // Without the debugger (a page SplitSession may not debug): Chrome's own Back/Forward, never for a container tab.
+    // Without the debugger (basic mode, or a page SplitSession may not debug): Chrome's own Back/Forward, never for a container tab.
     if (
       inContainer ||
       meta.signal?.aborted ||

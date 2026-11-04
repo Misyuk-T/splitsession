@@ -23,6 +23,7 @@
  *
  * Nothing here exposes cookies or storage: no Network.getCookies / Storage.* call exists in the bridge.
  */
+import { refusedUrl } from "./operable";
 
 export interface Debuggee {
   tabId?: number;
@@ -141,31 +142,6 @@ export function redactHeaders(
       ? "(hidden by SplitSession)"
       : String(value).slice(0, 500);
   return out;
-}
-
-/** Why SplitSession will not attach to this address, or null when it may. */
-export function refusedUrl(url: string | undefined): string | null {
-  if (!url) return null;
-  let u: URL;
-  try {
-    u = new URL(url);
-  } catch {
-    return null;
-  }
-  if (u.protocol === "chrome-extension:")
-    return "extension pages (SplitSession's own included) are not operated by the agent";
-  if (
-    /^(chrome|chrome-untrusted|chrome-search|devtools|view-source|edge|brave|opera|vivaldi):$/.test(
-      u.protocol,
-    )
-  )
-    return `${u.protocol}// pages belong to the browser; Chrome does not let extensions debug them`;
-  if (
-    u.hostname === "chromewebstore.google.com" ||
-    (u.hostname === "chrome.google.com" && u.pathname.startsWith("/webstore"))
-  )
-    return "Chrome does not let extensions debug the Chrome Web Store";
-  return null;
 }
 
 /** The error text of a failed CDP call: Chrome wraps the protocol error as JSON in the message. */

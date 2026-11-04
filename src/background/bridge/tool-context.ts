@@ -12,12 +12,12 @@ import {
   CdpError,
   type CdpSessions,
   dialogBlocks,
-  refusedUrl,
   type TabSession,
 } from "./cdp";
 import * as dom from "./dom-tools";
 import { ToolError } from "./errors";
 import type { PageError, PageRect } from "./inject";
+import { refusedUrl } from "./operable";
 import { type DomCommand, type DomTarget, pageDom } from "./page-dom";
 import {
   type ActionMeta,
@@ -79,6 +79,8 @@ export class ToolContext {
   readonly sleep: (ms: number) => Promise<void>;
   /** The refs `snapshot` handed out, per tab (the registry behind them lives in the page: page-dom.ts). */
   readonly refs = new Map<number, dom.DomRefs>();
+  /** The tools this build serves (set by the router); `bridge_info` reports the rest as missing. */
+  served: readonly string[] = [];
   /** Screenshots flip the active tab of a window: one at a time. */
   private shotQueue: Promise<unknown> = Promise.resolve();
 
