@@ -148,6 +148,8 @@ Privacy policy URL: `https://misyuk-t.github.io/splitsession/privacy` (the text 
 
 ## 2. The store item as Full (from the update that adds the agent bridge; decided 2026-10-27)
 
+Pasted into the store draft on 2026-11-04; texts by GPT-6.1 Sol, shortened.
+
 The store item `hhodioekcdmhpocjbkjnblmbmchddphf` is updated in place from Lite to Full (docs/decisions.md, "The store item
 becomes Full"). Upload `splitsession-store-<version>.zip` (`pnpm zip:store`, or the GitHub Release asset); never the
 `splitsession-full-*.zip`, which carries the `key`. Everything below is meant to be pasted as is; the reasoning is in
@@ -183,57 +185,58 @@ Unchanged: **Productivity > Tools**, English.
 ### Long description
 
 ```
-SplitSession brings Firefox-style containers to Chrome. Keep several accounts of the same website signed in at the same time, in different tabs of one Chrome profile: a work and a personal account, two client accounts, a test account next to your real one. No second profile, no second browser, no incognito juggling.
+SplitSession: Same site, separate logins.
 
-HOW IT WORKS
-• Create a container: a name and a colour. Tabs you open in it get their own cookies and their own site storage.
-• Sign in to a site in one of them, then sign in to the same site as someone else in another. Both stay signed in.
-• Links and pop-ups opened from such a tab stay with it, so sign-in pop-ups work.
-• Other tabs are ordinary Chrome tabs, with your usual logins.
+Keep several accounts of one website signed in side by side in one Chrome profile. Create a named, coloured container, open a tab in it and sign in. Use another container for another account. Tabs in one container share its cookies and site storage; different containers stay separate. Links and pop-ups opened from container tabs stay with them. Ordinary tabs keep your usual logins.
 
 FEATURES
-• Create, rename, recolour and delete containers (8 colours).
-• Separate cookies, localStorage, sessionStorage, IndexedDB and Cache Storage for each one.
-• Optional Chrome tab groups in matching colours; dragging a tab into a group moves it there.
-• Site rules: "always open this site in Work" or "ask me".
-• Container tabs come back in their containers after a browser restart or Reopen closed tab. If SplitSession cannot tell a tab's container for sure, the tab waits in the popup instead of opening with the wrong login.
-• Close a container's tab group to free up space: its tabs are remembered, and one click in the popup brings them all back.
-• Export and import your setup as a JSON file (cookies are left out unless you tick a clearly marked box).
-• Light and dark themes, full keyboard support.
+- Separate cookies, localStorage, sessionStorage, IndexedDB and Cache Storage.
+- Optional matching tab groups and site rules: open in a chosen container, or ask.
+- Restore container tabs after restart or Reopen closed tab; uncertain assignments wait for your choice.
+- Reopen remembered tabs after closing a container group.
+- Export/import your setup; cookies excluded unless you opt in.
+- Light/dark themes and keyboard-accessible controls.
 
-AI AGENTS (OPTIONAL, OFF BY DEFAULT)
-If you use an AI agent on your own computer (Claude Code, Codex, Cursor or another MCP client), SplitSession can let it work in your tabs with the account you choose: open a page in a given container, read it, take a screenshot, click and type, as you would.
-• Off until you switch on "Agent bridge" in Settings. Before it turns on the first time, SplitSession shows exactly what the agent can do and where the data goes, and asks you to allow it.
-• Needs a small companion program on your computer (one command: npx splitsession-bridge install; macOS and Linux). Without it nothing connects, and everything else works as described above.
-• Talks only to that program on the same computer, through Chrome's native messaging. No network port, no server, no cloud. SplitSession itself sends nothing anywhere; your agent may send what it reads to its AI provider under that provider's terms.
-• When you switch it on, SplitSession asks Chrome for permission to talk to a program on your computer ("Communicate with cooperating native applications"; Chrome may show its own prompt); SplitSession restarts once right after the permission is granted, and switching it off gives that permission back. The extension has no debugger access and does not run scripts an agent sends it, so it works in a basic mode: it reads pages, clicks, types, scrolls and takes screenshots of the tab you are looking at, but cannot run JavaScript, press keys or read the console and network.
-• While the agent acts, you see it: a mark on the tab and the toolbar button. Switch it off and the connection closes at once.
-• While it is on, the agent can do in your tabs whatever you can do, including on sites where you are signed in. Turn it on only for an agent you trust.
+OPTIONAL AI BRIDGE: OFF BY DEFAULT
+Your own MCP client, such as Claude Code, Codex or Cursor, can use your signed-in tabs. Requires macOS/Linux, Node.js 20+ and a separate open-source companion:
+npx splitsession-bridge install
+
+In Settings > For AI agents, switch on Agent bridge, read the disclosure and choose Allow agent access, then allow Chrome's optional permission. SplitSession restarts itself once and reopens Settings: Connected, if the companion is installed. Switching off disconnects and removes the permission. Containers work without the companion.
+
+The agent can list tabs and containers, open pages in a chosen container, navigate and close tabs, read text/HTML and page snapshots, click and type by element, select options, scroll and wait. Screenshots capture only the visible part of the tab on show.
+
+The store version has no debugger access. It cannot run agent-supplied JavaScript, send key presses, upload files, or read console output or network logs. Some sites ignore its script-generated clicks or typing.
+
+Access includes ordinary and container tabs in every window of a connected profile, including signed-in pages. There are no per-site controls or per-action confirmations. Enable only for programs you trust. Activity indicators are on by default.
 
 PRIVACY
-• SplitSession has no servers, no account, no analytics and sends nothing anywhere.
-• Container cookies are stored locally in SplitSession's extension storage on your device. They are never sent to a SplitSession server, and there is none.
-• Open source (MIT): the full code is on GitHub.
+No SplitSession server, account, analytics or telemetry. Cookies and settings stay locally, without sync or encryption by SplitSession.
 
-GOOD TO KNOW
-• SplitSession separates logins; it is not a VPN, an anti-fingerprinting tool or a sandbox. Sites still see the same browser and the same IP address. Do not use it to break a site's rules about multiple accounts.
-• Service workers (offline mode, push notifications) are switched off in isolated tabs, so those features work only in normal tabs.
-• The first page of a tab that SplitSession did not open itself loads with your normal profile before the tab is moved. Open tabs from the SplitSession button or with a site rule for a clean start.
-• Google sign-in: start it from the site you are signing in to, inside the isolated tab, and do not add a site rule for the Google sign-in page itself.
-• The full list of what is and is not isolated is in the documentation (docs/limits.md on GitHub).
+Bridge data, including tab details, page content and screenshots, passes through native messaging and local Unix sockets to the companion and your agent. There is no network port. SplitSession sends nothing to a server; your agent may send data to its AI provider under its own terms and settings.
 
-PERMISSIONS, IN SHORT
-Chrome will say SplitSession can "read and change all your data on all websites". That is needed to give each tab its own cookies on whatever site you open in it. SplitSession reads cookie headers only of tabs you put in a container, keeps them on your device and never sends them anywhere. "Communicate with cooperating native applications" is asked for only when you switch on the optional agent bridge, and is used only while it is on.
+LIMITS
+Containers do not hide your IP address or browser fingerprint and are not a security sandbox.
 
-Source code, issues and documentation: https://github.com/Misyuk-T/splitsession
+Service workers and shared workers are disabled in container tabs. Offline features and push notifications may also be affected in ordinary tabs on sites used by containers.
 
-SplitSession is free and open source. If it helps you, you can support development at ko-fi.com/tomashdev.
+Pages opened outside SplitSession may first load with your regular profile's cookies. Isolation gaps also occur during extension restarts, updates and browser session restore. Prefer opening pages through SplitSession or its site rules.
+
+Some sign-in flows may fail. Start Google sign-in from the site inside its container; avoid a rule for Google's sign-in page.
+
+PERMISSIONS
+All-site access lets SplitSession separate cookies and storage wherever you use containers. Other permissions manage tabs, groups, site rules and restore, store your setup locally and remove service workers for isolation.
+
+Version 0.2.0 adds no required permissions and causes no update permission prompt. "Communicate with cooperating native applications" is requested only when you enable the optional bridge.
+
+Free and open source (MIT).
+Source and documented limits: https://github.com/Misyuk-T/splitsession
+Privacy: https://misyuk-t.github.io/splitsession/privacy
 ```
 
 ### Release note for this update (store "What's new" / GitHub Release)
 
 ```
-New: an optional bridge for your own local AI agent (off by default; Settings > For AI agents). No new permissions on update. When you switch the bridge on, Chrome asks for one permission and SplitSession restarts once. Your containers, logins and settings are kept.
+Version 0.2.0 adds an optional local bridge for your own AI agent, off by default, to read and operate tabs using their container accounts. It requires a separately installed companion program; this store version has no debugger access or agent-supplied JavaScript. The update adds no required permissions or update prompts; Chrome's optional native-messaging permission is requested only when you enable the bridge.
 ```
 
 ### Single purpose (dashboard, Privacy practices tab)
@@ -252,16 +255,16 @@ agent's tabs account-specific. That would change the title's promise, so try the
 | --- | --- |
 | `declarativeNetRequest` | For tabs the user has put in a container, session rules replace the Cookie request header with that container's own cookies and remove Set-Cookie from responses, so the container's logins never mix with the regular profile. One static rule answers SplitSession's own content script locally. No ads or content are blocked. |
 | `webRequest` | Observes (does not block or modify) the response headers of container tabs to read Set-Cookie before the declarativeNetRequest rule removes it, and stores those cookies in that container's local cookie jar. Requests of tabs that are not in a container are ignored. |
-| `scripting` | Registers SplitSession's own bundled content scripts at document start, and only while the user has containers, so that document.cookie, localStorage, IndexedDB and similar page storage are kept separate per container. When the user has switched on the optional agent bridge, it also runs bundled functions in a tab the user's local agent works in (read the page text, find an element to click). No remote code is loaded or injected this way. |
-| `tabs` | Tracks which tab belongs to which container, opens and reopens tabs in a container, keeps pop-ups and links opened from a container tab in the same container, and reads a tab's address to apply the user's domain rules. With the optional agent bridge on, lists the tabs and their containers for the user's own local agent and opens, navigates and closes tabs at its request. |
+| `scripting` | Runs bundled scripts to keep each container's cookies and site storage separate. If the optional agent bridge is enabled, also runs bundled functions to read pages and perform supported element actions. Agent input is treated as data; no agent-supplied or remotely hosted code is executed. |
+| `tabs` | Tracks tab-to-container membership, opens and restores container tabs, keeps links and pop-ups in their container, and reads tab addresses for site rules. With the optional agent bridge enabled, also lists tab details and opens, navigates, activates or closes tabs at the user's agent's request. |
 | `tabGroups` | Optionally shows each container as a Chrome tab group with the container's name and colour, and keeps group and container in sync when the user renames, recolours or drags tabs between groups. |
 | `storage` | Stores containers, domain rules, settings, the user's consent to the agent bridge and each container's cookies locally on the user's device (chrome.storage.local). Nothing is synced or sent off the device. |
 | `webNavigation` | Detects when a tab starts navigating to a site that has a domain rule, so the page opens in the right container before the first request, and checks who started a navigation so that web pages cannot move tabs between containers. |
 | `browsingData` | Used only with the "serviceWorkers" data type: removes service workers of sites used in containers (and, in the optional strict mode, of all sites), because a service worker's requests bypass per-tab isolation and would leak the regular profile's logins into a container. No history, cookies or other browsing data are removed. |
 | `alarms` | Runs short periodic maintenance in the background service worker: removes expired cookies from container jars (every minute), re-checks tab-group membership (every 30 seconds, only when tab groups are on) and, while the agent bridge is on, retries its local connection. |
 | `sessions` | Recognises a tab or window the user reopens (Reopen closed tab, History, restore after restart) so that a container tab comes back in its container instead of opening with the regular profile's logins. |
-| `nativeMessaging` (optional) | Asked for only when the user switches on "Agent bridge" in Settings and has accepted a disclosure of what the agent can access; given back when the switch is turned off. It connects to one companion program, com.splitsession.bridge, which the user installs separately (npx splitsession-bridge install, open source) and which runs on the same computer. It carries the requests of the user's own local AI agent (MCP) and their results. Nothing is sent over the network by the extension. |
-| Host permission `<all_urls>` | Containers work on whatever site the user opens in a container tab, so the cookie header rules and the storage-separation script need access to any site. With the optional agent bridge on, the user's own agent can read and operate any tab the user has open. Without the bridge, SplitSession acts only on tabs the user has put in a container (plus removing service workers of those sites); it sends no data anywhere. |
+| `nativeMessaging` (optional) | Optional, requested only after the user enables Agent bridge in Settings > For AI agents and accepts the disclosure. It connects Chrome to com.splitsession.bridge, the separately installed open-source companion (npx splitsession-bridge install) on the same computer. It carries the user's agent requests to list tabs and containers, open pages in a chosen container, and read or operate tabs, and returns their results. Transport uses native messaging and local Unix sockets, with no network port or server. The extension runs only bundled functions, never code supplied by the agent. Turning the bridge off closes the connection and removes the permission. Container features work without it. |
+| Host permission `<all_urls>` | Access to all sites lets cookie-header rules and bundled storage scripts separate logins on whichever sites the user opens in containers. SplitSession also removes service workers on sites used by containers; optional strict mode does so across the profile. With the optional agent bridge enabled, bundled functions can read and operate ordinary and container tabs on supported pages. Tab data and results go only to the local companion program, never directly to a server. |
 
 ### Remote code (dashboard question)
 
@@ -280,11 +283,11 @@ consent).
 
 ### Reviewer notes (dashboard, "Вказівки щодо тестування" / test instructions, additional instructions)
 
-The field takes 500 characters at most. Paste this (473 characters):
+The field takes 500 characters at most. Paste this (475 characters):
 
 ```
-Containers need nothing else: toolbar button > + > create A and B, then sign in to one site in a tab of each; both stay signed in.
-Optional AI bridge, off by default (macOS/Linux, Node 20+): run npx splitsession-bridge install --client none, then Settings > For AI agents > switch on Agent bridge > Allow agent access > allow Chrome's prompt. SplitSession restarts once and reopens Settings: Connected. Without that program it shows Not connected by design. No remote code.
+Containers: toolbar > + > create A and B; sign in to the same site in each; both stay signed in.
+AI bridge (optional, off by default; macOS/Linux, Node 20+): npx splitsession-bridge install --client none. Settings > For AI agents > Agent bridge > Allow agent access > allow Chrome's permission; SplitSession restarts once: Connected. Open example.com, run npx splitsession-bridge try, then try --tab <id it prints>: PASS lines, no MCP client needed. Switch off to disconnect.
 ```
 
 The longer version below is background for a reply if the reviewer asks; it does not fit the field.
@@ -295,8 +298,9 @@ SplitSession is a container extension: several accounts of one website, signed i
 This update adds an optional "agent bridge" for the user's own local AI agent. It is off by default and does nothing until switched on. To test it (macOS or Linux, Node.js 20+):
 1. In a terminal: npx splitsession-bridge install --client none   (installs the companion program com.splitsession.bridge for this extension ID and prints how to add it to an MCP client; it changes no client configuration with --client none).
 2. SplitSession settings > For AI agents > switch on "Agent bridge". A dialog explains what the agent can access and where data goes; press "Allow agent access". Chrome then asks for one optional permission (native messaging): allow it. SplitSession restarts once (Chrome gives a running extension that permission no other way) and reopens Settings at For AI agents; the status line is "Connected".
-3. Optional, to drive it: add the printed MCP server to an MCP client (for example: claude mcp add splitsession -- <the printed command>), then ask the agent to "list my tabs" or "open example.com in container A and read the heading".
-4. Switch the bridge off: the connection and the companion process end at once. npx splitsession-bridge uninstall removes the program.
+3. Optional, without an AI client (bridge 0.4.1): open https://example.com in a tab, then run npx splitsession-bridge try. It prints one PASS or FAIL line per step and the tab ID of the example.com tab; npx splitsession-bridge try --tab <id> also reads that tab. It clicks, types and writes nothing.
+4. Optional, to drive it: add the printed MCP server to an MCP client (for example: claude mcp add splitsession -- <the printed command>), then ask the agent to "list my tabs" or "open example.com in container A and read the heading".
+5. Switch the bridge off: the connection and the companion process end at once. npx splitsession-bridge uninstall removes the program.
 Without step 1 the bridge shows "not connected" by design; every other feature works.
 
 Data: nothing is sent to any server by the extension. With the bridge on, page content goes only to the local companion program through native messaging, and from there to the user's agent. Remote code: none; the extension runs only code in its package (see the remote-code answer).
