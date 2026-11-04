@@ -56,6 +56,13 @@ export interface ProfileInfo {
   tabs?: number;
   containers?: number;
   extensionVersion?: string;
+  /**
+   * `basic`: the extension has no debugger (the Chrome Web Store build), so `notAvailable` tools answer with an error and
+   * `basicMode` says what is different. Absent: an older extension, which has the debugger.
+   */
+  mode?: "basic" | "full";
+  notAvailable?: string[];
+  basicMode?: string;
   /** On the shared protocol-1 socket: an extension (or a host) older than 0.2. */
   legacy?: true;
   /** The profile did not answer `bridge_info`. */
@@ -301,6 +308,9 @@ export class Dispatcher {
         tabs?: unknown;
         containers?: unknown;
         extensionVersion?: unknown;
+        mode?: unknown;
+        notAvailable?: unknown;
+        basicMode?: unknown;
       } | null;
       if (!v || typeof v !== "object")
         return { ...base, error: "bridge_info gave no JSON" };
@@ -318,6 +328,12 @@ export class Dispatcher {
         ...(typeof v.extensionVersion === "string"
           ? { extensionVersion: v.extensionVersion }
           : {}),
+        ...(v.mode === "basic" || v.mode === "full" ? { mode: v.mode } : {}),
+        ...(Array.isArray(v.notAvailable) &&
+        v.notAvailable.every((t) => typeof t === "string")
+          ? { notAvailable: v.notAvailable as string[] }
+          : {}),
+        ...(typeof v.basicMode === "string" ? { basicMode: v.basicMode } : {}),
         ...(o.ep.legacy ? { legacy: true as const } : {}),
       };
     });
@@ -634,6 +650,9 @@ export function bridgeInfo(profiles: ProfileInfo[]): Record<string, unknown> {
       ...(p.extensionVersion !== undefined
         ? { extensionVersion: p.extensionVersion }
         : {}),
+      ...(p.mode !== undefined ? { mode: p.mode } : {}),
+      ...(p.notAvailable !== undefined ? { notAvailable: p.notAvailable } : {}),
+      ...(p.basicMode !== undefined ? { basicMode: p.basicMode } : {}),
     });
   }
   out.profiles = profiles;

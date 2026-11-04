@@ -58,7 +58,10 @@ export class Extras {
     this.bridgeConsent = __FULL__ ? new BridgeConsentStore(local) : null;
     this.settings = new SettingsStore(
       local,
-      this.bridgeConsent?.guard(() => hasNativeMessaging(b)),
+      // Under `__FULL__` so that Lite does not keep the permission helper alive through the arrow function.
+      __FULL__
+        ? this.bridgeConsent?.guard(() => hasNativeMessaging(b))
+        : undefined,
     );
     this.rules = new RuleStore(
       local,

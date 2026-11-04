@@ -18,6 +18,8 @@ interface FakeProfile {
   session?: string;
   /** The tools this extension serves, as `__profile` reports them (none: an extension that does not say). */
   tools?: string[];
+  /** Basic mode (no debugger): `bridge_info` says so. */
+  basic?: boolean;
 }
 
 const ep = (key: string, ino = 1, legacy = false): Endpoint => ({
@@ -78,6 +80,9 @@ function answer(
       tabs: p.tabs.length,
       containers: p.containers.length,
       extensionVersion: "0.2.0",
+      ...(p.basic
+        ? { mode: "basic", notAvailable: ["run_js"], basicMode: "no debugger" }
+        : {}),
     });
   if (tool === "list_tabs") {
     if (
@@ -570,6 +575,22 @@ describe("Dispatcher: one MCP server, several Chrome profiles", () => {
         json(await d.run("click", { tabId: 7, ref: "e1", profile: "Home" })),
       ).toMatchObject({ by: "bbbbbbbbbb" });
     });
+  });
+
+  it("bridge_info passes the basic-mode facts of each profile through", async () => {
+    const a = { ...profile("aaaaaaaaaa", "Work", [1]), basic: true };
+    const one = json(await world([a]).d.run("bridge_info", {}));
+    expect(one).toMatchObject({
+      mode: "basic",
+      notAvailable: ["run_js"],
+      basicMode: "no debugger",
+      profiles: [{ mode: "basic", notAvailable: ["run_js"] }],
+    });
+    const b = profile("bbbbbbbbbb", "Home", [2]);
+    const two = json(await world([a, b]).d.run("bridge_info", {}));
+    expect(two.mode).toBeUndefined();
+    expect(two.profiles[0].mode).toBe("basic");
+    expect(two.profiles[1].mode).toBeUndefined();
   });
 
   describe("servedTools: which tools to list", () => {

@@ -23,17 +23,18 @@ import { at } from "./fixtures";
  * persistent profile: Lite sets up containers, container tabs and settings; the browser closes; the store build starts
  * on the same profile and must find all of it, with the Full-only settings at their defaults and the bridge off.
  *
- * Then the extension is disabled and enabled again from chrome://extensions, which is what a user goes through while
- * Chrome holds the update for the new permissions (disabled until approved): the tabs survive and isolation returns. Also
- * with a browser restart while it is off: the restored container tabs load as ordinary tabs (the real profile's cookies;
- * asserted, so a change is noticed), and once it is on again they are back in their containers.
+ * The store build adds no required permission over Lite (`debugger` is not in it, `nativeMessaging` is optional), so Chrome
+ * does not disable the extension on update: asserted here as identical `permissions` lists. What a user can still do by hand
+ * is disable and enable the extension in chrome://extensions: the tabs survive and isolation returns. Also with a browser
+ * restart while it is off: the restored container tabs load as ordinary tabs (the real profile's cookies; asserted, so a
+ * change is noticed), and once it is on again they are back in their containers.
  *
  * The store build gets a higher version (as every store update does) and is started with one `runtime.reload()`: loaded
  * from the command line, Chromium takes the new manifest but keeps the old service worker until the extension reloads.
  * Developer mode is switched on first: without it Chromium disables a reloaded or re-enabled unpacked extension.
  *
- * Unpacked loading cannot show Chrome's "disabled pending approval" state itself; that needs a packed update
- * (docs/release/upgrade-test.md).
+ * Unpacked loading cannot show whether Chrome asks for approval on a packed update; that is checked by hand
+ * (docs/release/upgrade-test.md: expect no prompt).
  */
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const LITE_OUT = path.join(ROOT, ".output/upgrade-lite");
@@ -189,6 +190,7 @@ async function echoFrom(sw: Worker, tabId: number, tag: string): Promise<void> {
   );
 }
 
+let litePermissions: string[] = [];
 let A = { id: "", name: "Work", color: "blue" };
 let B = { id: "", name: "Home", color: "orange" };
 
@@ -203,6 +205,7 @@ test("Lite: containers, container tabs and settings set up, then the browser clo
     (globalThis as any).chrome.runtime.getManifest(),
   );
   expect(manifest.permissions).not.toContain("debugger"); // it is the Lite build
+  litePermissions = manifest.permissions;
   // Developer mode on (a profile setting): Chromium disables an unpacked extension that is reloaded or switched back on
   // without it ("Turn on developer mode to use this extension").
   const extensions = await ctx.newPage();
@@ -296,9 +299,11 @@ test("the store build of Full on the same ID finds Lite's containers, tabs, grou
   const manifest = await sw.evaluate(() =>
     (globalThis as any).chrome.runtime.getManifest(),
   );
-  expect(manifest.permissions).toEqual(
-    expect.arrayContaining(["nativeMessaging", "debugger"]),
-  );
+  // No required permission more than Lite had: Chrome does not disable the extension on this update.
+  expect(manifest.permissions).toEqual(litePermissions);
+  expect(manifest.permissions).not.toContain("debugger");
+  expect(manifest.permissions).not.toContain("nativeMessaging");
+  expect(manifest.optional_permissions).toEqual(["nativeMessaging"]);
   expect(manifest.name).toBe("SplitSession: Multiple Logins per Site");
 
   const containers =
@@ -396,7 +401,7 @@ test("the store build of Full on the same ID finds Lite's containers, tabs, grou
   );
 });
 
-test("disabled and enabled again (the wait for the permission prompt): tabs survive, isolation comes back", async () => {
+test("disabled and enabled again by hand in chrome://extensions: tabs survive, isolation comes back", async () => {
   test.skip(buildError !== "" || !ctx, `builds failed: ${buildError}`);
   test.setTimeout(90_000);
   const context = ctx!;
@@ -483,7 +488,7 @@ test("disabled across a browser restart, then enabled: the container tabs come b
   await context.close();
   await fetch(`http://127.0.0.1:${TEST_PORT}/__log?clear=1`);
 
-  // The browser starts with the extension still off (a user who restarts before approving the new permissions): the
+  // The browser starts with the extension still off (a user who disabled it by hand and restarts): the
   // restored tabs load as ordinary tabs.
   ctx = context = await launch(STORE_PATH);
   await expect

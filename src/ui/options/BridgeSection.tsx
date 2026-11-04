@@ -278,9 +278,10 @@ export const BridgeSection = () => {
                   {__CDP__ ? "them" : "the tab on show"};
                 </li>
                 <li>
-                  click, type and scroll in any tab
-                  {__CDP__ ? ", run JavaScript" : ""}, which also means act as
-                  you on those sites;
+                  {__CDP__
+                    ? "click, type, scroll and run JavaScript in any tab"
+                    : "click, type and scroll in any tab"}
+                  , which also means act as you on those sites;
                 </li>
                 <li>
                   open, navigate, close and move tabs, and open pages inside

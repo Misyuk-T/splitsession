@@ -14,7 +14,7 @@ import {
   json,
   live,
 } from "../tool-kit";
-import { onShow,takeScreenshot } from "./capture";
+import { onShow, takeScreenshot } from "./capture";
 
 /**
  * The tools and tool paths that need the DevTools protocol ("full hands"). Reached only through `if (__CDP__)` branches, so
