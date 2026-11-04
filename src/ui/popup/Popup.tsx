@@ -19,7 +19,6 @@ import { NONE, rowId } from "./ids";
 import { RestoreOffer } from "./RestoreOffer";
 import { RuleBudgetNotice } from "./RuleBudgetNotice";
 import { ThisTabRow } from "./ThisTabRow";
-import { UpgradeNotice } from "./UpgradeNotice";
 import { usePopupData } from "./usePopupData";
 import { useStatus } from "./useStatus";
 
@@ -264,8 +263,6 @@ export const Popup = () => {
       <CopyNotice copies={otherCopies} />
 
       <RuleBudgetNotice stats={ruleStats} />
-
-      {!__FULL__ && <UpgradeNotice />}
 
       {__FULL__ && bridge && <BridgeRow bridge={bridge} />}
 
