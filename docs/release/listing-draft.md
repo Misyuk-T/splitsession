@@ -167,6 +167,15 @@ Use several accounts of the same site side by side in one Chrome profile. Option
 
 It lives in `wxt.config.ts` (`EDITIONS.store`); the store shows the manifest's text, so change it there.
 
+### Store images (the update)
+
+Screenshots 1-4 and the two promo tiles of section 1 stay. The store allows five screenshots, so **`screenshot-6-ai-agent.png`
+replaces `screenshot-5-restart.png` in the dashboard** (upload it as the fifth; the file stays in the repository). 1280x800, 24-bit
+PNG without alpha, made by `pnpm store:agent` (`scripts/store-agent.mjs`) with the store build in basic mode. Caption: **Your agent,
+in the right account.** Optional and off by default. The agent sees each tab with its account. The terminal shows only basic-mode
+tools (`list_tabs`, `snapshot`, `type`, `click`, `get_tab_text`); the page, the glow and the pill are the extension's own, the
+terminal panel, the window and the caption are drawn.
+
 ### Category and language
 
 Unchanged: **Productivity > Tools**, English.
@@ -197,7 +206,7 @@ If you use an AI agent on your own computer (Claude Code, Codex, Cursor or anoth
 • Off until you switch on "Agent bridge" in Settings. Before it turns on the first time, SplitSession shows exactly what the agent can do and where the data goes, and asks you to allow it.
 • Needs a small companion program on your computer (one command: npx splitsession-bridge install; macOS and Linux). Without it nothing connects, and everything else works as described above.
 • Talks only to that program on the same computer, through Chrome's native messaging. No network port, no server, no cloud. SplitSession itself sends nothing anywhere; your agent may send what it reads to its AI provider under that provider's terms.
-• When you switch it on, SplitSession asks Chrome for permission to talk to a program on your computer ("Communicate with cooperating native applications"; Chrome may show its own prompt); switching it off gives that permission back. The extension has no debugger access and does not run scripts an agent sends it, so it works in a basic mode: it reads pages, clicks, types, scrolls and takes screenshots of the tab you are looking at, but cannot run JavaScript, press keys or read the console and network.
+• When you switch it on, SplitSession asks Chrome for permission to talk to a program on your computer ("Communicate with cooperating native applications"; Chrome may show its own prompt); SplitSession restarts once right after the permission is granted, and switching it off gives that permission back. The extension has no debugger access and does not run scripts an agent sends it, so it works in a basic mode: it reads pages, clicks, types, scrolls and takes screenshots of the tab you are looking at, but cannot run JavaScript, press keys or read the console and network.
 • While the agent acts, you see it: a mark on the tab and the toolbar button. Switch it off and the connection closes at once.
 • While it is on, the agent can do in your tabs whatever you can do, including on sites where you are signed in. Turn it on only for an agent you trust.
 
@@ -224,7 +233,7 @@ SplitSession is free and open source. If it helps you, you can support developme
 ### Release note for this update (store "What's new" / GitHub Release)
 
 ```
-New: an optional bridge for your own local AI agent (off by default; Settings > For AI agents). Chrome asks you to approve two new permissions for it once; until you approve, SplitSession is paused and container tabs act like normal tabs. Approve from the puzzle-piece menu or chrome://extensions. Your containers, logins and settings are kept.
+New: an optional bridge for your own local AI agent (off by default; Settings > For AI agents). No new permissions on update. When you switch the bridge on, Chrome asks for one permission and SplitSession restarts once. Your containers, logins and settings are kept.
 ```
 
 ### Single purpose (dashboard, Privacy practices tab)
@@ -269,24 +278,33 @@ purposes unrelated to the single purpose; not used to determine creditworthiness
 unchanged: `https://misyuk-t.github.io/splitsession/privacy` (docs/privacy.md, updated 2026-10-27 for the bridge and its
 consent).
 
-### Reviewer notes (dashboard, "Notes for the reviewer")
+### Reviewer notes (dashboard, "Вказівки щодо тестування" / test instructions, additional instructions)
+
+The field takes 500 characters at most. Paste this (473 characters):
+
+```
+Containers need nothing else: toolbar button > + > create A and B, then sign in to one site in a tab of each; both stay signed in.
+Optional AI bridge, off by default (macOS/Linux, Node 20+): run npx splitsession-bridge install --client none, then Settings > For AI agents > switch on Agent bridge > Allow agent access > allow Chrome's prompt. SplitSession restarts once and reopens Settings: Connected. Without that program it shows Not connected by design. No remote code.
+```
+
+The longer version below is background for a reply if the reviewer asks; it does not fit the field.
 
 ```
 SplitSession is a container extension: several accounts of one website, signed in side by side in one Chrome profile. It works completely without anything else installed. To test containers: click the toolbar button, press +, create "A" and "B"; sign in to the same site in a tab of A and a tab of B; both stay signed in with different accounts.
 
 This update adds an optional "agent bridge" for the user's own local AI agent. It is off by default and does nothing until switched on. To test it (macOS or Linux, Node.js 20+):
 1. In a terminal: npx splitsession-bridge install --client none   (installs the companion program com.splitsession.bridge for this extension ID and prints how to add it to an MCP client; it changes no client configuration with --client none).
-2. SplitSession settings > For AI agents > switch on "Agent bridge". A dialog explains what the agent can access and where data goes; press "Allow agent access". The status line turns to "Connected".
+2. SplitSession settings > For AI agents > switch on "Agent bridge". A dialog explains what the agent can access and where data goes; press "Allow agent access". Chrome then asks for one optional permission (native messaging): allow it. SplitSession restarts once (Chrome gives a running extension that permission no other way) and reopens Settings at For AI agents; the status line is "Connected".
 3. Optional, to drive it: add the printed MCP server to an MCP client (for example: claude mcp add splitsession -- <the printed command>), then ask the agent to "list my tabs" or "open example.com in container A and read the heading".
 4. Switch the bridge off: the connection and the companion process end at once. npx splitsession-bridge uninstall removes the program.
 Without step 1 the bridge shows "not connected" by design; every other feature works.
 
 Data: nothing is sent to any server by the extension. With the bridge on, page content goes only to the local companion program through native messaging, and from there to the user's agent. Remote code: none; the extension runs only code in its package (see the remote-code answer).
 
-Source code (unminified, MIT): https://github.com/Misyuk-T/splitsession  — bridge program: bridge/ in the same repository, also on npm as splitsession-bridge. Video of the bridge in use: <link>
+Source code (unminified, MIT): https://github.com/Misyuk-T/splitsession  — bridge program: bridge/ in the same repository, also on npm as splitsession-bridge.
 ```
 
-### 60-second reviewer video (script; screen recording, no voice needed, captions on screen)
+### 60-second reviewer video (optional; script; screen recording, no voice needed, captions on screen)
 
 | Time | On screen | Caption |
 | --- | --- | --- |
@@ -294,9 +312,9 @@ Source code (unminified, MIT): https://github.com/Misyuk-T/splitsession  — bri
 | 0:08-0:18 | The same test site open in a tab of A and a tab of B, signed in as two different users, side by side. | "Two accounts of one site, at the same time." |
 | 0:18-0:24 | Settings → "For AI agents": "Agent bridge" is off, status "Off". | "The agent bridge is off by default." |
 | 0:24-0:32 | Terminal: `npx splitsession-bridge install --client none` and its output. | "The companion program is installed separately." |
-| 0:32-0:40 | Switch on → the disclosure dialog, scrolled slowly → "Allow agent access" → status "Connected". | "Before it turns on, the user sees what it allows." |
-| 0:40-0:52 | An MCP client (Claude Code) asked "open example.com in container B and tell me the heading": the tab opens in B's group, the page shows the agent mark; the answer appears in the terminal. | "The user's own agent acts in the chosen account." |
-| 0:52-0:60 | Popup → switch off → status gone; terminal: the next tool call says the bridge is off. | "Off: the connection closes at once." |
+| 0:32-0:44 | Switch on → the disclosure dialog, scrolled slowly → "Allow agent access" → Chrome's permission prompt → allow → SplitSession restarts once and reopens Settings: status "Connected". | "Before it turns on, the user sees what it allows." |
+| 0:44-0:54 | An MCP client (Claude Code) asked "open example.com in container B and tell me the heading": the tab opens in B's group, the page shows the agent mark; the answer appears in the terminal. | "The user's own agent acts in the chosen account." |
+| 0:54-0:60 | Popup → switch off → status gone; terminal: the next tool call says the bridge is off. | "Off: the connection closes at once." |
 
 ---
 
