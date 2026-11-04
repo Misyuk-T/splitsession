@@ -273,7 +273,10 @@ protocol code is not in the bundle at all.
   the restart; a marker in `storage.local` makes the next start open the options page again at For AI agents (the reload closes
   it). It never reloads twice: if the API is still missing after the restart, or after an earlier failed restart, the status
   asks for a Chrome restart, the diagnostics log gets an error entry, and no further reload is tried until the API shows up. The
-  unpacked Full declares the permission, so it never restarts itself.
+  unpacked Full declares the permission, so it never restarts itself. The reload wipes the container-tab map and the session
+  rules, and Chrome may not fire `onInstalled` for a reload without a version change, so the next start puts the container tabs
+  back itself (the after-update restore, whatever "Restore container tabs" says) before it reopens the page; if `onInstalled` fires
+  too, the two share one run.
 - **Served:** `bridge_info`, `list_containers`, `list_tabs`, `open_in_container`, `open_tab`, `navigate`, `reload`, `close_tab`,
   `activate_tab`, `assign_tab`, `get_tab_text`, `get_tab_html`, `snapshot` (refs work: the snapshot is read from the DOM),
   `select_option`, `scroll`, `wait_for`, `extension_log`, `click`, `type`, `screenshot_tab`, `navigate_back`, `navigate_forward`.

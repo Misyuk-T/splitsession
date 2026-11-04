@@ -41,7 +41,11 @@ export function createAgentSide(
   const local = b.storage.local as unknown as StorageAreaLike;
   // Only where `nativeMessaging` is granted at run time (the store build): the unpacked Full declares it, so its worker always
   // has the API and never restarts itself.
-  const nativeRestart = __CDP__ ? null : new NativeRestart(b, local, facet.log);
+  const nativeRestart = __CDP__
+    ? null
+    : new NativeRestart(b, local, facet.log, Date.now, () =>
+        facet.restoreAfterOwnReload(),
+      );
   const bridge = new AgentBridge(
     b,
     b.storage.session as unknown as StorageAreaLike,

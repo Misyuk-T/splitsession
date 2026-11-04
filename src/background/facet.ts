@@ -52,6 +52,7 @@ import {
   type PageKeyOf,
 } from "./isolation/page-keys";
 import { PopupChildren } from "./isolation/popup-children";
+import { singleFlight } from "./isolation/single-flight";
 import { type InternalOpenOptions, TabOpener } from "./isolation/tab-opener";
 import type { EngineCore, NavigationDetails } from "./isolation/types";
 import { FacetEvents } from "./events";
@@ -601,13 +602,30 @@ export class Facet {
       .installed(reason)
       .catch(logFailure(this.log, "strict mode after install failed"));
     if (reason !== "update") return;
-    await restoreTabsAfterUpdate({
+    await this.restoreOnce();
+  }
+
+  /**
+   * The bridge reloaded the extension itself (`bridge/native-restart.ts`). Chrome does not always fire `onInstalled("update")`
+   * for a reload without a version change, so the container tabs are put back from here, whatever `restoreTabs` says. Joins
+   * the restore that `onInstalled` started, if it did.
+   */
+  async restoreAfterOwnReload(): Promise<void> {
+    await this.ready;
+    const work = this.restoreOnce();
+    this.installing = Promise.all([this.installing, work]).then(() => {});
+    await work;
+  }
+
+  /** One restore at a time: two callers that both read an empty registry before either wrote would restore the tabs twice. */
+  private readonly restoreOnce = singleFlight(() =>
+    restoreTabsAfterUpdate({
       ...this.core,
       rules: this.rules,
       scripts: this.scripts,
       events: this.events,
-    });
-  }
+    }),
+  );
 
   /** Browser start: tab IDs from the last session mean nothing now. */
   handleStartup(): void {

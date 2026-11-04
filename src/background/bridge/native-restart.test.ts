@@ -49,7 +49,11 @@ describe("decideMissingApi", () => {
   });
 });
 
-function setup(granted = true, now = { t: 1_000_000 }) {
+function setup(
+  granted = true,
+  now = { t: 1_000_000 },
+  afterOwnReload?: () => Promise<void>,
+) {
   const area = new MemoryStorageArea();
   const log = createLogger(50);
   const tabs: Array<{ id: number; windowId: number; url: string }> = [];
@@ -67,7 +71,13 @@ function setup(granted = true, now = { t: 1_000_000 }) {
     windows: { update: vi.fn(async () => ({})) },
     alarms: { create: vi.fn(async () => {}), clear: vi.fn(async () => true) },
   };
-  const restart = new NativeRestart(b as never, area, log, () => now.t);
+  const restart = new NativeRestart(
+    b as never,
+    area,
+    log,
+    () => now.t,
+    afterOwnReload,
+  );
   return { restart, b, area, tabs, now, log };
 }
 
@@ -153,5 +163,43 @@ describe("NativeRestart", () => {
     await restart.start();
     expect(b.tabs.create).not.toHaveBeenCalled();
     expect(await restart.decide()).toBe("restart");
+  });
+
+  it("a fresh marker restores the container tabs first, before the options page is reopened", async () => {
+    const order: string[] = [];
+    const restore = vi.fn(async () => void order.push("restore"));
+    const { restart, b, area, now } = setup(true, { t: 1_000_000 }, restore);
+    b.tabs.create.mockImplementation(async () => {
+      order.push("reopen");
+      return {};
+    });
+    area.data.set(RESTART_MARKER_KEY, now.t - 1_000);
+    await restart.start();
+    expect(restore).toHaveBeenCalledTimes(1);
+    expect(order).toEqual(["restore", "reopen"]);
+  });
+
+  it("a failing restore does not stop the reopen", async () => {
+    const restore = vi.fn(async () => {
+      throw new Error("boom");
+    });
+    const { restart, b, area, now } = setup(true, { t: 1_000_000 }, restore);
+    area.data.set(RESTART_MARKER_KEY, now.t);
+    await restart.start();
+    expect(b.tabs.create).toHaveBeenCalledTimes(1);
+  });
+
+  it("no marker, or a stale one: no restore from here", async () => {
+    const none = vi.fn(async () => {});
+    await setup(true, { t: 1_000_000 }, none).restart.start();
+    const stale = vi.fn(async () => {});
+    const s = setup(true, { t: 1_000_000 }, stale);
+    s.area.data.set(
+      RESTART_MARKER_KEY,
+      s.now.t - RESTART_MARKER_MAX_AGE_MS - 1,
+    );
+    await s.restart.start();
+    expect(none).not.toHaveBeenCalled();
+    expect(stale).not.toHaveBeenCalled();
   });
 });

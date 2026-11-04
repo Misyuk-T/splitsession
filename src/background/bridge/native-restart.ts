@@ -65,6 +65,8 @@ export class NativeRestart {
     private readonly area: StorageAreaLike,
     private readonly log: Logger,
     private readonly now: () => number = Date.now,
+    /** Runs first when the restart is ours: the reload wiped what keeps container tabs isolated. */
+    private readonly afterOwnReload: () => Promise<void> = async () => {},
   ) {}
 
   /**
@@ -91,6 +93,14 @@ export class NativeRestart {
       return;
     this.cameBack = true;
     this.log("info", "agent bridge: restarted to finish turning on");
+    // Before the page is reopened and the bridge connects. `onInstalled` is not relied on to do this for a reload.
+    await this.afterOwnReload().catch((error) =>
+      this.log(
+        "warn",
+        "agent bridge: could not restore container tabs after the restart",
+        String(error),
+      ),
+    );
     await this.reopenOptions().catch((error) =>
       this.log(
         "warn",

@@ -8,7 +8,7 @@ import { type BrowserContext, chromium, expect, test } from "@playwright/test";
 import { TOOLS } from "../src/bridge/spec";
 import { BRIDGE_CONSENT_VERSION } from "../src/core/bridge-consent";
 import { hostPids, installHost, type Mcp, startMcp } from "./bridge-helpers";
-import { at, EXTENSION_ID } from "./env";
+import { at, EXTENSION_ID, TEST_PORT } from "./env";
 import { apiOf, extensionArgs, isOurWorker } from "./extension";
 import type { Facet } from "./fixtures";
 
@@ -368,5 +368,74 @@ test.describe("store build, basic mode", () => {
     await expect.poll(() => local("bridgeNativeRestartFailed")).toBeUndefined();
     await api("updateSettings", { agentBridge: false });
     await expect.poll(() => hostPids(facet), { timeout: 10_000 }).toEqual([]);
+  });
+
+  test("the extension's own restart with 'Restore container tabs' off: the container tab is back in its container and sends the container's cookie, not the real one", async () => {
+    test.skip(buildError !== "", `build failed: ${buildError}`);
+    test.setTimeout(120_000);
+    const { ctx, worker, api } = await start(GRANT_PATH);
+    await api("updateSettings", { restoreTabs: false });
+    const A = await api<{ id: string }>("createContainer", { name: "A" });
+    const cookieUrl = (value: string) =>
+      at(
+        "a.localhost",
+        `/set?c=${encodeURIComponent(`${value}; Max-Age=86400; Path=/`)}`,
+      );
+    const serverLog = async () =>
+      (await (
+        await fetch(`http://127.0.0.1:${TEST_PORT}/__log`)
+      ).json()) as Array<{ path: string; cookie: string }>;
+    // The real profile has its own cookie for the same site.
+    const plain = await ctx.newPage();
+    await plain.goto(cookieUrl("who=real"));
+
+    const created = ctx.waitForEvent("page");
+    const tabId = await api<number>(
+      "openInContainer",
+      cookieUrl("who=alice"),
+      A.id,
+    );
+    const page = await created;
+    await page.goto(at("a.localhost", "/whoami?t=own-reload"));
+    await expect(page.locator("#cookies")).toHaveText("who=alice");
+    await api("flushRestore");
+
+    // What a reload leaves behind: `storage.local` (the backup of the tab map) stays; `storage.session` (the map) and the
+    // session rules are gone, and the new worker's memory is empty. Chromium cannot reload a command-line extension, so the
+    // wipe is done by hand on the same worker: the tab leaves its container, then the backup is put back.
+    const backup = await worker.evaluate(
+      async () =>
+        (await (globalThis as any).chrome.storage.local.get("tabsBackup"))
+          .tabsBackup,
+    );
+    expect(Object.keys(backup ?? {})).toContain(String(tabId));
+    await api("assignTab", tabId, null, { reload: false });
+    await worker.evaluate(async (saved) => {
+      const c = (globalThis as any).chrome;
+      await c.storage.session.remove("tabs");
+      await c.storage.local.set({ tabsBackup: saved });
+      const rules = await c.declarativeNetRequest.getSessionRules();
+      await c.declarativeNetRequest.updateSessionRules({
+        removeRuleIds: rules.map((r: { id: number }) => r.id),
+      });
+      // The marker the bridge writes just before its own reload.
+      await c.storage.local.set({ bridgeNativeRestart: Date.now() });
+    }, backup);
+    expect(await api("getTabContainer", tabId)).toBeNull();
+
+    // The next worker start: the marker is found, and the tab goes back before anything else.
+    await fetch(`http://127.0.0.1:${TEST_PORT}/__log?clear=1`);
+    await worker.evaluate(() => (globalThis as any).facetNativeRestart.start());
+    await expect
+      .poll(() => api("getTabContainer", tabId), { timeout: 10_000 })
+      .toBe(A.id);
+    await expect(page.locator("#cookies")).toHaveText("who=alice", {
+      timeout: 10_000,
+    });
+    const sent = (await serverLog()).filter(
+      (e) => e.path === "/whoami?t=own-reload",
+    );
+    expect(sent.length).toBeGreaterThan(0);
+    expect(sent.every((e) => e.cookie === "who=alice")).toBe(true);
   });
 });
