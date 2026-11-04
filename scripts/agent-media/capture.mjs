@@ -29,6 +29,9 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
  * @param {string} [options.extension] built extension folder (default: the Full build, `.output/chrome-mv3`)
  * @param {{width: number, height: number}} [options.viewport] page area of the captured tab, CSS pixels
  * @param {boolean} [options.consent] grant the bridge's consent first (the store build asks for it)
+ * @param {number} [options.scale] device scale factor of the pictures (default 2)
+ * @param {boolean} [options.frames] also return `frames`: the brand tab after each tool call (png, the pill's verb, the
+ *   tab strip and the toolbar dot at that moment), for scripts/agent-gif.mjs
  * @returns the 2x picture of the brand tab while the agent works in it, the tab strip as Chrome has it, the toolbar dot,
  *   the favicon the extension drew, and the answers of the tool calls
  */
@@ -59,7 +62,7 @@ export async function captureAgent(root, options = {}) {
   const ctx = await chromium.launchPersistentContext(profile, {
     channel: "chromium",
     headless: true,
-    deviceScaleFactor: 2,
+    deviceScaleFactor: options.scale ?? 2,
     viewport,
     args: [
       `--disable-extensions-except=${extension}`,
@@ -155,38 +158,15 @@ export async function captureAgent(root, options = {}) {
     await sleep(1500); // no activity of the setup may linger on the tabs
 
     const calls = [];
-    const step = async (label, name, args) => {
-      const text = await call(name, args);
-      calls.push({ label, name, args, text });
-      return text;
-    };
-    const tabs = JSON.parse(await step("list", "list_tabs"));
-    const brandRow = tabs.find((t) => t.container?.name === "Brand");
-    const tabId = brandRow.tabId;
-    if (tabId !== brandTab.tabId) throw new Error("list_tabs: wrong Brand tab");
-    const snap = await step("snapshot", "snapshot", { tabId });
-    const ref = (re) => snap.match(re)?.[1];
-    const box = ref(/textbox "What's new\?" \[ref=(e\d+)\]/);
-    const post = ref(/button "Post" \[ref=(e\d+)\]/);
-    if (!box || !post) throw new Error(`composer not found:\n${snap}`);
-    await step("type", "type", { tabId, ref: box, text: REPLY });
-    await step("click", "click", { tabId, ref: post });
-    // The click posts a form: wait until the new feed (with the reply in it) is there, so the next tool lands on that page.
-    await brandTab.page.waitForFunction(
-      (text) =>
-        document.body.innerText.includes(text) &&
-        document.readyState === "complete",
-      REPLY.slice(0, 30),
-    );
-    // The last step is a read: the pill says "Agent: reading", with the eye. The picture is taken once the pill has faded
-    // in (about 0.5 s) and well before the action layer goes (about 3.5 s after the action).
-    await step("verify", "get_tab_text", { tabId });
-    // The glow breathes (35 % to 100 % opacity, 2.8 s a cycle, on the wall clock): the picture is taken at the top of a
-    // breath, once the pill has faded in, and well before the action layer goes (about 3.5 s after the action).
-    const glow = () =>
-      worker.evaluate(async (id) => {
+    const frames = []; // options.frames: the brand tab after each step (the animation's pictures)
+    const verbOf = (text) =>
+      /(?:Agent|-[0-9a-f]{4}): (.+)$/.exec(text)?.[1] ?? "";
+    // The glow breathes (35 % to 100 % opacity, 2.8 s a cycle, on the wall clock): a picture is taken at the top of a
+    // breath, once the pill has faded in (about 0.5 s) and well before the action layer goes (about 3.5 s after the action).
+    const glow = (id) =>
+      worker.evaluate(async (tid) => {
         const [r] = await chrome.scripting.executeScript({
-          target: { tabId: id, frameIds: [0] },
+          target: { tabId: tid, frameIds: [0] },
           world: "ISOLATED",
           func: () => {
             const s = globalThis.__facetAgentActivity;
@@ -196,87 +176,151 @@ export async function captureAgent(root, options = {}) {
           },
         });
         return r.result;
-      }, tabId);
-    await sleep(350);
-    let shot = null;
-    const until = Date.now() + 2200;
-    while (!shot && Date.now() < until) {
-      if ((await glow()) < 0.97) {
-        await sleep(30);
-        continue;
+      }, id);
+    const overlayOf = (id) =>
+      worker.evaluate(async (tid) => {
+        const [r] = await chrome.scripting.executeScript({
+          target: { tabId: tid, frameIds: [0] },
+          world: "ISOLATED",
+          func: () => {
+            const s = globalThis.__facetAgentActivity;
+            return {
+              text: s?.shadow?.textContent ?? "",
+              boosted: !!s?.boosted,
+            };
+          },
+        });
+        return r.result;
+      }, id);
+    const atFullGlow = async (id) => {
+      await sleep(300);
+      const until = Date.now() + 2900;
+      while (Date.now() < until) {
+        if ((await glow(id)) < 0.94) {
+          await sleep(30);
+          continue;
+        }
+        const taken = await brandTab.page
+          .screenshot({ timeout: 3000 })
+          .catch(() => null);
+        if (taken && (await glow(id)) > 0.88) return taken;
       }
-      const taken = await brandTab.page
-        .screenshot({ timeout: 3000 })
-        .catch(() => null);
-      if (taken && (await glow()) > 0.9) shot = taken;
-    }
-    if (!shot) throw new Error("no screenshot of the brand tab at a full glow");
-    const overlay = await worker.evaluate(async (id) => {
-      const [r] = await chrome.scripting.executeScript({
-        target: { tabId: id, frameIds: [0] },
-        world: "ISOLATED",
-        func: () => {
-          const s = globalThis.__facetAgentActivity;
-          return { text: s?.shadow?.textContent ?? "", boosted: !!s?.boosted };
-        },
-      });
-      return r.result;
-    }, tabId);
-    if (
-      !overlay.boosted ||
-      !/^[\w .-]*(Agent|-[0-9a-f]{4}): reading$/.test(overlay.text)
-    )
-      throw new Error(`the overlay is not showing: ${JSON.stringify(overlay)}`);
+      throw new Error("no screenshot of the brand tab at a full glow");
+    };
     // What Chrome has in the tab strip and on the toolbar button right now.
-    const favicon = await brandTab.page.evaluate(
-      () => document.querySelector('link[rel~="icon"]')?.href ?? null,
-    );
-    const chromeState = await worker.evaluate(async (id) => {
-      const webTabs = (await chrome.tabs.query({})).filter((t) =>
-        t.url.startsWith("http"),
+    const chromeNow = async (id, needFavicon) => {
+      const favicon = await brandTab.page.evaluate(
+        () => document.querySelector('link[rel~="icon"]')?.href ?? null,
       );
-      const groups = await chrome.tabGroups.query({});
-      return {
-        tabs: webTabs,
-        groups,
-        badge: {
-          text: await chrome.action.getBadgeText({ tabId: id }),
-          color: await chrome.action.getBadgeBackgroundColor({ tabId: id }),
-        },
-      };
-    }, tabId);
-    const strip = [
-      ...chromeState.groups.map((g) => {
-        const ts = chromeState.tabs
-          .filter((t) => t.groupId === g.id)
-          .sort((x, y) => x.index - y.index);
+      if (needFavicon && !favicon)
+        throw new Error("no favicon on the brand tab");
+      const state = await worker.evaluate(async (tid) => {
+        const webTabs = (await chrome.tabs.query({})).filter((t) =>
+          t.url.startsWith("http"),
+        );
+        const groups = await chrome.tabGroups.query({});
         return {
-          type: "group",
-          title: g.title ?? "",
-          color: g.color,
-          index: Math.min(...ts.map((t) => t.index)),
-          tabs: ts.map((t) => ({
+          tabs: webTabs,
+          groups,
+          badge: {
+            text: await chrome.action.getBadgeText({ tabId: tid }),
+            color: await chrome.action.getBadgeBackgroundColor({ tabId: tid }),
+          },
+        };
+      }, id);
+      const strip = [
+        ...state.groups.map((g) => {
+          const ts = state.tabs
+            .filter((t) => t.groupId === g.id)
+            .sort((x, y) => x.index - y.index);
+          return {
+            type: "group",
+            title: g.title ?? "",
+            color: g.color,
+            index: Math.min(...ts.map((t) => t.index)),
+            tabs: ts.map((t) => ({
+              title: t.title,
+              host: new URL(t.url).host,
+              active: t.id === id,
+              icon: t.id === id ? favicon : null,
+            })),
+          };
+        }),
+        ...state.tabs
+          .filter((t) => t.groupId < 0)
+          .map((t) => ({
+            type: "tab",
+            index: t.index,
             title: t.title,
             host: new URL(t.url).host,
-            active: t.id === tabId,
-            icon: t.id === tabId ? favicon : null,
+            active: false,
           })),
-        };
-      }),
-      ...chromeState.tabs
-        .filter((t) => t.groupId < 0)
-        .map((t) => ({
-          type: "tab",
-          index: t.index,
-          title: t.title,
-          host: new URL(t.url).host,
-          active: false,
-        })),
-    ]
-      .filter((g) => g.type === "tab" || g.tabs.length > 0)
-      .sort((x, y) => x.index - y.index);
-    if (!favicon) throw new Error("no favicon on the brand tab");
-    return { shot, strip, badge: chromeState.badge, calls, tabs };
+      ]
+        .filter((g) => g.type === "tab" || g.tabs.length > 0)
+        .sort((x, y) => x.index - y.index);
+      return { strip, badge: state.badge };
+    };
+    const grab = async (name, id, active) => {
+      const png = active
+        ? await atFullGlow(id)
+        : await brandTab.page.screenshot({ timeout: 3000 });
+      const overlay = await overlayOf(id);
+      frames.push({
+        name,
+        png,
+        pill: verbOf(overlay.text),
+        ...(await chromeNow(id, active)),
+      });
+      return { png, overlay };
+    };
+
+    const step = async (label, name, args) => {
+      const text = await call(name, args);
+      calls.push({ label, name, args, text });
+      return text;
+    };
+    if (options.frames) await grab("idle", brandTab.tabId, false);
+    const tabs = JSON.parse(await step("list", "list_tabs"));
+    const brandRow = tabs.find((t) => t.container?.name === "Brand");
+    const tabId = brandRow.tabId;
+    if (tabId !== brandTab.tabId) throw new Error("list_tabs: wrong Brand tab");
+    if (options.frames) await grab("list_tabs", tabId, false);
+    const snap = await step("snapshot", "snapshot", { tabId });
+    if (options.frames) await grab("snapshot", tabId, true);
+    const ref = (re) => snap.match(re)?.[1];
+    const box = ref(/textbox "What's new\?" \[ref=(e\d+)\]/);
+    const post = ref(/button "Post" \[ref=(e\d+)\]/);
+    if (!box || !post) throw new Error(`composer not found:\n${snap}`);
+    await step("type", "type", { tabId, ref: box, text: REPLY });
+    if (options.frames) await grab("type", tabId, true);
+    await step("click", "click", { tabId, ref: post });
+    // The click posts a form: wait until the new feed (with the reply in it) is there, so the next tool lands on that page.
+    await brandTab.page.waitForFunction(
+      (text) =>
+        document.body.innerText.includes(text) &&
+        document.readyState === "complete",
+      REPLY.slice(0, 30),
+    );
+    if (options.frames) await grab("click", tabId, true);
+    // The last step is a read: the pill says "Agent: reading", with the eye.
+    await step("verify", "get_tab_text", { tabId });
+    const last = await grab("get_tab_text", tabId, true);
+    if (
+      !last.overlay.boosted ||
+      !/^[\w .-]*(Agent|-[0-9a-f]{4}): reading$/.test(last.overlay.text)
+    )
+      throw new Error(
+        `the overlay is not showing: ${JSON.stringify(last.overlay)}`,
+      );
+    const now = frames[frames.length - 1];
+    return {
+      shot: last.png,
+      strip: now.strip,
+      badge: now.badge,
+      calls,
+      tabs,
+      frames,
+    };
   } finally {
     await mcp?.close().catch(() => undefined);
     await api0(ctx).catch(() => undefined);

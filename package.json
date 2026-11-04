@@ -26,6 +26,7 @@
     "store:assets": "pnpm build:lite && node scripts/store-assets.mjs",
     "store:agent": "node scripts/store-agent.mjs",
     "readme:media": "pnpm build:lite && node scripts/readme-media.mjs",
+    "agent:gif": "node scripts/agent-gif.mjs",
     "agent:media": "pnpm build:full && node bridge/build.mjs && node scripts/agent-media.mjs",
     "typecheck": "tsc --noEmit && tsc --noEmit -p e2e && tsc --noEmit -p bridge",
     "lint": "eslint . --ext .ts,.tsx,.mjs",
