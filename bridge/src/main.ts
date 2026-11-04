@@ -11,7 +11,8 @@ import {
   UsageError,
 } from "./cli";
 import { runHost } from "./host";
-import { runMcp } from "./mcp";
+import { liveDispatcher, runMcp } from "./mcp";
+import { parseTryArgs, runTry, TRY_USAGE } from "./try";
 
 declare const __VERSION__: string;
 
@@ -26,6 +27,34 @@ if (mode === "host") {
     );
     process.exit(1);
   });
+} else if (mode === "try") {
+  if (rest.includes("--help") || rest.includes("-h")) {
+    process.stdout.write(TRY_USAGE);
+  } else {
+    try {
+      const options = parseTryArgs(rest);
+      void runTry(options, liveDispatcher(process.env, { name: "" }, false), {
+        log: (line: string) => process.stdout.write(`${line}\n`),
+        version: __VERSION__,
+      }).then(
+        (code) => {
+          process.exitCode = code;
+        },
+        (error) => {
+          process.stderr.write(
+            `splitsession-bridge try: ${error instanceof Error ? error.message : String(error)}\n`,
+          );
+          process.exitCode = 1;
+        },
+      );
+    } catch (error) {
+      if (!(error instanceof UsageError)) throw error;
+      process.stderr.write(
+        `splitsession-bridge: ${error.message}\n\n${TRY_USAGE}`,
+      );
+      process.exit(2);
+    }
+  }
 } else if (mode === "--version" || mode === "version" || mode === "-v") {
   process.stdout.write(`${__VERSION__}\n`);
 } else if (

@@ -16,6 +16,11 @@ npx splitsession-bridge uninstall
 
 Then open SplitSession Settings > "For AI agents" and switch on "Agent bridge".
 
+No AI client at hand? `npx splitsession-bridge try` is a read-only self-test of the running bridge: one PASS/FAIL line each
+for `bridge_info` (extension version, mode, windows / tabs / containers per profile), `list_containers` (names, colours) and
+`list_tabs` (counts only, never titles or URLs). Open https://example.com and run `try --tab <id>` (it prints the ID) to also
+read that one tab. `--profile <name or key>` picks a profile; exit code 0 when everything passed. It changes nothing.
+
 Options of `install`: `--browser chrome|chromium|brave|edge|arc|all` (default `chrome`), `--extension-id <id>` (default
 the SplitSession Full extension), `--client <list>`: any of `claude`, `codex`, `cursor`, `claude-desktop` (macOS),
 `gemini`, `vscode`, or `all` / `none`. Without `--client`, a terminal run asks Y/n for each AI client it finds, and a

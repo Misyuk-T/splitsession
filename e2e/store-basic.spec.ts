@@ -285,6 +285,29 @@ test.describe("store build, basic mode", () => {
         url: at("a.localhost", "/agent?again"),
       });
 
+      // `splitsession-bridge try` (the reviewers' self-test): the built CLI against the same real host, read-only.
+      const tryEnv = {
+        ...(process.env as Record<string, string>),
+        FACET_BRIDGE_SOCKET: facet.profile.socketPath,
+        FACET_BRIDGE_MANIFEST_DIRS: facet.profile.nativeHostsDir,
+      };
+      const cli = path.join(ROOT, "bridge", "dist", "splitsession-bridge.mjs");
+      const plain = execFileSync(process.execPath, [cli, "try"], {
+        env: tryEnv,
+        encoding: "utf8",
+      });
+      expect(plain).toMatch(/PASS {2}bridge_info: .*mode basic/);
+      expect(plain).toMatch(/PASS {2}list_containers: .*Basic/);
+      expect(plain).toMatch(/PASS {2}list_tabs: \d+ tabs?/);
+      expect(plain).not.toMatch(/FAIL|localhost/); // no URL or title of a tab
+      const withTab = execFileSync(
+        process.execPath,
+        [cli, "try", "--tab", String(inBox.tabId)],
+        { env: tryEnv, encoding: "utf8" },
+      );
+      expect(withTab).toMatch(/PASS {2}get_tab_text: tab \d+: /);
+      expect(withTab).toMatch(/PASS {2}snapshot: tab \d+: [1-9]\d* elements?/);
+
       // No debugger was ever attached.
       expect(
         await ctx

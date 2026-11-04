@@ -62,6 +62,7 @@ never your real config: `HOME=$(mktemp -d) node bridge/dist/splitsession-bridge.
    npm view splitsession-bridge version
    npx --yes splitsession-bridge@latest version
    npx --yes splitsession-bridge@latest status          # read-only
+   npx --yes splitsession-bridge@latest try --help      # read-only self-test for reviewers (0.4.1+)
    ```
 
 5. Tag the commit `bridge-v<version>` (the extension's own tags are `v<version>`): `git tag bridge-v0.1.0 && git push --tags`

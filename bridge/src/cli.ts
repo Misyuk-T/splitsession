@@ -64,6 +64,7 @@ usage:
   splitsession-bridge install [--browser chrome|chromium|brave|edge|arc|all] [--extension-id <id>] [--client <list>]
   splitsession-bridge uninstall [--browser <name>|all] [--client <list>]
   splitsession-bridge status [--browser <name>|all]
+  splitsession-bridge try [--profile <name or key>] [--tab <id>]
   splitsession-bridge host     (started by Chrome; do not run by hand)
   splitsession-bridge mcp      (started by your AI client; do not run by hand)
 
@@ -80,6 +81,10 @@ uninstall  removes the host registration and the copied program (every browser u
          "${MCP_NAME}" entry from every AI client (or those in --client). Other entries are not touched.
 status   reports the host registration, the copied program, which AI clients have it registered and whether a host
          is running (read-only).
+try      a read-only self-test of the running bridge for people without an AI client: bridge_info, list_containers and
+         list_tabs (counts and container names only, never titles or URLs), one PASS/FAIL line each; with --tab <id>
+         it also reads that one tab (text and snapshot). Needs install and the "Agent bridge" switch on. Exit code 0
+         when every step passed. See: splitsession-bridge try --help
 `;
 
 // Chrome extension IDs are 32 letters a-p.

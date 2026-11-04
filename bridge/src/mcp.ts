@@ -309,10 +309,14 @@ export const MCP_TOOLS = TOOLS.map((tool) => {
 });
 const mcpToolByName = (name: string) => MCP_TOOLS.find((t) => t.name === name);
 
-/** The dispatcher of the real server: sockets on disk, one connection per call. */
+/**
+ * The dispatcher of the real server: sockets on disk, one connection per call. `cleanup: false` (the read-only `try`
+ * command) leaves a socket file that refuses connections where it is instead of removing it.
+ */
 export function liveDispatcher(
   env: NodeJS.ProcessEnv = process.env,
   identity: Identity = { name: "" },
+  cleanup = true,
 ): Dispatcher {
   return new Dispatcher({
     discover: () => discoverEndpoints(bridgesDir(env), socketPath(env)),
@@ -332,7 +336,7 @@ export function liveDispatcher(
         ctx,
       ),
     unreachable: () => unreachableMessage(env),
-    gone: (ep) => void removeIfStale(ep),
+    ...(cleanup ? { gone: (ep) => void removeIfStale(ep) } : {}),
   });
 }
 

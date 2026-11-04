@@ -201,6 +201,17 @@ Needs Node.js 20 or newer, on macOS or Linux (Windows is not supported yet). The
    first time, a dialog says what the agent program can do and where the data goes; **"Allow agent access"** records your
    consent and turns the bridge on, "Cancel" (or Esc) leaves it off. Chrome starts the host when you do. In the Chrome Web Store build the first switch-on grants `nativeMessaging` and SplitSession restarts itself once (see "One automatic restart after the first grant" below); the unpacked Full needs no restart. The same section has a **"How to connect"** disclosure with step 1 (a copy block, live status, "Check again").
 
+**No AI client at hand (a store reviewer, a first check)?** `npx splitsession-bridge try` is a one-shot, read-only self-test
+of the running bridge: after `install` and switching the bridge on, it talks to the extension the way the MCP server does and
+prints one PASS/FAIL line per step: `bridge_info` (per connected profile: extension version, mode `basic` or `full`, number of
+windows, tabs and containers), `list_containers` (names and colours) and `list_tabs` (counts per container only, never titles
+or URLs of your tabs). Open https://example.com (optionally in a container), and `try` prints the tab ID of tabs whose host is
+exactly example.com; `try --tab <id>` then also reads that one tab (`get_tab_text`, first 200 characters, and `snapshot`: the
+element count and the first 10 lines). `--profile "<name or key>"` picks a Chrome profile when several have the bridge on.
+Exit code 0 when every step passed, 1 on a FAIL (host not installed: run `install`; bridge off or not connected: switch it on
+in Settings, "For AI agents"), 2 on a bad option. It clicks, types and navigates nothing, opens no tab and writes nothing (it
+does not even remove a stale socket file, as the MCP server does). `npx splitsession-bridge try --help` says the same.
+
 Remove it with `npx splitsession-bridge uninstall`: it takes down the host and the `splitsession` entry (only that key, with a
 backup) from every AI client above (`--client <list>` limits it). `npx splitsession-bridge status` lists which clients have it
 registered and whether they point at the current host copy.
