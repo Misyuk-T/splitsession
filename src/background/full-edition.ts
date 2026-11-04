@@ -12,6 +12,7 @@ import {
   hasNativeMessaging,
   releaseNativeMessaging,
 } from "./bridge/native-permission";
+import { NativeRestart } from "./bridge/native-restart";
 import { readProfileKey, renewProfileKey } from "./bridge/profile-key";
 import { readProfileLabel } from "./bridge/profile-label";
 import { BridgeRouter } from "./bridge/router";
@@ -38,6 +39,9 @@ export function createAgentSide(
   b: typeof browser = browser,
 ): AgentSide {
   const local = b.storage.local as unknown as StorageAreaLike;
+  // Only where `nativeMessaging` is granted at run time (the store build): the unpacked Full declares it, so its worker always
+  // has the API and never restarts itself.
+  const nativeRestart = __CDP__ ? null : new NativeRestart(b, local, facet.log);
   const bridge = new AgentBridge(
     b,
     b.storage.session as unknown as StorageAreaLike,
@@ -47,7 +51,13 @@ export function createAgentSide(
       renewKey: () => renewProfileKey(local),
       label: () => readProfileLabel(local),
     },
+    nativeRestart,
   );
+  // Test build only (FACET_TEST_GRANT_NM): Chromium cannot really reload a command-line extension, so the e2e runs the next
+  // worker's start by hand (e2e/store-basic.spec.ts).
+  if (__TEST_NM_HIDDEN__)
+    (globalThis as { facetNativeRestart?: unknown }).facetNativeRestart =
+      nativeRestart;
   return {
     bridgeApi: createBridgeApi(bridge, b, extras.bridgeConsent!),
     install(api) {
@@ -159,7 +169,9 @@ export function createAgentSide(
         void cdp.detachStale();
       }
     },
-    start() {
+    async start() {
+      // After our own restart for nativeMessaging: reopen the page the reload closed, before the bridge looks at the API.
+      await nativeRestart?.start();
       return bridge.sync(extras.settings.get().agentBridge);
     },
   };

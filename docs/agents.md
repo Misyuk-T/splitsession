@@ -265,6 +265,15 @@ protocol code is not in the bundle at all.
   gives the permission back; Chrome may hand it out again without asking, so the lock is the disclosure and the consent record,
   which are asked again whenever the consent is missing. If Chrome (or you, in chrome://extensions) takes the permission away
   while the bridge is on, the bridge switches itself off.
+- **One automatic restart after the first grant.** Chrome gives a service worker that was already running no `connectNative`
+  after the user grants the permission (`permissions.contains` says yes, `runtime.connectNative` stays undefined until the
+  worker is started anew). So when the bridge finds the permission granted but the API missing, SplitSession restarts the
+  extension **once** (`runtime.reload()`, `src/background/bridge/native-restart.ts`), with the status "SplitSession restarts once
+  to finish turning on the agent bridge". The consent and `agentBridge: true` are stored before that, so the bridge is on after
+  the restart; a marker in `storage.local` makes the next start open the options page again at For AI agents (the reload closes
+  it). It never reloads twice: if the API is still missing after the restart, or after an earlier failed restart, the status
+  asks for a Chrome restart, the diagnostics log gets an error entry, and no further reload is tried until the API shows up. The
+  unpacked Full declares the permission, so it never restarts itself.
 - **Served:** `bridge_info`, `list_containers`, `list_tabs`, `open_in_container`, `open_tab`, `navigate`, `reload`, `close_tab`,
   `activate_tab`, `assign_tab`, `get_tab_text`, `get_tab_html`, `snapshot` (refs work: the snapshot is read from the DOM),
   `select_option`, `scroll`, `wait_for`, `extension_log`, `click`, `type`, `screenshot_tab`, `navigate_back`, `navigate_forward`.

@@ -298,4 +298,75 @@ test.describe("store build, basic mode", () => {
     }
     await expect.poll(() => hostPids(facet), { timeout: 10_000 }).toEqual([]);
   });
+
+  test("granted after the worker started (simulated): switching on asks for one restart of the extension, the next start reopens the options page at For AI agents, a second restart is never asked for, and the bridge connects once the API is there", async () => {
+    test.skip(buildError !== "", `build failed: ${buildError}`);
+    test.setTimeout(120_000);
+    // Chromium cannot really reload a command-line extension (`runtime.reload()` unloads it for good, headless or not), so the
+    // reload is counted instead and the next worker start is run by hand on the same worker (`facetNativeRestart`, test build only).
+    const { ctx, worker, api, facet } = await start(GRANT_PATH);
+    installHost(facet);
+    await api("grantBridgeConsent", BRIDGE_CONSENT_VERSION);
+    await worker.evaluate(() => {
+      const g = globalThis as any;
+      g.__reloads = 0;
+      g.chrome.runtime.reload = () => void g.__reloads++;
+      g.__facetTestNmHidden = true; // behaves like a worker that started before the grant
+    });
+    const reloads = () =>
+      worker.evaluate(() => (globalThis as any).__reloads as number);
+    const local = (key: string) =>
+      worker.evaluate(
+        async (k) =>
+          ((await (globalThis as any).chrome.storage.local.get(k)) as any)[k],
+        key,
+      );
+
+    // Switching on: consent and the setting are stored first, then the one restart is asked for, with an honest status.
+    await api("updateSettings", { agentBridge: true });
+    await expect.poll(reloads).toBe(1);
+    expect(await api("getSettings")).toMatchObject({ agentBridge: true });
+    expect(await api("getBridgeState")).toMatchObject({
+      status: "error",
+      error: expect.stringContaining("restarts once"),
+    });
+    expect(typeof (await local("bridgeNativeRestart"))).toBe("number");
+
+    // The next worker: the marker is consumed and the options page opens at "For AI agents" (the reload closed the old one).
+    await worker.evaluate(() => (globalThis as any).facetNativeRestart.start());
+    expect(await local("bridgeNativeRestart")).toBeUndefined();
+    await expect
+      .poll(() => ctx.pages().map((p) => p.url()), { timeout: 10_000 })
+      .toContain(`chrome-extension://${EXTENSION_ID}/options.html#agent`);
+
+    // Still "missing" after the restart: no second reload, a clear message, and the diagnostics log says so.
+    await api("retryBridge");
+    await expect
+      .poll(async () => (await api<{ error: string }>("getBridgeState")).error)
+      .toContain("Quit and reopen Chrome");
+    await api("retryBridge");
+    expect(await reloads()).toBe(1);
+    expect(
+      (await api<Array<{ level: string; message: string }>>("getLog")).filter(
+        (e) =>
+          e.level === "error" &&
+          /still missing after a restart/.test(e.message),
+      ),
+    ).toHaveLength(1);
+
+    // The API is there (a Chrome restart): it connects, and the give-up is forgotten.
+    await worker.evaluate(() => {
+      (globalThis as any).__facetTestNmHidden = false;
+    });
+    await api("retryBridge");
+    await expect
+      .poll(
+        async () => (await api<{ status: string }>("getBridgeState")).status,
+        { timeout: 20_000 },
+      )
+      .toBe("connected");
+    await expect.poll(() => local("bridgeNativeRestartFailed")).toBeUndefined();
+    await api("updateSettings", { agentBridge: false });
+    await expect.poll(() => hostPids(facet), { timeout: 10_000 }).toEqual([]);
+  });
 });

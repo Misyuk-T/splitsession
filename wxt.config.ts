@@ -122,6 +122,7 @@ export default defineConfig({
     define: {
       __FULL__: JSON.stringify(full),
       __CDP__: JSON.stringify(cdp),
+      __TEST_NM_HIDDEN__: JSON.stringify(grantNativeMessaging),
       __EXTRA_COPY_IDS__: JSON.stringify(extraCopyIds),
     },
   }),

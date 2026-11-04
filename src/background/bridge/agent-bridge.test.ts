@@ -747,4 +747,87 @@ describe("AgentBridge", () => {
     await bridge.sync(false); // and it can still be switched off
     expect(bridge.state().status).toBe("off");
   });
+
+  describe("granted nativeMessaging but a worker that predates the grant", () => {
+    const withRestarter = (outcome: "not-granted" | "restart" | "give-up") => {
+      const ctx = setup();
+      (ctx.b.runtime as { connectNative?: unknown }).connectNative = undefined;
+      const restarter = {
+        decide: vi.fn(async () => outcome),
+        restart: vi.fn(async () => {}),
+        settled: vi.fn(async () => {}),
+      };
+      const bridge = new AgentBridge(
+        ctx.b as never,
+        ctx.area,
+        ctx.log,
+        undefined,
+        restarter,
+      );
+      return { ...ctx, bridge, restarter };
+    };
+
+    it("restarts the extension once, with an honest status", async () => {
+      const { bridge, restarter } = withRestarter("restart");
+      await bridge.sync(true, true);
+      await vi.advanceTimersByTimeAsync(0);
+      expect(restarter.restart).toHaveBeenCalledTimes(1);
+      expect(bridge.state()).toMatchObject({
+        status: "error",
+        error: expect.stringContaining("restarts once"),
+      });
+    });
+
+    it("not granted: today's error, no restart", async () => {
+      const { bridge, restarter } = withRestarter("not-granted");
+      await bridge.sync(true, true);
+      await vi.advanceTimersByTimeAsync(0);
+      expect(restarter.restart).not.toHaveBeenCalled();
+      expect(bridge.state().error).toContain("has not granted");
+    });
+
+    it("after a restart it did not help: asks for a Chrome restart and does not reload, however often it looks again", async () => {
+      const { bridge, restarter } = withRestarter("give-up");
+      await bridge.sync(true, true);
+      await vi.advanceTimersByTimeAsync(0);
+      bridge.retry();
+      bridge.retry();
+      await vi.advanceTimersByTimeAsync(120_000);
+      expect(restarter.restart).not.toHaveBeenCalled();
+      expect(bridge.state().error).toContain("Quit and reopen Chrome");
+    });
+
+    it("does not restart when the switch went off while the permission was being looked at", async () => {
+      const { bridge, restarter } = withRestarter("restart");
+      let answer!: (v: "restart") => void;
+      restarter.decide.mockImplementation(
+        () => new Promise<"restart">((r) => (answer = r)),
+      );
+      await bridge.sync(true, true);
+      await bridge.sync(false);
+      answer("restart");
+      await vi.advanceTimersByTimeAsync(0);
+      expect(restarter.restart).not.toHaveBeenCalled();
+    });
+
+    it("with the API present it connects and forgets an earlier failed restart", async () => {
+      const ctx = setup();
+      const restarter = {
+        decide: vi.fn(async () => "restart" as const),
+        restart: vi.fn(async () => {}),
+        settled: vi.fn(async () => {}),
+      };
+      const bridge = new AgentBridge(
+        ctx.b as never,
+        ctx.area,
+        ctx.log,
+        undefined,
+        restarter,
+      );
+      await bridge.sync(true, true);
+      expect(ctx.b.runtime.connectNative).toHaveBeenCalledTimes(1);
+      expect(restarter.settled).toHaveBeenCalled();
+      expect(restarter.decide).not.toHaveBeenCalled();
+    });
+  });
 });

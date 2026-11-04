@@ -51,7 +51,10 @@ Lite: `nativeMessaging` is optional and `debugger` is not there at all), with De
 name, with another copy-ID list or without the bridge's consent gate. The store build is the bridge's **basic mode**: the
 compile-time flag `__CDP__` (`wxt.config.ts`, `src/env.d.ts`; true only for the unpacked Full) removes the CDP modules from it.
 `FACET_TEST_GRANT_NM=1` (test only) makes `nativeMessaging` required in a store build so headless e2e can run the bridge
-(`e2e/store-basic.spec.ts`); check-store refuses it. `FACET_TEST_KEY` (test only) puts a given public key into any build, so a Lite and a store
+(`e2e/store-basic.spec.ts`); check-store refuses it. In that build only, `__TEST_NM_HIDDEN__` is true: the worker global
+`__facetTestNmHidden` makes `connectNative` look missing and `facetNativeRestart` exposes the restart logic, because
+Chromium cannot really reload a command-line extension (`runtime.reload()` unloads it for good); check-store and check-lite fail on
+both strings in a release bundle. `FACET_TEST_KEY` (test only) puts a given public key into any build, so a Lite and a store
 build can share one ID (`e2e/store-upgrade.spec.ts`).
 
 - **Name and description** per edition: the `EDITIONS` table at the top of `wxt.config.ts` (the only place).

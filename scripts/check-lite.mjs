@@ -48,6 +48,10 @@ const MARKERS = [
   ["data-ctr page marker", /data-ctr|dataset\.ctr/],
   ["agent bridge card styles", /fx-bridge/],
   ["CDP debugging handle (facetCdp)", /facetCdp/],
+  [
+    "e2e test hook (__facetTestNmHidden, facetNativeRestart)",
+    /__facetTestNmHidden|facetNativeRestart/,
+  ],
 ];
 const TEXT = /\.(?:js|mjs|html|css|json|map|txt)$/;
 

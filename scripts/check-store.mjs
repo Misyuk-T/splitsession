@@ -45,6 +45,11 @@ const CDP_MARKERS = [
   ["CDP Runtime.evaluate", /Runtime\.evaluate/],
   ["CDP DOM.setFileInputFiles", /DOM\.setFileInputFiles/],
   ["CDP debugging handle (facetCdp)", /facetCdp/],
+  // The e2e hook that pretends the worker predates the nativeMessaging grant (FACET_TEST_GRANT_NM builds only).
+  [
+    "test hook (__facetTestNmHidden, facetNativeRestart)",
+    /__facetTestNmHidden|facetNativeRestart/,
+  ],
 ];
 const TEXT = /\.(?:js|mjs|html|css|json|txt)$/;
 

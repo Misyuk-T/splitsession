@@ -17,6 +17,12 @@ import {
 } from "../../bridge/protocol";
 import type { StorageAreaLike } from "../../engine/storage/storage-area";
 import type { Logger } from "../log";
+import {
+  type MissingApi,
+  NOT_GRANTED_TEXT,
+  RESTART_CHROME_TEXT,
+  RESTARTING_TEXT,
+} from "./native-restart";
 import { newProfileKey } from "./profile-key";
 import type { ActionMeta } from "./router";
 
@@ -85,6 +91,14 @@ const memoryIdentity = (): ProfileIdentity => {
     label: async () => "",
   };
 };
+
+/** What the connection needs when `nativeMessaging` is granted but this worker has no `connectNative` (native-restart.ts). */
+export interface NativeRestarter {
+  decide(): Promise<MissingApi>;
+  restart(): Promise<void>;
+  /** The API is there, or the permission is not: forget an earlier failed restart. */
+  settled(): Promise<void>;
+}
 
 /** What the connection needs from the router. */
 export interface ToolRunner {
@@ -165,6 +179,7 @@ export class AgentBridge {
     private readonly area: StorageAreaLike,
     private readonly log: Logger,
     private readonly identity: ProfileIdentity = memoryIdentity(),
+    private readonly restarter: NativeRestarter | null = null,
   ) {
     this.loaded = this.load();
   }
@@ -268,13 +283,15 @@ export class AgentBridge {
     // A profile waiting for the other one to let go stays "busy" between looks instead of flickering.
     if (this.current.status !== "busy")
       this.publish({ status: "connecting", error: null });
+    // The store build has the permission only after the user granted it; without it Chrome leaves the API out. A worker that
+    // started before the grant keeps lacking it even after the grant: see native-restart.ts.
+    if (this.nativeMissing()) {
+      void this.apiMissing();
+      return;
+    }
+    void this.restarter?.settled();
     let port: PortLike;
     try {
-      // The store build has the permission only after the user granted it; without it Chrome leaves the API out.
-      if (typeof this.b.runtime.connectNative !== "function")
-        throw new Error(
-          "Chrome has not granted SplitSession the permission to talk to a program on this computer (nativeMessaging)",
-        );
       port = this.b.runtime.connectNative(HOST_NAME) as unknown as PortLike;
     } catch (error) {
       this.fail(error instanceof Error ? error.message : String(error));
@@ -304,6 +321,43 @@ export class AgentBridge {
         this.fail("the host started but did not answer");
       }
     }, CONNECT_TIMEOUT_MS);
+  }
+
+  private nativeMissing(): boolean {
+    // Test build only (FACET_TEST_GRANT_NM store build): the e2e makes this worker behave like one that predates the grant.
+    if (
+      __TEST_NM_HIDDEN__ &&
+      (globalThis as Record<string, unknown>).__facetTestNmHidden
+    )
+      return true;
+    return typeof this.b.runtime.connectNative !== "function";
+  }
+
+  /** `connectNative` is missing: not granted (say so), granted but this worker is older than the grant (restart once), or a restart did not help. */
+  private async apiMissing(): Promise<void> {
+    const outcome =
+      (await this.restarter?.decide().catch(() => null)) ?? "not-granted";
+    // Switched off, or already connecting some other way, while the permission was looked at.
+    if (!this.enabled || this.port) return;
+    if (outcome === "restart") {
+      this.publish({ status: "error", error: RESTARTING_TEXT });
+      try {
+        // Consent and `agentBridge: true` are stored before connect runs (SettingsStore.update stores, then notifies), so the
+        // bridge is on again after the restart.
+        await this.restarter!.restart();
+        return;
+      } catch (error) {
+        this.log("warn", "agent bridge: could not restart", String(error));
+        this.fail(String(error));
+        return;
+      }
+    }
+    // A given-up restart is not retried in a tight loop: the alarm looks again (Chrome restarted by then, perhaps).
+    if (outcome === "give-up") {
+      this.publish({ status: "error", error: RESTART_CHROME_TEXT });
+      return;
+    }
+    this.fail(NOT_GRANTED_TEXT);
   }
 
   private onMessage(port: PortLike, raw: unknown): void {

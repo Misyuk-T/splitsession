@@ -101,6 +101,10 @@ Drag `store/chrome-mv3.crx` onto chrome://extensions. Chrome treats it as an upd
       access" then makes Chrome ask for the optional native-applications permission (accept it: the bridge connects if the
       host is installed; refuse it in a second try: the bridge stays off and the page says so). Switching the bridge off
       gives the permission back (chrome://extensions → Details → Permissions).
+- [ ] The first time the permission is granted, SplitSession **restarts itself once** (a second or two: the options tab
+      closes and comes back by itself at "For AI agents", with the switch still on) and the bridge connects. Expected, not a
+      bug: the running service worker cannot use the permission until the extension restarts. Container tabs stay in their
+      containers. If the status says "Quit and reopen Chrome" instead, the restart did not help: quit Chrome and open it again.
 - [ ] With the bridge on, `bridge_info` says `"mode": "basic"` and the agent's tool list has no `run_js`, `press_key`, ...
 - [ ] Diagnostics log: no errors around the update; one service worker running the new version (chrome://extensions →
       "service worker" link → console: `chrome.runtime.getManifest().version` is the new version and

@@ -17,3 +17,10 @@ declare const __CDP__: boolean;
  * the e2e spec duplicate-copies.spec.ts sets it, through FACET_TEST_COPY_IDS (wxt.config.ts).
  */
 declare const __EXTRA_COPY_IDS__: readonly string[];
+
+/**
+ * Test hook, `true` only in the store build made with FACET_TEST_GRANT_NM=1 (wxt.config.ts): lets the e2e pretend that the
+ * running worker predates the `nativeMessaging` grant (agent-bridge.ts). `false` everywhere else, so the code and its marker
+ * `__facetTestNmHidden` are not in a release bundle (scripts/check-store.mjs and check-lite.mjs check).
+ */
+declare const __TEST_NM_HIDDEN__: boolean;
