@@ -49,8 +49,11 @@ never your real config: `HOME=$(mktemp -d) node bridge/dist/splitsession-bridge.
 
    ```sh
    cd bridge
-   npm publish --otp=<six digits from your authenticator>
+   npm publish --auth-type=web   # confirm in the browser (passkey); used for 0.4.0, 2026-11-04
    ```
+
+   `npm login` first if `npm whoami` says 401 (an expired token makes `publish` answer E404). The OTP is the code of the
+   **npm** entry in the authenticator, not GitHub's; `--auth-type=web` avoids it.
 
 4. Check it from a clean place, not from the checkout:
 
