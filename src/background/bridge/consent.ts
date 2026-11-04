@@ -4,6 +4,7 @@ import {
   type BridgeConsent,
   hasBridgeConsent,
   NO_CONSENT_MESSAGE,
+  NO_PERMISSION_MESSAGE,
   readBridgeConsent,
 } from "../../core/bridge-consent";
 import { SettingsError } from "../../core/settings";
@@ -14,7 +15,9 @@ import type { SettingsGuard } from "../settings-store";
  * The consent record in `storage.local` (src/core/bridge-consent.ts) and the settings guard built on it. Full edition only.
  * The guard is the one gate every route to `agentBridge: true` passes: `SettingsStore.update` (the options switch, the
  * popup, the API, tests) refuses it without consent, and `SettingsStore.load` turns a stored `true` without consent off
- * (an install from before the gate, data written by another build, anything that bypassed the API).
+ * (an install from before the gate, data written by another build, anything that bypassed the API). The same gate holds the
+ * `nativeMessaging` permission (`hasPermission`): the store build gets it from the user at runtime and loses it again when the
+ * bridge goes off or Chrome's extension settings take it back, and the bridge cannot be on without it.
  */
 export class BridgeConsentStore {
   constructor(
@@ -48,15 +51,18 @@ export class BridgeConsentStore {
     return consent;
   }
 
-  guard(): SettingsGuard {
+  guard(hasPermission: () => Promise<boolean>): SettingsGuard {
+    const allowed = async () => (await this.has()) && (await hasPermission());
     return {
       loaded: async (settings) =>
-        settings.agentBridge && !(await this.has())
+        settings.agentBridge && !(await allowed())
           ? { ...settings, agentBridge: false }
           : settings,
       check: async (next, previous) => {
-        if (next.agentBridge && !previous.agentBridge && !(await this.has()))
-          throw new SettingsError(NO_CONSENT_MESSAGE);
+        if (!next.agentBridge || previous.agentBridge) return;
+        if (!(await this.has())) throw new SettingsError(NO_CONSENT_MESSAGE);
+        if (!(await hasPermission()))
+          throw new SettingsError(NO_PERMISSION_MESSAGE);
       },
     };
   }

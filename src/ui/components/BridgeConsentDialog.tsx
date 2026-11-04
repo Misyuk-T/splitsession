@@ -47,11 +47,22 @@ export const BridgeConsentDialog = ({
           read the content of pages in every tab and window, including pages you
           are signed in to;
         </li>
-        <li>take screenshots of your tabs;</li>
-        <li>read the pages’ console messages and network activity;</li>
+        <li>
+          take screenshots of {__CDP__ ? "your tabs" : "the tab on show"};
+        </li>
+        {__CDP__ && (
+          <li>read the pages’ console messages and network activity;</li>
+        )}
         <li>type and click as you, in any tab and any container;</li>
-        <li>run JavaScript in pages.</li>
+        {__CDP__ && <li>run JavaScript in pages.</li>}
       </ul>
+      {!__CDP__ && (
+        <p>
+          Chrome will ask once to let SplitSession talk to a program on this
+          computer. The extension does not run scripts an agent sends it, and
+          has no debugger access.
+        </p>
+      )}
       <p>
         <strong>Where it goes.</strong> Only to that program on this computer,
         through Chrome’s native messaging. SplitSession sends nothing to any

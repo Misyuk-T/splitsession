@@ -15,12 +15,17 @@ import { MemoryStorageArea } from "../../engine/storage/storage-area";
 import { SettingsStore } from "../settings-store";
 import { BridgeConsentStore } from "./consent";
 
-const setup = (data: Record<string, unknown> = {}) => {
+const setup = (data: Record<string, unknown> = {}, granted = true) => {
   const area = new MemoryStorageArea();
   for (const [k, v] of Object.entries(data)) area.data.set(k, v);
   const consent = new BridgeConsentStore(area, () => 1234);
-  const settings = new SettingsStore(area, consent.guard());
-  return { area, consent, settings };
+  // `permission.granted` stands for Chrome's answer about `nativeMessaging`; the store build has it only after the user said yes.
+  const permission = { granted };
+  const settings = new SettingsStore(
+    area,
+    consent.guard(async () => permission.granted),
+  );
+  return { area, consent, settings, permission };
 };
 
 describe("the consent record", () => {
@@ -159,6 +164,37 @@ describe("the agentBridge gate", () => {
       settings: { agentBridge: true, explicit: ["agentBridge"] },
       [BRIDGE_CONSENT_KEY]: { version: BRIDGE_CONSENT_VERSION - 1, at: 1 },
     });
+    expect((await settings.load()).agentBridge).toBe(false);
+  });
+
+  it("refuses to switch the bridge on without Chrome's nativeMessaging permission, even with consent", async () => {
+    const { area, consent, settings, permission } = setup({}, false);
+    await settings.load();
+    await consent.grant(BRIDGE_CONSENT_VERSION);
+    await expect(settings.update({ agentBridge: true })).rejects.toThrow(
+      /permission to talk to a program/,
+    );
+    expect(settings.get().agentBridge).toBe(false);
+    expect(area.data.has("settings")).toBe(false);
+    permission.granted = true; // the user said yes in Chrome's prompt
+    expect((await settings.update({ agentBridge: true })).agentBridge).toBe(
+      true,
+    );
+    permission.granted = false; // taken back: off still works, and so do other settings
+    expect(
+      (await settings.update({ agentBridge: false, tabGroups: false }))
+        .agentBridge,
+    ).toBe(false);
+  });
+
+  it("a stored agentBridge: true without the permission loads as off (the store build after the permission was taken back)", async () => {
+    const { settings } = setup(
+      {
+        settings: { agentBridge: true, explicit: ["agentBridge"] },
+        [BRIDGE_CONSENT_KEY]: { version: BRIDGE_CONSENT_VERSION, at: 1 },
+      },
+      false,
+    );
     expect((await settings.load()).agentBridge).toBe(false);
   });
 

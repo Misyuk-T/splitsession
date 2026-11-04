@@ -3,6 +3,7 @@ import { browser } from "wxt/browser";
 import { type ContainerId, ruleKeyOf } from "../core";
 import type { StorageAreaLike } from "../engine/storage/storage-area";
 import { BridgeConsentStore } from "./bridge/consent";
+import { hasNativeMessaging } from "./bridge/native-permission";
 import { type ActionApi, BadgeIndicator } from "./badges";
 import { DomainRuleEngine } from "./domain-rule-engine";
 import type { FacetEvent } from "./events";
@@ -55,7 +56,10 @@ export class Extras {
     const local = b.storage.local as unknown as StorageAreaLike;
     const session = b.storage.session as unknown as StorageAreaLike;
     this.bridgeConsent = __FULL__ ? new BridgeConsentStore(local) : null;
-    this.settings = new SettingsStore(local, this.bridgeConsent?.guard());
+    this.settings = new SettingsStore(
+      local,
+      this.bridgeConsent?.guard(() => hasNativeMessaging(b)),
+    );
     this.rules = new RuleStore(
       local,
       () => new Set(facet.containers.list().map((c) => c.id)),

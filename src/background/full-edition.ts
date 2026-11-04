@@ -7,6 +7,11 @@ import { AgentWindow } from "./bridge/agent-window";
 import { type BridgeApi, createBridgeApi } from "./bridge/bridge-api";
 import { CdpSessions, type DebuggerApi } from "./bridge/cdp";
 import { GroupActivityMark } from "./bridge/group-activity";
+import {
+  handlePermissionRemoved,
+  hasNativeMessaging,
+  releaseNativeMessaging,
+} from "./bridge/native-permission";
 import { readProfileKey, renewProfileKey } from "./bridge/profile-key";
 import { readProfileLabel } from "./bridge/profile-label";
 import { BridgeRouter } from "./bridge/router";
@@ -68,17 +73,20 @@ export function createAgentSide(
         groupMark,
         startBlink: (tabId) => extras.badges.startBlink(tabId),
         stopBlink: (tabId) => extras.badges.stopBlink(tabId),
-        held: (tabId) => cdp.isHeld(tabId),
+        held: (tabId) => cdp?.isHeld(tabId) ?? false,
       });
       // CDP sessions of the agent bridge: attached on demand while the bridge is on (its listeners register right here).
-      const cdp = new CdpSessions({
-        dbg: (b as unknown as { debugger: DebuggerApi }).debugger,
-        tabUrl: async (tabId) => {
-          const tab = await b.tabs.get(tabId).catch(() => null);
-          return tab ? tab.url || tab.pendingUrl : undefined;
-        },
-        log: facet.log,
-      });
+      // Not in the store build (basic mode): without the `debugger` permission there is no API to build them on.
+      const cdp = __CDP__
+        ? new CdpSessions({
+            dbg: (b as unknown as { debugger: DebuggerApi }).debugger,
+            tabUrl: async (tabId) => {
+              const tab = await b.tabs.get(tabId).catch(() => null);
+              return tab ? tab.url || tab.pendingUrl : undefined;
+            },
+            log: facet.log,
+          })
+        : undefined;
       const nav = navigator as Navigator & {
         userAgentData?: { platform?: string };
       };
@@ -106,7 +114,7 @@ export function createAgentSide(
       });
       bridge.setRunner(router);
       b.tabs.onRemoved.addListener((tabId) => {
-        cdp.forget(tabId);
+        cdp?.forget(tabId);
         router.forgetTab(tabId);
       });
       // Alarm that restarts a bridge connection after the worker was stopped (top level, so it wakes the worker).
@@ -121,13 +129,35 @@ export function createAgentSide(
           void activity.stopAll();
         if (next.agentBridge === previous.agentBridge) return;
         // Off: every debugger session goes first, so nothing more can be done to a page.
-        if (!next.agentBridge) void cdp.detachAll();
-        void bridge.sync(next.agentBridge, next.agentBridge);
+        if (!next.agentBridge) void cdp?.detachAll();
+        const synced = bridge.sync(next.agentBridge, next.agentBridge);
+        // Off: the store build gives `nativeMessaging` back once the connection is closed (it is Lite's permission set again).
+        if (!next.agentBridge)
+          void synced.then(() => releaseNativeMessaging(b));
         void extras.ready?.then(() => extras.refreshAllBadges());
       });
-      // The debugger sessions too (e2e checks that switching off detaches; DevTools debugging).
-      (globalThis as { facetCdp?: unknown }).facetCdp = cdp;
-      void cdp.detachStale();
+      // Chrome took `nativeMessaging` back (the user in chrome://extensions, or a policy): the bridge cannot stay on.
+      b.permissions.onRemoved.addListener((removed) => {
+        void (async () => {
+          await extras.ready;
+          await handlePermissionRemoved(removed, {
+            bridgeOn: () => extras.settings.get().agentBridge,
+            has: () => hasNativeMessaging(b),
+            switchOff: () => extras.settings.update({ agentBridge: false }),
+          });
+        })().catch((error) =>
+          facet.log(
+            "warn",
+            "agent bridge: could not switch off",
+            String(error),
+          ),
+        );
+      });
+      if (cdp) {
+        // The debugger sessions too (e2e checks that switching off detaches; DevTools debugging).
+        (globalThis as { facetCdp?: unknown }).facetCdp = cdp;
+        void cdp.detachStale();
+      }
     },
     start() {
       return bridge.sync(extras.settings.get().agentBridge);

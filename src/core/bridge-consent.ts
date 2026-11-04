@@ -43,3 +43,12 @@ export function hasBridgeConsent(
 /** The error of an attempt to switch the bridge on without consent (shown by the switch if it ever gets there). */
 export const NO_CONSENT_MESSAGE =
   "the agent bridge stays off until you allow agent access in SplitSession's settings";
+
+/**
+ * The store build asks Chrome for `nativeMessaging` at runtime (an optional permission; the unpacked Full has it from install),
+ * and the bridge cannot be on without it.
+ */
+export const NATIVE_MESSAGING = "nativeMessaging";
+/** The error of an attempt to switch the bridge on while Chrome has not granted `nativeMessaging`. */
+export const NO_PERMISSION_MESSAGE =
+  "the agent bridge needs Chrome's permission to talk to a program on this computer; switch it on in SplitSession's settings";

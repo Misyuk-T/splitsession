@@ -274,28 +274,49 @@ export const BridgeSection = () => {
                 </li>
                 <li>
                   read the text and HTML of any page, including pages you are
-                  logged in to, and take screenshots of them;
+                  logged in to, and take screenshots of{" "}
+                  {__CDP__ ? "them" : "the tab on show"};
                 </li>
                 <li>
-                  click, type, scroll and run JavaScript in any tab, which also
-                  means act as you on those sites;
+                  click, type and scroll in any tab
+                  {__CDP__ ? ", run JavaScript" : ""}, which also means act as
+                  you on those sites;
                 </li>
                 <li>
                   open, navigate, close and move tabs, and open pages inside
-                  containers;
+                  containers
+                  {__CDP__ ? ";" : "."}
                 </li>
-                <li>
-                  upload files from this computer into pages, answer their
-                  dialogs, and record their console and network.
-                </li>
+                {__CDP__ && (
+                  <li>
+                    upload files from this computer into pages, answer their
+                    dialogs, and record their console and network.
+                  </li>
+                )}
               </ul>
-              <p>
-                For real clicks and key presses SplitSession uses Chrome’s
-                debugger on the tab the agent works in, only while this is on.
-                Chrome then shows “SplitSession started debugging this browser”;
-                its Cancel button takes the debugger back. The debugger is never
-                used to read or change cookies, so containers stay separate.
-              </p>
+              {__CDP__ ? (
+                <p>
+                  For real clicks and key presses SplitSession uses Chrome’s
+                  debugger on the tab the agent works in, only while this is on.
+                  Chrome then shows “SplitSession started debugging this
+                  browser”; its Cancel button takes the debugger back. The
+                  debugger is never used to read or change cookies, so
+                  containers stay separate.
+                </p>
+              ) : (
+                <p>
+                  This is basic mode: the extension from the Chrome Web Store
+                  has no debugger permission. Clicks and typing are events the
+                  extension sends to the page (a few pages ignore them), and
+                  running JavaScript, key presses, hovering, dragging, file
+                  uploads, dialogs, and the console and network records are not
+                  available. Switching the bridge on makes Chrome ask once for
+                  permission to talk to a program on this computer; switching it
+                  off gives that permission back. Nothing here can read or
+                  change cookies, so containers stay separate. Full mode is the
+                  unpacked Full edition from the project’s GitHub page.
+                </p>
+              )}
               <p>
                 Only programs running as your macOS user can reach it (the
                 connection is a private socket file), and only this extension
