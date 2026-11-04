@@ -124,6 +124,12 @@ on by default). How it works is in decisions.md ("Container tabs that come back"
   line, as in the e2e; for an extension installed normally not verified, and assumed to be the same). Their first request
   goes out as the real profile (the site sees the real account's cookies for that address, and may set cookies in the real
   profile); SplitSession then matches the tab and loads it again in its container. Same class of hole as `#ctr=`.
+- **Not held: requests of an open container tab while the extension restarts (an update, and the bridge's one-shot restart
+  after the `nativeMessaging` grant).** The session rules go with the old worker and are back a few hundred milliseconds
+  later; a request the tab sends in between goes out with the regular profile's cookies, and its `Set-Cookie` is ignored (the
+  log says "ignored N Set-Cookie of a request sent outside the container's rules"; seen 2026-11-04: 6 on mail.google.com right
+  after a restart). Nothing is written into the container's jar or the regular profile; the cost is a request made as the
+  wrong account and a possibly missed cookie. Documented, not fixed: [open-questions.md](open-questions.md).
 - **Matching is evidence, not certainty.** A tab goes back into a container only on one of: the same tab and window IDs
   (extension update); its window's exact list of **two or more** addresses, in order, matching ONE remembered window (by
   position, so an ordinary tab on the same address in that window stays ordinary), at a browser start (and the 5 minutes
