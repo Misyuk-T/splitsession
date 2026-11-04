@@ -39,10 +39,11 @@ More detail: [docs/features.md](docs/features.md).
 | Where | build from source | Chrome Web Store, GitHub Releases |
 
 The Chrome Web Store item carried Lite up to 0.1.x and carries Full from the update that adds the agent bridge (one item,
-updated in place: containers and settings carry over). That update asks for the two extra permissions, and Chrome pauses
-SplitSession until you approve them in the puzzle-piece menu or `chrome://extensions`; until then container tabs act like
-normal tabs. The bridge stays off until you switch it on and accept what it allows. Lite remains in the code base (its
-agent code is not compiled in) but is no longer uploaded.
+updated in place: containers and settings carry over). That update adds no required permission and disables nobody:
+containers keep working. The one optional permission, `nativeMessaging`, is asked only when you switch the agent bridge on
+(Chrome's own prompt; SplitSession then restarts itself once to finish turning it on). The bridge stays off until you switch
+it on and accept what it allows. Lite remains in the code base (its agent code is not compiled in) but is no longer
+uploaded.
 
 Full has one of two extension IDs: `hhodioekcdmhpocjbkjnblmbmchddphf` from the store, `hapfikidacgfgnnajkgnaednpgnhmffk`
 loaded unpacked (pinned by the manifest key). The bridge program (`npx splitsession-bridge install`, 0.4 or newer) accepts

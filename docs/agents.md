@@ -199,7 +199,7 @@ Needs Node.js 20 or newer, on macOS or Linux (Windows is not supported yet). The
    the store install to connect.
 2. Open **Settings, "For AI agents"** (the second section of the options page, after General) and flip **Agent bridge**. The
    first time, a dialog says what the agent program can do and where the data goes; **"Allow agent access"** records your
-   consent and turns the bridge on, "Cancel" (or Esc) leaves it off. Chrome starts the host when you do; no restart needed. The same section has a **"How to connect"** disclosure with step 1 (a copy block, live status, "Check again").
+   consent and turns the bridge on, "Cancel" (or Esc) leaves it off. Chrome starts the host when you do. In the Chrome Web Store build the first switch-on grants `nativeMessaging` and SplitSession restarts itself once (see "One automatic restart after the first grant" below); the unpacked Full needs no restart. The same section has a **"How to connect"** disclosure with step 1 (a copy block, live status, "Check again").
 
 Remove it with `npx splitsession-bridge uninstall`: it takes down the host and the `splitsession` entry (only that key, with a
 backup) from every AI client above (`--client <list>` limits it). `npx splitsession-bridge status` lists which clients have it
