@@ -297,7 +297,7 @@ From [images](https://developer.chrome.com/docs/webstore/images) and
   "not connected". Our host used to be installed with `pnpm bridge:install` **from a source checkout** (macOS only); since 2026-10-14 it is `npx splitsession-bridge install` (macOS and Linux, once the package is published; [npm.md](npm.md)), so a store
   user needs Node.js and a terminal, but no clone of the repository.
 - Mitigations: the listing says plainly that the bridge needs a separately installed companion program and that the
-  extension works as a container extension without it; reviewer notes with a link to a short video of the bridge in use;
+  extension works as a container extension without it; reviewer notes (the dashboard field takes 500 characters; the short text is in listing-draft.md, the video there is optional);
   set-up steps reachable from Settings (they are, "How to connect").
 - **Framing since the store item became Full (2026-10-27).** The item's title and promise stay "multiple logins per site";
   the bridge is an optional, off-by-default extra for people who run a local agent. So the reviewer judges a container
@@ -482,6 +482,9 @@ summary of each page, not checked against raw HTML; no written reviews were visi
   permission. `debugger` is dropped (it cannot be optional) and `nativeMessaging` is optional, requested from the options page
   when the user switches the agent bridge on, so Chrome does not disable anyone on update and there is no isolation gap. The
   prompt-window measurements in docs/release/upgrade-test.md apply only if a required permission is ever added again.
+  **So the update neither raises the required permissions nor disables the extension** (docs/decisions.md, "The store item is Full
+  in basic mode"). What users see instead: with the bridge off nothing changes; switching it on asks Chrome for one optional
+  permission, and SplitSession then restarts once (a short gap in container isolation, see docs/limits.md and open-questions.md).
 - Removing `cookies` (optional) has no user-visible effect.
 
 ### 6.4 Rollback
