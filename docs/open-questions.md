@@ -20,3 +20,13 @@
 4. Install the rules from `onStartup`/worker start before anything else is awaited, to shrink the window (the part that is ours; the browser's own gap on an update stays).
 
 **Decision:** not taken; documented only (2026-11-04).
+
+## `run_js` in the store build (2026-11-05)
+**Observation:** the store item (0.2.0, published 2026-11-05) has no `run_js`. `debugger` cannot be optional, and as a required permission it disables the extension for every user until they approve, with container tabs sending the regular profile's cookies meanwhile (decisions.md, 2026-10-27 and 2026-11-04). An optional `userScripts` with `chrome.userScripts.execute` would give JavaScript without that: Chrome 135+, the user turns on "Allow User Scripts" on the extension's details page, and the store's remote-code answer becomes "Yes". It gives no trusted input, dialogs, uploads or console and network records. The code existed until 2026-10-13 (decisions.md, "Removed"); as an optional permission on this build it has not been live-tested.
+
+**Options:**
+1. Optional `userScripts` as above.
+2. A submission with `debugger`, auto-publish off, to learn whether the store accepts it; a rejection stays on record, and a hotfix means cancelling the submission.
+3. Leave as is: the unpacked Full from GitHub has `run_js`.
+
+**Decision:** a build with `debugger` goes to review with auto-publish off (2026-11-05, branch `store-debugger`); whether to publish it is open.

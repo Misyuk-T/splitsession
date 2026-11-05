@@ -55,7 +55,7 @@ Nothing leaves your device by SplitSession's own action. The developer runs no s
   Tabs (addresses and titles) are included only if you tick the box "Also include tabs"; addresses can carry private tokens,
   so treat that file with care too.
 - **Import** reads only a file you pick.
-- The extension does not load or run remote code.
+- The extension's own code is bundled and it loads no remote code. The one exception: a build with the `debugger` permission (see "The Full edition's agent bridge") can run JavaScript supplied by your agent through Chrome's Debugger API, only while the bridge is on.
 
 ## The Full edition's agent bridge
 
@@ -74,9 +74,10 @@ or Codex). It is **off by default** and is one all-or-nothing switch in the exte
   accessibility snapshot, screenshots, console and network lists (cookie and authorization header values are always
   hidden), clicks, typing, file uploads and running scripts, in every tab of every window, signed-in pages included. It can
   act as you on those sites. Chrome shows its own "started debugging this browser" bar while the debugger is in use, and
-  the extension shows that the agent is working (a glow on the page, a badge on the toolbar button). The Chrome Web Store
-  build has no debugger permission ("basic mode"): it cannot run scripts an agent sends, press keys, upload files, or read
-  console and network lists; clicks and typing are events the extension sends to the page.
+  the extension shows that the agent is working (a glow on the page, a badge on the toolbar button). Whether a build has
+  the debugger permission depends on the version: a build without it ("basic mode") cannot run scripts an agent sends, press
+  keys, upload files, or read console and network lists, and its clicks and typing are events the extension sends to the
+  page. The extension's details page in `chrome://extensions` shows whether your build has the debugger.
 - **Where that data goes**: it travels from the extension to a helper program on your computer through Chrome's native
   messaging, and from there over a local Unix socket (never a network port) to your agent. SplitSession itself sends it
   nowhere else. What your agent then does with it, including sending it to an AI provider you chose, is governed by that
@@ -84,7 +85,10 @@ or Codex). It is **off by default** and is one all-or-nothing switch in the exte
   program, if you do not want that.
 - **The bridge's action log** keeps, for each tool call: the tool name, the tab ID, the site (host), whether it worked and
   when. It does **not** keep page content, typed text or the agent's answers.
-- The bridge never reads or sets cookies or storage and does not bypass container isolation.
+- The bridge has no tool that reads or sets cookies or storage, and it does not bypass container isolation. In a build with
+  the debugger, `run_js` runs the agent's JavaScript in the page's own world, so that code can reach whatever the page
+  itself can: cookies the page can see (not `HttpOnly` ones) and its `localStorage`, `sessionStorage` and the like. In a
+  container tab these are that container's, because the page-side isolation script runs in the same world.
 
 The helper program is the separate `splitsession-bridge` package (<https://www.npmjs.com/package/splitsession-bridge>). It
 stores nothing except a small start/stop log next to its socket (`host.log`; no requests and no page content).
@@ -104,7 +108,7 @@ Lite is no longer uploaded to the Chrome Web Store; it can still be built from t
 | `browsingData` | removing service workers (which could answer a container tab with another account's data); it removes service workers only |
 | `alarms` | housekeeping timers in the extension's background worker |
 | `nativeMessaging` (Full only; optional in the Chrome Web Store build, asked for when you switch the bridge on and given back when you switch it off) | talking to the local helper program of the agent bridge |
-| `debugger` (the unpacked Full from GitHub only; the Chrome Web Store build does not have it) | trusted clicks and typing, file uploads, screenshots and the console and network lists for your agent, only while the bridge is on and a tool needs it |
+| `debugger` (the unpacked Full from GitHub, and Chrome Web Store versions that list it; a version that does not list it has no debugger) | trusted clicks and typing, file uploads, screenshots, the console and network lists and running the agent's JavaScript (`run_js`), only while the bridge is on and a tool needs it |
 
 ## Keeping and deleting your data
 

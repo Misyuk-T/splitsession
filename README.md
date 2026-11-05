@@ -35,7 +35,7 @@ More detail: [docs/features.md](docs/features.md).
 | --- | --- | --- |
 | Containers, isolation, tab groups, rules, restore, export / import | yes | yes |
 | Local AI agent bridge (MCP), off by default | no | yes |
-| Extra permissions | none | `nativeMessaging`, `debugger` (unpacked Full). The Chrome Web Store build asks for neither as a required permission: `nativeMessaging` is optional, there is no `debugger`, and the agent bridge runs in a basic mode (no `run_js`, key presses, console or network; script-sent clicks) |
+| Extra permissions | none | `nativeMessaging`, `debugger` (unpacked Full). In the Chrome Web Store build `nativeMessaging` is optional, and `debugger` depends on the version: a version without it runs the agent bridge in a basic mode (no `run_js`, key presses, console or network; script-sent clicks), a version with it has the full tool list including `run_js`. The extension's details page in `chrome://extensions` shows whether it has the debugger |
 | Where | build from source | Chrome Web Store, GitHub Releases |
 
 The Chrome Web Store item carried Lite up to 0.1.x and carries Full from the update that adds the agent bridge (one item,
