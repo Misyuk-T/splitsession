@@ -68,7 +68,14 @@ export interface CdpDeps {
   pinMaxMs?: number;
 }
 
-export class CdpError extends Error {}
+export class CdpError extends Error {
+  constructor(
+    message: string,
+    readonly pageContent = false,
+  ) {
+    super(message);
+  }
+}
 
 /**
  * How long a session stays attached after the last tool that needed it. Chrome shows "started debugging this browser" (and
@@ -221,6 +228,7 @@ export class TabSession {
                 this.dialog
                   ? dialogBlocks(this.dialog)
                   : `the page did not answer ${method} within ${Math.round(timeoutMs / 1000)} s (it may be busy, or a JavaScript dialog may be open)`,
+                !!this.dialog,
               ),
             ),
           ),

@@ -387,6 +387,38 @@ describe("bridge router with the debugger", () => {
     ).rejects.toThrow(/no JavaScript dialog that SplitSession saw/);
   });
 
+  it("handle_dialog that times out keeps the dialog text flagged as page content", async () => {
+    vi.useFakeTimers();
+    try {
+      const t = setup();
+      await t.run("run_js", { tabId: 1, code: "return 1" }).catch(() => {});
+      t.emit("Page.javascriptDialogOpening", {
+        type: "alert",
+        message: "CANARY-dialog-text",
+      });
+      t.handlers["Page.handleJavaScriptDialog"] = () => new Promise(() => {});
+      const failure = t
+        .run("handle_dialog", { tabId: 1, accept: true })
+        .catch((e) => e);
+      await vi.advanceTimersByTimeAsync(10_000);
+      const error = await failure;
+      expect(error.message).toContain("CANARY-dialog-text");
+      expect(error.pageContent).toBe(true);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("an error the page function returns (select_option listing options) is flagged as page content", async () => {
+    const t = setup();
+    t.dom(() => ({ error: 'no option "Huge"; options: CANARY-option-label' }));
+    const error = await t
+      .run("select_option", { tabId: 1, selector: "#size", values: ["Huge"] })
+      .catch((e) => e);
+    expect(error.message).toContain("CANARY-option-label");
+    expect(error.pageContent).toBe(true);
+  });
+
   it("snapshot reads the DOM, renders the tree with refs, and click can use them: no debugger for the read", async () => {
     const t = setup();
     t.dom((cmd) =>

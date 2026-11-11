@@ -30,3 +30,5 @@
 3. Leave as is: the unpacked Full from GitHub has `run_js`.
 
 **Decision:** a build with `debugger` goes to review with auto-publish off (2026-11-05, branch `store-debugger`); whether to publish it is open.
+
+**Decision (2026-11-11): not published.** 0.3.0 was approved by the store (2026-11-06) and stays unpublished; the store keeps the build without `debugger` (option 3). Reason: every existing user would get the extension disabled until they accept, with container tabs on the regular profile's cookies meanwhile, for a gain only users who connect an AI client see; they have the unpacked Full. The approved draft is dropped when the next patch (0.2.1) is uploaded. Revisit with option 1 if store users ask for `run_js`. Branch `store-debugger` is kept, not merged.

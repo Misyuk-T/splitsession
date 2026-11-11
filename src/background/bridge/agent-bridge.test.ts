@@ -9,6 +9,8 @@ import {
   type ProfileIdentity,
   RELEASE_GRACE_MS,
 } from "./agent-bridge";
+import { ToolError } from "./errors";
+import { BridgeRouter } from "./router";
 
 class FakePort {
   sent: any[] = [];
@@ -104,6 +106,7 @@ describe("AgentBridge", () => {
   afterEach(() => {
     vi.useRealTimers();
     vi.restoreAllMocks();
+    vi.unstubAllGlobals();
   });
 
   it("stays off, and connects to nothing, until switched on", async () => {
@@ -240,6 +243,93 @@ describe("AgentBridge", () => {
       },
     ]);
     expect(JSON.stringify(entries)).not.toContain("secret");
+  });
+
+  it("keeps an error that holds page content out of the log, and still gives it to the agent", async () => {
+    const { bridge, ports, run, log } = setup();
+    await bridge.sync(true, true);
+    const port = ports[0]!;
+    port.receive({ type: "ready", version: 1, socket: "/s" });
+    run.mockRejectedValueOnce(
+      new ToolError("Error: session=CANARY-cookie-value", true),
+    );
+    port.receive({
+      type: "request",
+      id: 9,
+      tool: "run_js",
+      args: { tabId: 5, code: "throw new Error(document.cookie)" },
+    });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(port.sent).toEqual([
+      {
+        type: "response",
+        id: 9,
+        ok: false,
+        error: "Error: session=CANARY-cookie-value",
+      },
+    ]);
+    const entries = log.entries().filter((e) => e.message === "agent action");
+    expect(entries.map((e) => e.data)).toEqual([
+      expect.objectContaining({ tool: "run_js", ok: false }),
+    ]);
+    expect(JSON.stringify(log.entries())).not.toContain("CANARY");
+  });
+
+  it("withholds basic-mode select option values from the log but returns them to the agent", async () => {
+    const { bridge, ports, b, log } = setup();
+    vi.stubGlobal("document", {
+      querySelector: () => ({
+        localName: "select",
+        disabled: false,
+        options: [
+          {
+            value: "CANARY-option-value",
+            label: "CANARY-option-value",
+            text: "CANARY-option-value",
+          },
+        ],
+      }),
+    });
+    const browser = {
+      ...b,
+      scripting: {
+        executeScript: async ({
+          func,
+          args,
+        }: {
+          func: (...args: any[]) => unknown;
+          args: unknown[];
+        }) => [{ result: func(...args) }],
+      },
+    };
+    bridge.setRunner(
+      new BridgeRouter({
+        b: browser as never,
+        facet: { ready: Promise.resolve() } as never,
+        api: {} as never,
+      }),
+    );
+    await bridge.sync(true, true);
+    const port = ports[0]!;
+    port.receive({ type: "ready", version: 1, socket: "/s" });
+    port.receive({
+      type: "request",
+      id: 10,
+      tool: "select_option",
+      args: { tabId: 3, selector: "select", values: ["missing"] },
+    });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(port.sent).toEqual([
+      expect.objectContaining({
+        id: 10,
+        ok: false,
+        error: expect.stringContaining("CANARY-option-value"),
+      }),
+    ]);
+    expect(
+      log.entries().find((e) => e.message === "agent action")?.data,
+    ).toEqual(expect.objectContaining({ error: "(page content withheld)" }));
+    expect(JSON.stringify(log.entries())).not.toContain("CANARY-option-value");
   });
 
   it("keeps the latest five actions, newest first, with the tab they touched", async () => {

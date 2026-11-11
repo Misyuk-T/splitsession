@@ -251,7 +251,7 @@ export class ToolContext {
       );
     const maybeError = (result as unknown as Partial<PageError>).error;
     if (typeof result === "object" && typeof maybeError === "string")
-      throw new ToolError(maybeError);
+      throw new ToolError(maybeError, true); // page-returned text can quote page data (option labels, values): off the log
     return result;
   }
 
@@ -260,7 +260,7 @@ export class ToolContext {
   /** A JavaScript dialog SplitSession saw on the tab freezes the page: a script in it would never answer. */
   noDialog(tabId: number): void {
     const dialog = this.d.cdp?.current(tabId)?.dialog;
-    if (dialog) throw new ToolError(dialogBlocks(dialog));
+    if (dialog) throw new ToolError(dialogBlocks(dialog), true);
   }
 
   get cdp(): CdpSessions {
@@ -323,7 +323,7 @@ export class ToolContext {
         tabId,
         async (s) => {
           if (s.dialog && !opts.dialogOk)
-            throw new ToolError(dialogBlocks(s.dialog));
+            throw new ToolError(dialogBlocks(s.dialog), true);
           live(meta);
           return work(s);
         },
@@ -337,7 +337,8 @@ export class ToolContext {
   /** A CDP failure as the agent should see it: "switched off" after an abort, a ToolError for CDP's own errors. */
   cdpFailure(error: unknown, meta: ActionMeta): unknown {
     if (meta.signal?.aborted) return new ToolError(SWITCHED_OFF);
-    if (error instanceof CdpError) return new ToolError(error.message);
+    if (error instanceof CdpError)
+      return new ToolError(error.message, error.pageContent);
     return error;
   }
 

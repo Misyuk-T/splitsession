@@ -17,6 +17,7 @@ import {
 } from "../../bridge/protocol";
 import type { StorageAreaLike } from "../../engine/storage/storage-area";
 import type { Logger } from "../log";
+import { ToolError } from "./errors";
 import {
   type MissingApi,
   NOT_GRANTED_TEXT,
@@ -456,6 +457,7 @@ export class AgentBridge {
       ...(agent ? { session: agent } : {}),
     };
     let reply: ExtensionToHost;
+    let pageContent = false;
     try {
       if (!this.runner)
         throw new Error(
@@ -467,6 +469,7 @@ export class AgentBridge {
       const result = await this.runner.run(String(tool), args, meta);
       reply = { type: "response", id, ok: true, result };
     } catch (error) {
+      pageContent = error instanceof ToolError && error.pageContent;
       reply = {
         type: "response",
         id,
@@ -474,7 +477,8 @@ export class AgentBridge {
         error: error instanceof Error ? error.message : String(error),
       };
     }
-    // The action log: what was done to which tab and whether it worked. Never what the page said.
+    // The action log: what was done to which tab and whether it worked. Never what the page said: an error that holds
+    // page content (run_js throwing document.cookie, a dialog's text) reaches the agent but not the log.
     this.log(reply.ok ? "info" : "warn", "agent action", {
       tool: String(tool),
       ...(agent ? { session: agent } : {}),
@@ -482,7 +486,13 @@ export class AgentBridge {
       host: meta.host ?? null,
       ok: reply.ok,
       ms: Date.now() - started,
-      ...(reply.ok ? {} : { error: reply.error.slice(0, 120) }),
+      ...(reply.ok
+        ? {}
+        : {
+            error: pageContent
+              ? "(page content withheld)"
+              : reply.error.slice(0, 120),
+          }),
     });
     const entry: RecentAction = {
       at: started,

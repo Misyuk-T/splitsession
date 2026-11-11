@@ -1,3 +1,4 @@
+import { CdpError } from "../cdp";
 import * as hands from "../cdp-tools";
 import { ToolError } from "../errors";
 import type { ToolContext, ToolHandler } from "../tool-context";
@@ -19,7 +20,8 @@ const runJs: ToolHandler = async (c, a, meta) => {
       maxChars: a.maxChars,
     }),
   );
-  if (!outcome.ok) throw new ToolError(`${outcome.name}: ${outcome.message}`);
+  if (!outcome.ok)
+    throw new ToolError(`${outcome.name}: ${outcome.message}`, true);
   return c.withDialogNote(a.tabId, {
     content: [
       {
@@ -54,7 +56,10 @@ const handleDialog: ToolHandler = async (c, a, meta) => {
       ...(a.promptText !== undefined ? { promptText: a.promptText } : {}),
     });
   } catch (error) {
-    throw new ToolError(`could not answer the dialog: ${messageOf(error)}`);
+    throw new ToolError(
+      `could not answer the dialog: ${messageOf(error)}`,
+      error instanceof CdpError && error.pageContent,
+    );
   }
   session.dialog = null;
   return json({
