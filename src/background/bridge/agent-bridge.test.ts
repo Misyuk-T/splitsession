@@ -9,6 +9,7 @@ import {
   type ProfileIdentity,
   RELEASE_GRACE_MS,
 } from "./agent-bridge";
+import { CdpSessions, type Debuggee, type DebuggerApi } from "./cdp";
 import { ToolError } from "./errors";
 import { BridgeRouter } from "./router";
 
@@ -330,6 +331,74 @@ describe("AgentBridge", () => {
       log.entries().find((e) => e.message === "agent action")?.data,
     ).toEqual(expect.objectContaining({ error: "(page content withheld)" }));
     expect(JSON.stringify(log.entries())).not.toContain("CANARY-option-value");
+  });
+
+  it("returns an abandoned dialog's text to the agent but withholds it from the action log", async () => {
+    const { bridge, ports, log, b } = setup();
+    let onEvent: (
+      source: Debuggee,
+      method: string,
+      params?: any,
+    ) => void = () => {};
+    let pageBlocked = false;
+    const dbg: DebuggerApi = {
+      attach: vi.fn(async () => {}),
+      detach: vi.fn(async () => {}),
+      sendCommand: vi.fn(async (_target, method) => {
+        if (method === "Runtime.evaluate" && pageBlocked)
+          return new Promise(() => {});
+        if (method === "Page.getFrameTree")
+          return { frameTree: { frame: { loaderId: "L1" } } };
+        return {};
+      }),
+      onEvent: { addListener: (cb) => void (onEvent = cb) },
+      onDetach: { addListener: () => {} },
+    };
+    const cdp = new CdpSessions({
+      dbg,
+      tabUrl: async () => "https://a.test/",
+      idleMs: 10,
+      dialogMaxMs: 20,
+    });
+    await cdp.use(3, async () => {});
+    onEvent({ tabId: 3 }, "Page.javascriptDialogOpening", {
+      type: "alert",
+      message: "CANARY-abandoned-dialog",
+    });
+    pageBlocked = true;
+    await vi.advanceTimersByTimeAsync(20);
+
+    bridge.setRunner(
+      new BridgeRouter({
+        b: b as never,
+        facet: { ready: Promise.resolve() } as never,
+        api: {} as never,
+        cdp,
+      }),
+    );
+    await bridge.sync(true, true);
+    const port = ports[0]!;
+    port.receive({ type: "ready", version: 1, socket: "/s" });
+    port.receive({
+      type: "request",
+      id: 11,
+      tool: "run_js",
+      args: { tabId: 3, code: "return 1" },
+    });
+    await vi.advanceTimersByTimeAsync(1_500);
+    expect(port.sent).toEqual([
+      expect.objectContaining({
+        id: 11,
+        ok: false,
+        error: expect.stringContaining("CANARY-abandoned-dialog"),
+      }),
+    ]);
+    expect(
+      log.entries().find((e) => e.message === "agent action")?.data,
+    ).toEqual(expect.objectContaining({ error: "(page content withheld)" }));
+    expect(JSON.stringify(log.entries())).not.toContain(
+      "CANARY-abandoned-dialog",
+    );
   });
 
   it("keeps the latest five actions, newest first, with the tab they touched", async () => {

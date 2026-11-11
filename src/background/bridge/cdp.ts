@@ -694,6 +694,7 @@ export class CdpSessions {
         if (lost) {
           throw new CdpError(
             `a JavaScript ${lost.type}${lost.message ? ` ("${lost.message.slice(0, 200)}")` : ""} has been open on this tab for more than ${Math.round(this.dialogMaxMs / 60_000)} minutes, nobody answered it, and SplitSession let go of the tab; SplitSession cannot answer it now. Ask the user to close the dialog, then try again.`,
+            !!lost.message,
           );
         }
         throw new CdpError(
