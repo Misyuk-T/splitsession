@@ -14,3 +14,11 @@ export * from "./settings";
 export * from "./site";
 export * from "./transfer";
 export * from "./types";
+
+// --- Session Core (AEGOX_multisession) ---
+export * from "./session-manager/session";
+export * from "./session-manager/session-manager";
+export * from "./session-lifecycle/lifecycle";
+export * from "./session-persistence/persistence";
+export * from "./session-duplicate/duplicate-detector";
+export * from "./session-recovery/recovery";
