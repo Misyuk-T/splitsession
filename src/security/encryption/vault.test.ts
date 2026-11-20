@@ -12,8 +12,8 @@ import {
   unlockVault,
   reencryptVault,
   isValidEntry,
-  VaultEntry,
 } from "./vault";
+import type { VaultEntry } from "./vault";
 
 describe("createVault / unlockVault round-trip", () => {
   it("derives a key from password + salt and can unlock with same salt", async () => {
@@ -70,8 +70,10 @@ describe("reencryptVault", () => {
     const reencrypted = await reencryptVault([entry], oldKey, "NewPass123!", 10_000);
     expect(reencrypted.length).toBe(1);
 
-    const { key: newKey } = await createVault("NewPass123!", 10_000);
-    const decrypted = await decrypt(reencrypted[0], newKey);
+    // The new salt travels with each re-encrypted entry; unlock with it.
+    const first = reencrypted[0]!;
+    const newKey = await unlockVault("NewPass123!", first.salt, 10_000);
+    const decrypted = await decrypt(first, newKey);
     expect(decrypted).toBe("my secret");
   });
 });

@@ -24,7 +24,7 @@ describe("SessionManager", () => {
 
     const list = mgr.list();
     expect(list.length).toBe(1);
-    expect(list[0].id).toBe(created.session.id);
+    expect(list[0]!.id).toBe(created.session.id);
 
     const stored = area.data.get(SESSIONS_KEY);
     expect(Array.isArray(stored)).toBe(true);
@@ -132,6 +132,6 @@ describe("SessionManager", () => {
     const mgr = new SessionManager(area);
     await mgr.load();
     expect(mgr.list().length).toBe(1);
-    expect(mgr.list()[0].metadata.name).toBe("Persisted");
+    expect(mgr.list()[0]!.metadata.name).toBe("Persisted");
   });
 });

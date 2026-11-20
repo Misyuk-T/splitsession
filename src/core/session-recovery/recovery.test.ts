@@ -5,11 +5,8 @@
 
 import { describe, expect, it } from "vitest";
 
-import {
-  SessionRecovery,
-  RecoveryProblem,
-  RecoveryErrorType,
-} from "./recovery";
+import { SessionRecovery } from "./recovery";
+import type { RecoveryProblem } from "./recovery";
 
 describe("SessionRecovery", () => {
   it("starts with no problems", () => {
@@ -24,43 +21,43 @@ describe("SessionRecovery", () => {
     rec.recordStorageError("write failed", { sessions: 5 });
     const problems = rec.getProblems();
     expect(problems.length).toBe(1);
-    expect(problems[0].type).toBe("storage-error");
-    expect(problems[0].message).toBe("write failed");
-    expect(problems[0].recoverableData).toEqual({ sessions: 5 });
-    expect(problems[0].fatal).toBe(false);
-    expect(typeof problems[0].detectedAt).toBe("number");
+    expect(problems[0]!.type).toBe("storage-error");
+    expect(problems[0]!.message).toBe("write failed");
+    expect(problems[0]!.recoverableData).toEqual({ sessions: 5 });
+    expect(problems[0]!.fatal).toBe(false);
+    expect(typeof problems[0]!.detectedAt).toBe("number");
   });
 
   it("records corrupted metadata", () => {
     const rec = new SessionRecovery();
     rec.recordCorruptedMetadata("invalid JSON", { partial: true });
-    expect(rec.getProblems()[0].type).toBe("corrupted-metadata");
-    expect(rec.getProblems()[0].fatal).toBe(false);
+    expect(rec.getProblems()[0]!.type).toBe("corrupted-metadata");
+    expect(rec.getProblems()[0]!.fatal).toBe(false);
   });
 
   it("records API failures", () => {
     const rec = new SessionRecovery();
     rec.recordApiFailure("tabs.query failed");
-    expect(rec.getProblems()[0].type).toBe("api-failure");
+    expect(rec.getProblems()[0]!.type).toBe("api-failure");
   });
 
   it("records missing contexts", () => {
     const rec = new SessionRecovery();
     rec.recordMissingContext("tab not found");
-    expect(rec.getProblems()[0].type).toBe("missing-context");
+    expect(rec.getProblems()[0]!.type).toBe("missing-context");
   });
 
   it("records restoration failures", () => {
     const rec = new SessionRecovery();
     rec.recordRestorationFailed("restore timed out");
-    expect(rec.getProblems()[0].type).toBe("restoration-failed");
+    expect(rec.getProblems()[0]!.type).toBe("restoration-failed");
   });
 
   it("records incompatible browser as fatal", () => {
     const rec = new SessionRecovery();
     rec.recordIncompatibleBrowser("storage API unavailable");
     expect(rec.hasFatalProblem()).toBe(true);
-    expect(rec.getProblems()[0].fatal).toBe(true);
+    expect(rec.getProblems()[0]!.fatal).toBe(true);
   });
 
   it("attemptRecovery returns summary and sessions", () => {
@@ -99,6 +96,6 @@ describe("SessionRecovery", () => {
     });
     rec.recordApiFailure("test failure");
     expect(logged.length).toBe(1);
-    expect(logged[0].type).toBe("api-failure");
+    expect(logged[0]!.type).toBe("api-failure");
   });
 });

@@ -12,6 +12,8 @@
  * (https://github.com/Misyuk-T/splitsession, MIT License).
  */
 
+import type { IsolationGuarantees } from "./adapter";
+
 /** Known browser families. */
 export type BrowserFamily = "chromium" | "firefox" | "unknown";
 
@@ -65,8 +67,8 @@ export const DEFAULT_CAPABILITIES: BrowserCapabilities = {
  */
 export function capabilitiesToGuarantees(
   caps: BrowserCapabilities,
-): Record<string, boolean> {
-  const g: Record<string, boolean> = {
+): IsolationGuarantees {
+  const g: IsolationGuarantees = {
     cookies: false,
     localStorage: false,
     sessionStorage: false,
@@ -94,6 +96,9 @@ export function capabilitiesToGuarantees(
     g.indexedDB = true;
     g.cacheStorage = true;
     g.broadcastChannel = true;
+    // Firefox containers also give a separate service-worker registration per
+    // cookie store, so workers do not share a jar across containers.
+    g.serviceWorkers = true;
   }
 
   if (caps.hasDnrSessionRules && caps.hasHeaderModification) {

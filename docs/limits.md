@@ -570,3 +570,32 @@ full access to every tab, in containers or not (docs/agents.md, section 7). What
 - The host program is a **copy** made by `pnpm bridge:install`; after changing the bridge or the Node version, run it
   again. `claude mcp add` points at the repository's `bridge/dist`, so `pnpm bridge:build` updates that side only.
 
+
+## Profiles (AEGOX_multisession, Module 03)
+
+Profiles are the user's organizational layer above the Session Core. Full details:
+[docs/profile-manager.md](profile-manager.md).
+
+- **Not isolation.** Associating a session with a profile only records
+  `SessionMetadata.profileId`. It does not change cookies, storage, the network, the fingerprint or
+  the browser profile. Isolation is only what the Session Core/browser adapter actually does.
+- **Website rules are guardrails, not security.** Allow/block lists are evaluated by extension code;
+  the browser still controls navigation and another extension or a page can bypass them.
+- **Protection is limited.** Master/independent passwords protect vault entries (AES-256-GCM,
+  PBKDF2). Profile names, tags, colors, folders and rules stay readable in `chrome.storage.local`,
+  and failed-attempt lockout lives in memory, so restarting the extension resets the counter.
+  Legacy vaults without a verifier are migrated on first unlock (trust on first use).
+- **Deletion asks about sessions.** Removing a profile offers keep (move to the default profile),
+  reassign, or delete. Session deletion requires a second explicit confirmation; nothing is
+  deleted silently.
+- **Temporary profiles are never deleted automatically.** Expired profiles are reported or
+  archived according to the profile setting, and only while the extension runs.
+- **Duplicates are never auto-resolved.** Detection is heuristic and only produces warnings and
+  explanations; no merge, rename or delete happens without the user.
+- **Import/export carries no secrets.** Cookies, tokens, passwords, vault entries and sessions are
+  never exported; files with secret fields or unknown/newer versions are rejected. Protection is
+  never restored by an import.
+- **No sync.** Only interfaces and a no-op provider exist; profile data stays on the device.
+- **Not wired yet.** The profile list, popup switcher and delete dialog are components; the
+  popup/dashboard/context-menu integration and the profile dashboard redesign are module 04+
+  work.

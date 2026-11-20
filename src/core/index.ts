@@ -18,7 +18,22 @@ export * from "./types";
 // --- Session Core (AEGOX_multisession) ---
 export * from "./session-manager/session";
 export * from "./session-manager/session-manager";
-export * from "./session-lifecycle/lifecycle";
+// The lifecycle predicates are exported selectively: `isExpired` and `isClosed`
+// already exist in the SplitSession core (`jar/cookie-jar`, `restore`), and a
+// wildcard export would make those names ambiguous.
+export {
+  allowedNextStates,
+  attemptTransition,
+  evaluatePause,
+  evaluateResume,
+  isValidTransition,
+  isTerminal,
+} from "./session-lifecycle/lifecycle";
+export type {
+  LifecycleState,
+  PauseRules,
+  TransitionResult,
+} from "./session-lifecycle/lifecycle";
 export * from "./session-persistence/persistence";
 export * from "./session-duplicate/duplicate-detector";
 export * from "./session-recovery/recovery";

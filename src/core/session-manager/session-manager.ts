@@ -10,16 +10,18 @@
 
 import {
   createSession,
+  DEFAULT_PROFILE_ID,
+  isDuplicateSession,
+  MAX_SESSION_NAME,
+  MIN_SESSION_NAME,
+  validateSessionMetadata,
 } from "./session";
 import type {
   Session,
   SessionId,
   SessionCreated,
   SessionMetadata,
-  SessionValidation,
-  validateSessionMetadata,
-  isDuplicateSession,
-  DEFAULT_PROFILE_ID,
+  SessionState,
 } from "./session";
 import type { StorageAreaLike } from "../../engine/storage/storage-area";
 
@@ -208,7 +210,13 @@ export class SessionManager {
       throw new SessionError(validation.message);
     }
 
-    session.metadata = { ...session.metadata, ...validation.metadata };
+    session.metadata = {
+      ...session.metadata,
+      ...validation.metadata,
+      // Validation describes a new object; keep the real timestamps.
+      createdAt: session.metadata.createdAt,
+      lastUsedAt: session.metadata.lastUsedAt,
+    };
     if (patch.state !== undefined) session.state = patch.state;
     await this.persist();
     return { ...session };

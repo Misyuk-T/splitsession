@@ -22,7 +22,7 @@ export interface DerivationParams {
   /** The master password (never stored, never logged). */
   password: string;
   /** Random salt, unique per vault. */
-  salt: Uint8Array;
+  salt: Uint8Array<ArrayBuffer>;
   /** Number of iterations. Higher = slower but more resistant to brute force. */
   iterations: number;
   /** Hash algorithm. */
@@ -44,7 +44,7 @@ export class KeyDerivationError extends Error {}
 /**
  * Generates a cryptographically random salt.
  */
-export function generateSalt(): Uint8Array {
+export function generateSalt(): Uint8Array<ArrayBuffer> {
   return crypto.getRandomValues(new Uint8Array(SALT_LENGTH_BYTES));
 }
 
@@ -73,7 +73,7 @@ export async function deriveKey(
   return crypto.subtle.deriveKey(
     {
       name: "PBKDF2",
-      salt,
+      salt: salt as BufferSource,
       iterations,
       hash,
     },
@@ -103,7 +103,7 @@ export interface PasswordValidation {
 }
 
 /** Special characters (non-alphanumeric). */
-const SPECIAL_CHAR_RE = /[^A-Za-z0-9]/;
+const SPECIAL_CHAR_RE = /[^A-Za-z0-9]/g;
 
 /**
  * Validates password strength and AEGOX minimum requirements.

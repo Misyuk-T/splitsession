@@ -1,0 +1,342 @@
+/* AEGOX dashboard component styles (Module 04). Custom AEGOX design system:
+   restrained dark + violet identity, no gradients, no generic AI-looking patterns.
+   Theme tokens are applied as inline custom properties by DashboardTheme; this file
+   only contains layout and component structure. */
+
+.agx-shell {
+  display: grid;
+  grid-template-rows: auto 1fr;
+  grid-template-columns: 1fr;
+  min-height: 100vh;
+  min-width: 0;
+}
+
+/* ---------- Top bar ---------- */
+.agx-topbar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 14px;
+  border-bottom: 1px solid var(--agx-border);
+  background: var(--agx-surface);
+  z-index: 1;
+}
+.agx-shell--nav-top .agx-sidebar,
+.agx-shell--nav-sidebar .agx-topbar--combined-only { display: none; }
+
+.agx-brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  color: var(--agx-accent);
+  text-decoration: none;
+  font-size: var(--fx-text-main);
+}
+.agx-brand svg { width: 20px; height: 20px; }
+
+.agx-spacer { flex: 1; }
+
+/* ---------- Sidebar ---------- */
+.agx-shell--nav-sidebar,
+.agx-shell--nav-combined {
+  grid-template-columns: 260px 1fr;
+}
+.agx-sidebar {
+  border-right: 1px solid var(--agx-border);
+  background: var(--agx-surface);
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.agx-sidebar__scroll {
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 4px;
+}
+.agx-shell--nav-top .agx-sidebar { display: none; }
+
+.agx-nav-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 8px 10px;
+  border: 0;
+  border-radius: var(--fx-radius-sm);
+  background: transparent;
+  color: var(--agx-text);
+  text-align: left;
+  font-size: var(--fx-text-main);
+  cursor: pointer;
+}
+.agx-nav-item svg { width: 18px; height: 18px; flex: none; }
+.agx-nav-item:hover { background: var(--agx-surface-hover); }
+.agx-nav-item[aria-current="page"] {
+  background: var(--agx-accent-soft);
+  color: var(--agx-accent-text);
+  font-weight: 600;
+}
+.agx-nav-item:focus-visible {
+  outline: 2px solid var(--agx-focus);
+  outline-offset: 2px;
+}
+
+/* ---------- Main area ---------- */
+.agx-main {
+  min-width: 0;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  background: var(--agx-bg);
+}
+.agx-shell--nav-top .agx-main { grid-column: 1; }
+
+.agx-main__pad {
+  padding: 16px 20px;
+  overflow-y: auto;
+  flex: 1;
+  min-height: 0;
+}
+
+/* ---------- Page header ---------- */
+.agx-page {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  margin-bottom: 16px;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.agx-page h1 {
+  font-size: 22px;
+  font-weight: 600;
+  color: var(--agx-text);
+  letter-spacing: -0.01em;
+}
+.agx-page__lead {
+  color: var(--agx-muted);
+  font-size: var(--fx-text-secondary);
+}
+
+/* ---------- Widget grid ---------- */
+.agx-grid {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(12, 1fr);
+}
+.agx-widget {
+  display: flex;
+  flex-direction: column;
+  background: var(--agx-surface-raised);
+  border: 1px solid var(--agx-border);
+  border-radius: var(--fx-radius);
+  overflow: hidden;
+  min-height: 150px;
+}
+.agx-widget__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--agx-border);
+  background: var(--agx-surface);
+}
+.agx-widget__head h3 {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--agx-text);
+}
+.agx-widget__body {
+  padding: 12px;
+  flex: 1;
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.agx-widget--locked .agx-widget__head::after {
+  content: "";
+  width: 14px; height: 14px;
+  background: var(--agx-muted);
+  border-radius: 2px;
+  mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M12 17a2 2 0 0 1-2-2V9a2 2 0 0 1 4 0v6a2 2 0 0 1-2 2z'/%3E%3C/svg%3E") no-repeat center;
+  -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M12 17a2 2 0 0 1-2-2V9a2 2 0 0 1 4 0v6a2 2 0 0 1-2 2z'/%3E%3C/svg%3E") no-repeat center;
+  mask-size: 14px 14px;
+  -webkit-mask-size: 14px 14px;
+}
+
+/* Widget column spans */
+.agx-widget--span-1 { grid-column: span 4; }
+.agx-widget--span-2 { grid-column: span 8; }
+.agx-widget--span-3 { grid-column: span 12; }
+
+@media (max-width: 720px) {
+  .agx-widget--span-1, .agx-widget--span-2, .agx-widget--span-3 {
+    grid-column: span 12;
+  }
+  .agx-shell--nav-sidebar,
+  .agx-shell--nav-combined {
+    grid-template-columns: 1fr;
+  }
+  .agx-shell--nav-sidebar .agx-sidebar,
+  .agx-shell--nav-combined .agx-sidebar {
+    display: none;
+    position: absolute;
+    left: 0; top: 0; bottom: 0;
+    width: 260px;
+    z-index: 40;
+    box-shadow: var(--agx-shadow);
+  }
+  .agx-shell--nav-sidebar .agx-main__pad,
+  .agx-shell--nav-combined .agx-main__pad { padding-left: 8px; }
+}
+
+/* ---------- Session views ---------- */
+.agx-view-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+  flex-wrap: wrap;
+}
+.agx-view-toggle {
+  display: inline-flex;
+  border: 1px solid var(--agx-border);
+  border-radius: var(--fx-radius-sm);
+  background: var(--agx-surface);
+}
+.agx-view-toggle button {
+  padding: 6px 10px;
+  font-size: var(--fx-text-secondary);
+  color: var(--agx-muted);
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+}
+.agx-view-toggle button[aria-pressed="true"] {
+  background: var(--agx-accent-soft);
+  color: var(--agx-accent);
+  font-weight: 600;
+}
+
+/* Compact list */
+.agx-compact { list-style: none; padding: 0; margin: 0; }
+.agx-compact__row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--agx-gridLine);
+}
+.agx-compact__dot { width: 8px; height: 8px; border-radius: 50%; flex: none; }
+.agx-compact__name { flex: 1; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.agx-compact__meta { color: var(--agx-muted); font-size: var(--fx-text-secondary); }
+.agx-compact__actions { display: flex; gap: 6px; }
+
+/* Cards */
+.agx-cards { display: grid; gap: 10px; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); list-style: none; padding: 0; margin: 0; }
+.agx-card {
+  border: 1px solid var(--agx-border);
+  border-radius: var(--fx-radius);
+  background: var(--agx-surface-raised);
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.agx-card__head { display: flex; align-items: center; justify-content: space-between; }
+.agx-card__title { font-weight: 600; color: var(--agx-text); overflow: hidden; white-space: nowrap; text-overflow: ellipsis; min-width: 0; }
+.agx-card__state { font-size: 11px; padding: 1px 6px; border-radius: 10px; background: var(--agx-surface-hover); color: var(--agx-muted); }
+.agx-card__footer { margin-top: auto; display: flex; gap: 6px; }
+
+/* Table */
+.agx-table-wrap { overflow: auto; }
+.agx-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--fx-text-secondary);
+}
+.agx-table th {
+  text-align: left;
+  padding: 8px 10px;
+  border-bottom: 2px solid var(--agx-borderStrong);
+  color: var(--agx-muted);
+  font-weight: 600;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.agx-table td { padding: 8px 10px; border-bottom: 1px solid var(--agx-gridLine); vertical-align: top; }
+.agx-table tr:last-child td { border-bottom: none; }
+.agx-table tr:hover { background: var(--agx-surface-hover); }
+
+/* ---------- Cards/KPI ---------- */
+.agx-kpi { display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 14px; }
+.agx-kpi__card {
+  flex: 1;
+  min-width: 130px;
+  background: var(--agx-surface-raised);
+  border: 1px solid var(--agx-border);
+  border-radius: var(--fx-radius);
+  padding: 12px 14px;
+}
+.agx-kpi__value { font-size: 26px; font-weight: 700; color: var(--agx-text); line-height: 1.2; }
+.agx-kpi__label { color: var(--agx-muted); font-size: var(--fx-text-secondary); margin-top: 2px; }
+
+/* ---------- Empty / loading / error ---------- */
+.agx-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 48px 16px;
+  color: var(--agx-muted);
+  text-align: center;
+}
+.agx-state svg { width: 48px; height: 48px; color: var(--agx-border); margin-bottom: 12px; }
+.agx-state h2 { color: var(--agx-text); font-size: 18px; margin-bottom: 4px; }
+
+/* ---------- Notifications ---------- */
+.agx-notice {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 10px 12px;
+  border-radius: var(--fx-radius-sm);
+  border: 1px solid var(--agx-border);
+  background: var(--agx-surface);
+  margin-bottom: 10px;
+  font-size: var(--fx-text-secondary);
+}
+.agx-notice--error { border-color: var(--agx-danger); background: var(--agx-danger-soft); color: var(--agx-danger); }
+.agx-notice--warn { border-color: var(--agx-warning); background: var(--agx-warning-soft); color: var(--agx-warning); }
+.agx-notice--ok { border-color: var(--agx-ok); background: var(--agx-ok-soft); color: var(--agx-ok); }
+
+/* ---------- Settings ---------- */
+.agx-settings { display: grid; gap: 16px; max-width: 700px; }
+.agx-section { border: 1px solid var(--agx-border); border-radius: var(--fx-radius); padding: 14px 16px; background: var(--agx-surface-raised); }
+.agx-section h2 { font-size: 16px; margin-bottom: 10px; color: var(--agx-text); }
+.agx-field { display: flex; flex-direction: column; gap: 6px; margin-bottom: 10px; }
+.agx-field label { font-size: var(--fx-text-secondary); color: var(--agx-text); }
+.agx-field span.fx-secondary { font-size: 12px; color: var(--agx-muted); }
+
+/* ---------- Text scaling ---------- */
+.agx-text-scale-100 { --agx-text-scale: 1; }
+.agx-text-scale-110 { --agx-text-scale: 1.1; }
+.agx-text-scale-120 { --agx-text-scale: 1.2; }
+.agx-text-scale-130 { --agx-text-scale: 1.3; }
+html.agx-text-scale-110 { font-size: 17.6px; }
+html.agx-text-scale-120 { font-size: 19.2px; }
+html.agx-text-scale-130 { font-size: 20.8px; }
+
+/* Reduced motion */
+@media (prefers-reduced-motion: reduce), (reduced-motion: reduce) {
+  .agx-reduced *, .agx-animations-none *, * {
+    transition: none !important;
+    animation: none !important;
+  }
+}

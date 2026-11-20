@@ -78,8 +78,8 @@ export async function decrypt(
   entry: VaultEntry,
   key: CryptoKey,
 ): Promise<string> {
-  const iv = base64ToArrayBuffer(entry.iv);
-  const ciphertext = base64ToArrayBuffer(entry.ciphertext);
+  const iv = base64ToBytes(entry.iv);
+  const ciphertext = base64ToBytes(entry.ciphertext);
 
   const plaintextBuffer = await crypto.subtle.decrypt(
     { name: "AES-GCM", iv, additionalData: VAULT_AAD },
@@ -119,7 +119,7 @@ export async function unlockVault(
   saltBase64: string,
   iterations: number = 210_000,
 ): Promise<CryptoKey> {
-  const salt = base64ToArrayBuffer(saltBase64);
+  const salt = base64ToBytes(saltBase64);
   return deriveKey({
     password,
     salt,
@@ -165,9 +165,9 @@ export function isValidEntry(entry: unknown): entry is VaultEntry {
   );
 }
 
-/** Converts an ArrayBuffer to base64 (no padding issues for storage). */
-function arrayBufferToBase64(buffer: ArrayBuffer): string {
-  const bytes = new Uint8Array(buffer);
+/** Converts binary data to base64 (no padding issues for storage). */
+function arrayBufferToBase64(buffer: ArrayBuffer | Uint8Array): string {
+  const bytes = buffer instanceof Uint8Array ? buffer : new Uint8Array(buffer);
   let binary = "";
   for (let i = 0; i < bytes.byteLength; i++) {
     binary += String.fromCharCode(bytes[i]!);
@@ -175,12 +175,12 @@ function arrayBufferToBase64(buffer: ArrayBuffer): string {
   return btoa(binary);
 }
 
-/** Converts base64 to ArrayBuffer. */
-function base64ToArrayBuffer(base64: string): ArrayBuffer {
+/** Converts base64 to bytes (ArrayBuffer-backed, as SubtleCrypto requires). */
+function base64ToBytes(base64: string): Uint8Array<ArrayBuffer> {
   const binary = atob(base64);
   const bytes = new Uint8Array(binary.length);
   for (let i = 0; i < binary.length; i++) {
     bytes[i] = binary.charCodeAt(i);
   }
-  return bytes.buffer;
+  return bytes;
 }

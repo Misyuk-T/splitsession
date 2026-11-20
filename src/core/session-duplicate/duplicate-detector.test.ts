@@ -49,7 +49,7 @@ describe("checkDuplicate", () => {
     const candidate = baseSession({ name: "B", domain: "example.com", profileId: "p1" });
     const result = checkDuplicate(candidate, existing);
     expect(result.isDuplicate).toBe(true);
-    expect(result.existing?.id).toBe(existing[0].id);
+    expect(result.existing?.id).toBe(existing[0]!.id);
   });
 
   it("does not flag different domain as duplicate", () => {
@@ -79,7 +79,7 @@ describe("findDuplicateGroups", () => {
     ];
     const groups = findDuplicateGroups(sessions);
     expect(groups.length).toBe(1);
-    expect(groups[0].sessions.length).toBe(2);
+    expect(groups[0]!.sessions.length).toBe(2);
   });
 
   it("returns empty when no duplicates", () => {

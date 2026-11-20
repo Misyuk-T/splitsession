@@ -7,6 +7,7 @@ Start with the [project README](../README.md).
 | [features.md](features.md) | Everything SplitSession does in detail, the Lite and Full editions compared, and project status. |
 | [how-it-works.md](how-it-works.md) | The isolation model in eight steps, the security model in one page, and how the agent bridge is wired. |
 | [limits.md](limits.md) | The honest, detailed list of what SplitSession isolates, what it deliberately switches off and what it does not isolate, with the mechanism behind each item. Read before trusting it with anything important. |
+| [profile-manager.md](profile-manager.md) | Module 03 — Profile Manager: data model, association with Session Core, folders/tags/search, duplicate detection, protection, temporary profiles, website rules, import/export, deletion, statistics, sync interfaces, limits and tests. |
 | [agents.md](agents.md) | Using SplitSession with AI agents: `open.html`, the `#ctr=` marker, telling accounts apart, Claude in Chrome and Playwright, and the Full edition's agent bridge (set-up, security model, tool list). |
 | [development.md](development.md) | Building, testing and the end-to-end stand; Lite and Full editions; the source layout by folder; test hooks; the extension ID and signing key. |
 | [decisions.md](decisions.md) | The decision log (ADRs): what was decided at each stage and why, including every security fix. Newest topics are at the end. |

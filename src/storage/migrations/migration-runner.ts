@@ -91,15 +91,14 @@ export class MigrationRunner {
     }
 
     // Record the new version only if at least one migration applied.
-    if (applied.length > 0) {
-      await this.area.set({
-        [STORAGE_VERSION_KEY]: applied[applied.length - 1].version,
-      });
+    const lastApplied = applied[applied.length - 1];
+    if (lastApplied) {
+      await this.area.set({ [STORAGE_VERSION_KEY]: lastApplied.version });
     }
 
     return {
       ok: errors.length === 0,
-      targetVersion: applied.length > 0 ? applied[applied.length - 1].version : fromVersion,
+      targetVersion: lastApplied ? lastApplied.version : fromVersion,
       applied,
       errors,
     };

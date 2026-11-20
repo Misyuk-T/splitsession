@@ -1,0 +1,181 @@
+/**
+ * Profile Manager — styles (AEGOX_multisession, Module 03).
+ *
+ * Shared by the profile list, the popup switcher and the delete dialog.
+ * Import it from an entry point (for example `ui/options/main.tsx`) when the
+ * profile screens are mounted; it only defines `profile-*` classes and never
+ * overrides the existing SplitSession design system.
+ */
+
+.profile-list,
+.profile-switcher {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.profile-list__head,
+.profile-switcher__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.profile-list__title,
+.profile-switcher__title {
+  margin: 0;
+  font-size: var(--fx-text-primary, 14px);
+  font-weight: 600;
+}
+
+.profile-list__count,
+.profile-list__active,
+.profile-list__empty,
+.profile-switcher__empty {
+  margin: 0;
+}
+
+.profile-list__notice {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.profile-list__notice p {
+  margin: 0;
+}
+
+.profile-list__rows,
+.profile-switcher__rows {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.profile-list__row,
+.profile-switcher__row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border: 1px solid var(--fx-border, transparent);
+  border-radius: var(--fx-radius-sm, 6px);
+}
+
+.profile-list__row--active,
+.profile-switcher__row--active {
+  border-color: var(--fx-accent, currentColor);
+}
+
+.profile-list__row--drop {
+  outline: 2px dashed var(--fx-accent, currentColor);
+  outline-offset: 2px;
+}
+
+.profile-list__main {
+  display: flex;
+  flex: 1;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.profile-list__name,
+.profile-switcher__name {
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.profile-list__state,
+.profile-list__badge,
+.profile-list__duplicate,
+.profile-list__folder,
+.profile-list__protected,
+.profile-switcher__tag,
+.profile-switcher__lock {
+  font-size: 0.8em;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: var(--fx-soft, rgba(0, 0, 0, 0.06));
+}
+
+.profile-list__duplicate {
+  background: var(--fx-warn-soft, rgba(255, 180, 0, 0.2));
+  color: var(--fx-warn-text, inherit);
+}
+
+.profile-list__protected,
+.profile-switcher__lock {
+  background: var(--fx-accent-soft, rgba(79, 70, 229, 0.15));
+}
+
+.profile-list__desc {
+  flex-basis: 100%;
+  color: var(--fx-muted, inherit);
+  font-size: 0.85em;
+}
+
+.profile-list__tags {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.profile-list__tag {
+  font-size: 0.75em;
+  padding: 1px 6px;
+  border-radius: 999px;
+  border: 1px solid var(--fx-border, currentColor);
+}
+
+.profile-list__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.profile-delete__sessions {
+  max-height: 120px;
+  overflow: auto;
+  margin: 6px 0;
+  padding-left: 20px;
+  font-size: 0.85em;
+}
+
+.profile-delete__choices {
+  border: 0;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.profile-delete__choices legend {
+  padding: 0;
+  margin-bottom: 6px;
+  font-weight: 600;
+}
+
+.profile-delete__choice {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.9em;
+}
+
+.profile-delete__choice--danger {
+  color: var(--fx-danger, inherit);
+}
+
+.profile-delete__select {
+  max-width: 200px;
+}

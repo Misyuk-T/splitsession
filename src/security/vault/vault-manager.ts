@@ -15,19 +15,34 @@
 
 import type { StorageAreaLike } from "../../engine/storage/storage-area";
 import {
-  VaultEntry,
   VAULT_VERSION,
   VaultError,
   VaultLockedError,
   VaultCorruptedError,
+  createVault,
+  unlockVault,
+  reencryptVault,
+  encrypt,
+  decrypt,
+  isValidEntry,
 } from "../encryption/vault";
-import type { createVault, unlockVault, encrypt, decrypt, reencryptVault, isValidEntry } from "../encryption/vault";
+import type { VaultEntry } from "../encryption/vault";
 import { validatePassword } from "../key-derivation/argon2id";
 
-/** `chrome.storage.local` key for vault metadata (not the key itself). */
+/**
+ * Prefix for the `chrome.storage.local` key that holds a profile's vault
+ * metadata (not the key itself). The profile ID is appended so that several
+ * independent profile vaults can coexist in one browser profile.
+ */
 export const VAULT_METADATA_KEY = "sessionVaultMetadata";
 
-/** `chrome.storage.local` key prefix for vault entries. */
+/** Separator used between a key prefix and the profile ID. */
+export const VAULT_PROFILE_SEPARATOR = ":";
+
+/** `chrome.storage.local` key prefix for vault metadata. */
+export const VAULT_METADATA_KEY_PREFIX = `${VAULT_METADATA_KEY}${VAULT_PROFILE_SEPARATOR}`;
+
+/** `chrome.storage.local` key prefix for vault entries (profile ID + timestamp follows). */
 export const VAULT_ENTRY_KEY_PREFIX = "sessionVaultEntry:";
 
 /** Metadata about a vault (no secrets stored here). */
@@ -46,7 +61,19 @@ export interface VaultMetadata {
   lastModifiedAt: number;
   /** Whether the vault is currently unlocked (key in memory). */
   unlocked: boolean;
+  /**
+   * AES-GCM encryption of a fixed marker, produced with the derived key.
+   * It lets a later unlock prove that the password is correct: a wrong
+   * password derives a different key and authentication fails.
+   *
+   * `null` only for vaults created before this check existed; they get a
+   * verifier on their first successful unlock (trust on first use).
+   */
+  verifier: VaultEntry | null;
 }
+
+/** Marker encrypted into the verifier. Not a secret. */
+const VAULT_VERIFIER_MARKER = "aegox-multisession-vault-verifier-v1";
 
 /** State of the vault manager. */
 export interface VaultManagerState {
@@ -80,15 +107,23 @@ export class VaultManager {
 
   /** Loads vault metadata from storage. Does not unlock. */
   async load(): Promise<void> {
-    const stored = (await this.area.get(VAULT_METADATA_KEY))[VAULT_METADATA_KEY];
-    if (
-      stored &&
-      typeof stored === "object" &&
-      stored.profileId === this.profileId
-    ) {
-      this.metadata = stored as VaultMetadata;
+    const key = this.metadataKey();
+    const stored = (await this.area.get(key))[key];
+    if (isVaultMetadata(stored) && stored.profileId === this.profileId) {
+      this.metadata = stored;
       this.state.hasVault = true;
       this.state.profileId = this.profileId;
+      return;
+    }
+
+    // Backward compatibility with Module 02, which stored a single global
+    // metadata object. Migrate it to the per-profile key when it matches.
+    const legacy = (await this.area.get(VAULT_METADATA_KEY))[VAULT_METADATA_KEY];
+    if (isVaultMetadata(legacy) && legacy.profileId === this.profileId) {
+      this.metadata = legacy;
+      this.state.hasVault = true;
+      this.state.profileId = this.profileId;
+      await this.area.set({ [key]: { ...legacy } });
     }
   }
 
@@ -126,10 +161,11 @@ export class VaultManager {
       profileId: this.profileId,
       salt,
       iterations,
-      version: 1,
+      version: VAULT_VERSION,
       createdAt: Date.now(),
       lastModifiedAt: Date.now(),
       unlocked: true,
+      verifier: await encrypt(VAULT_VERIFIER_MARKER, key),
     };
     this.state.hasVault = true;
     this.state.isUnlocked = true;
@@ -151,6 +187,16 @@ export class VaultManager {
     }
 
     const key = await unlockVault(password, this.metadata.salt, this.metadata.iterations);
+    if (this.metadata.verifier) {
+      const correct = await verifies(key, this.metadata.verifier);
+      if (!correct) {
+        throw new VaultError("Incorrect password.");
+      }
+    } else {
+      // Legacy vault without a verifier: accept this password once and store
+      // the verifier so the next unlock is actually checked.
+      this.metadata.verifier = await encrypt(VAULT_VERIFIER_MARKER, key);
+    }
     this.state.isUnlocked = true;
     this.metadata.unlocked = true;
     await this.persistMetadata();
@@ -192,22 +238,39 @@ export class VaultManager {
 
     // Load all existing entries.
     const entries = await this.loadAllEntries();
-    const reencrypted = await reencryptVault(entries, currentKey, newPassword, iterations);
 
-    // Save re-encrypted entries.
-    for (const entry of reencrypted) {
-      await this.saveEntry(entry);
+    if (entries.length > 0) {
+      const reencrypted = await reencryptVault(entries, currentKey, newPassword, iterations);
+
+      // Save re-encrypted entries.
+      for (const entry of reencrypted) {
+        await this.saveEntry(entry);
+      }
+
+      // Update metadata. The new salt travels with every re-encrypted entry.
+      const salt = reencrypted[0]!.salt;
+      const newKey = await unlockVault(newPassword, salt, iterations);
+      this.metadata = {
+        ...this.metadata!,
+        salt,
+        iterations,
+        lastModifiedAt: Date.now(),
+        unlocked: true,
+        verifier: await encrypt(VAULT_VERIFIER_MARKER, newKey),
+      };
+    } else {
+      // No entries to re-encrypt: create a fresh salt and verifier so the new
+      // password can still be verified later.
+      const { key, salt } = await createVault(newPassword, iterations);
+      this.metadata = {
+        ...this.metadata!,
+        salt,
+        iterations,
+        lastModifiedAt: Date.now(),
+        unlocked: true,
+        verifier: await encrypt(VAULT_VERIFIER_MARKER, key),
+      };
     }
-
-    // Update metadata.
-    const salt = reencrypted[0]?.salt ?? this.metadata?.salt ?? "";
-    this.metadata = {
-      ...this.metadata!,
-      salt,
-      iterations,
-      lastModifiedAt: Date.now(),
-      unlocked: true,
-    };
     await this.persistMetadata();
   }
 
@@ -218,11 +281,13 @@ export class VaultManager {
   async destroyVault(): Promise<void> {
     if (!this.state.hasVault) return;
 
-    // Remove all vault entry keys.
-    const keysToRemove: string[] = [];
-    // In a real implementation we'd list all keys with the prefix.
-    // For now, remove the metadata key.
-    await this.area.remove(VAULT_METADATA_KEY);
+    // Remove this profile's metadata and every encrypted entry that belongs to
+    // it. Never touch entries of another profile.
+    const all = await this.area.get(null);
+    const prefix = this.entryPrefix();
+    const keysToRemove = Object.keys(all).filter((k) => k.startsWith(prefix));
+    keysToRemove.push(this.metadataKey());
+    await this.area.remove(keysToRemove);
 
     this.state.hasVault = false;
     this.state.isUnlocked = false;
@@ -235,7 +300,7 @@ export class VaultManager {
     if (!isValidEntry(entry)) {
       throw new VaultCorruptedError("Invalid vault entry.");
     }
-    const key = `${VAULT_ENTRY_KEY_PREFIX}${entry.createdAt}`;
+    const key = `${this.entryPrefix()}${entry.createdAt}`;
     this.writing = this.writing.then(() =>
       this.area.set({ [key]: entry }).catch(() => {}),
     );
@@ -244,24 +309,67 @@ export class VaultManager {
 
   /** Loads all vault entries for this profile. */
   async loadAllEntries(): Promise<VaultEntry[]> {
-    // In a real implementation, we'd iterate storage keys with the prefix.
-    // For this module, return an empty array (entries managed externally).
-    return [];
+    const all = await this.area.get(null);
+    const prefix = this.entryPrefix();
+    return Object.entries(all)
+      .filter(([key]) => key.startsWith(prefix))
+      .map(([, value]) => value)
+      .filter(isValidEntry);
   }
 
   /** Gets an entry by ID (timestamp). */
   async getEntry(timestamp: number): Promise<VaultEntry | null> {
-    const key = `${VAULT_ENTRY_KEY_PREFIX}${timestamp}`;
+    const key = `${this.entryPrefix()}${timestamp}`;
     const stored = (await this.area.get(key))[key];
-    if (!stored || !isValidEntry(stored)) return null;
-    return stored as VaultEntry;
+    return isValidEntry(stored) ? stored : null;
+  }
+
+  /** Key that holds this profile's vault metadata. */
+  private metadataKey(): string {
+    return `${VAULT_METADATA_KEY_PREFIX}${this.profileId}`;
+  }
+
+  /** Prefix of this profile's encrypted entry keys. */
+  private entryPrefix(): string {
+    return `${VAULT_ENTRY_KEY_PREFIX}${this.profileId}${VAULT_PROFILE_SEPARATOR}`;
   }
 
   private async persistMetadata(): Promise<void> {
     if (!this.metadata) return;
+    const key = this.metadataKey();
     this.writing = this.writing.then(() =>
-      this.area.set({ [VAULT_METADATA_KEY]: { ...this.metadata } }).catch(() => {}),
+      this.area.set({ [key]: { ...this.metadata } }).catch(() => {}),
     );
     return this.writing;
+  }
+}
+
+/** Structural check for stored vault metadata (untrusted storage input). */
+function isVaultMetadata(value: unknown): value is VaultMetadata {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    return false;
+  }
+  const v = value as Record<string, unknown>;
+  return (
+    typeof v.profileId === "string" &&
+    typeof v.salt === "string" &&
+    typeof v.iterations === "number" &&
+    typeof v.version === "number" &&
+    typeof v.createdAt === "number" &&
+    typeof v.lastModifiedAt === "number" &&
+    typeof v.unlocked === "boolean" &&
+    (v.verifier === undefined || v.verifier === null || isValidEntry(v.verifier))
+  );
+}
+
+/**
+ * Returns true when `key` decrypts the verifier marker. Any authentication
+ * failure (wrong password) is a false result, never an exception.
+ */
+async function verifies(key: CryptoKey, verifier: VaultEntry): Promise<boolean> {
+  try {
+    return (await decrypt(verifier, key)) === VAULT_VERIFIER_MARKER;
+  } catch {
+    return false;
   }
 }

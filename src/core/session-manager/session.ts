@@ -69,17 +69,27 @@ export const MIN_SESSION_NAME = 1;
 /** Default profile ID when none is specified. */
 export const DEFAULT_PROFILE_ID = "default";
 
-/** Generates a UUID v4-style identifier (lowercase hex, 32 chars + 4 dashes). */
+/**
+ * Generates a UUID v4-style identifier (lowercase hex, 32 hex digits + 4 dashes).
+ * Uses the injected random source so tests are deterministic; the default is
+ * `Math.random`, which is adequate for identifiers (never for secrets).
+ */
 export function generateSessionId(random: () => number = Math.random): SessionId {
-  const r = (n: number): string =>
-    Math.floor(random() * n).toString(16).padStart(2, "0");
+  const bytes = new Uint8Array(16);
+  for (let i = 0; i < bytes.length; i++) {
+    bytes[i] = Math.floor(random() * 256) & 0xff;
+  }
+  // RFC 4122 version 4 and variant bits.
+  bytes[6] = ((bytes[6] ?? 0) & 0x0f) | 0x40;
+  bytes[8] = ((bytes[8] ?? 0) & 0x3f) | 0x80;
+  const hex = [...bytes].map((b) => b.toString(16).padStart(2, "0")).join("");
   return [
-    r(256) + r(256) + r(256) + r(256) + r(256) + r(256) + r(256) + r(256), // 128 bits
-    "4", // version 4
-    r(15) & 0x3, // variant bits
-    r(256) + r(256),
-    r(256) + r(256) + r(256) + r(256) + r(256) + r(256) + r(256) + r(256) + r(256) + r(256) + r(256) + r(256),
-  ].join("");
+    hex.slice(0, 8),
+    hex.slice(8, 12),
+    hex.slice(12, 16),
+    hex.slice(16, 20),
+    hex.slice(20, 32),
+  ].join("-");
 }
 
 /** Collapses whitespace in a session name (same convention as container names). */
@@ -94,7 +104,8 @@ export function sanitizeSessionNameInput(
   const kept = Array.from(raw)
     .filter((ch) => !isStrippable(ch.codePointAt(0)!))
     .join("")
-    .replace(/^\s+/, "");
+    .replace(/\s+/g, " ")
+    .trim();
   return Array.from(kept).slice(0, max).join("");
 }
 

@@ -46,7 +46,10 @@ describe("SessionPersistence", () => {
     await pers.load();
     await pers.setRestorationPolicy("none");
     expect(pers.getState().restorationPolicy).toBe("none");
-    expect(area.data.get(PERSISTENCE_STATE_KEY)?.restorationPolicy).toBe("none");
+    const stored = area.data.get(PERSISTENCE_STATE_KEY) as {
+      restorationPolicy?: string;
+    };
+    expect(stored.restorationPolicy).toBe("none");
   });
 
   it("sets selected sessions", async () => {
@@ -146,10 +149,10 @@ describe("SessionPersistence", () => {
       createdAt: 1000, lastUsedAt: null, persistent: true, restorable: false,
     });
 
-    const available = new Map<string, { id: string; name: string }>();
-    available.set(s1.id, { id: s1.id, name: s1.metadata.name });
+    const available = new Map<string, typeof s1>();
+    available.set(s1.id, s1);
 
-    const result = pers.computeRestore([s1, s2, s3], available as unknown as Map<string, { id: string; name: string }>);
+    const result = pers.computeRestore([s1, s2, s3], available);
     expect(result.restored.map((s) => s.id)).toEqual([s1.id]);
     expect(result.skipped.length).toBe(2);
     expect(result.ok).toBe(true);
