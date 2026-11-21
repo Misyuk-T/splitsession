@@ -15,9 +15,11 @@ import {
   IconSessions,
   IconSettings,
   IconSearch,
+  IconStar,
 } from "./Icons";
 import { Logo } from "../components/Logo";
 import { Button } from "../components/Button";
+import { toggleFavorite } from "../../ui-system/preferences";
 
 /** AEGOX dashboard host (Module 04). Integrates Session Core + Profile Manager. */
 export const Dashboard = () => {
@@ -104,6 +106,38 @@ export const Dashboard = () => {
     await data.createSession({ name, profileId: profileId || undefined });
   };
 
+  const handleToggleFavoriteProfile = (id: string) => {
+    data.updatePreferences({
+      favoriteProfileIds: toggleFavorite(preferences?.favoriteProfileIds ?? [], id),
+    });
+  };
+
+  const handleToggleFavoriteSession = (id: string) => {
+    data.updatePreferences({
+      favoriteSessionIds: toggleFavorite(preferences?.favoriteSessionIds ?? [], id),
+    });
+  };
+
+  const handleSessionAction = async (id: string, action: string) => {
+    switch (action) {
+      case "pause":
+        await data.setSessionState(id, "paused");
+        break;
+      case "resume":
+        await data.setSessionState(id, "active");
+        break;
+      case "archive":
+        await data.setSessionState(id, "archived");
+        break;
+      case "restore":
+        await data.setSessionState(id, "active");
+        break;
+      case "delete":
+        await data.deleteSession(id);
+        break;
+    }
+  };
+
   const handleLayoutChange = useCallback(
     (next: never[]) => {
       data.updatePreferences({ widgetLayout: next as never });
@@ -142,8 +176,8 @@ export const Dashboard = () => {
             sessions={data.sessions}
             profileNames={profileNames}
             favoriteSessionIds={preferences?.favoriteSessionIds ?? []}
-            onToggleFavorite={() => {}}
-            onAction={() => {}}
+            onToggleFavorite={handleToggleFavoriteSession}
+            onAction={handleSessionAction}
             view={sessionView}
             onView={setSessionView}
           />
@@ -187,6 +221,19 @@ export const Dashboard = () => {
                     <span style={{ color: "var(--agx-muted)", fontSize: "var(--fx-text-secondary)" }}>
                       {data.sessions.filter((s) => s.metadata.profileId === profile.id).length} sesiones
                     </span>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      small
+                      onClick={() => handleToggleFavoriteProfile(profile.id)}
+                      aria-label={
+                        (preferences?.favoriteProfileIds ?? []).includes(profile.id)
+                          ? "Quitar favorito"
+                          : "Marcar favorito"
+                      }
+                    >
+                      <IconStar filled={(preferences?.favoriteProfileIds ?? []).includes(profile.id)} />
+                    </Button>
                   </li>
                 ))}
               </ul>

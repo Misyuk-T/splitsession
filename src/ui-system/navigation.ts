@@ -90,3 +90,23 @@ export function hasTopbar(mode: NavigationMode): boolean {
 export function pageForShortcut(key: string): PageId | null {
   return NAVIGATION_ITEMS.find((item) => item.shortcut === key)?.id ?? null;
 }
+
+/** Returns the navigation item for a given page id. */
+export function navigationItemForPage(id: PageId): NavigationItem | undefined {
+  return NAVIGATION_ITEMS.find((item) => item.id === id);
+}
+
+/** Returns the label to show in the navigation bar for a page id. */
+export function pageLabel(id: PageId): string {
+  return navigationItemForPage(id)?.label ?? id;
+}
+
+/** Returns whether a given mode uses a drawer-style sidebar on narrow screens. */
+export function usesDrawerOnNarrow(mode: NavigationMode): boolean {
+  return mode !== "top";
+}
+
+/** Returns all page ids in navigation order. */
+export function allPageIds(): ReadonlyArray<PageId> {
+  return [...PAGE_IDS];
+}

@@ -114,6 +114,37 @@ export const IconChevron = ({ size = 16, class: className }: IconProps) => (
   </svg>
 );
 
+export const IconMenu = ({ size = 20, class: className }: IconProps) => (
+  <svg {...base(size)} class={className}>
+    <path d="M3 12h18M3 6h18M3 18h18" stroke-linecap="square" />
+  </svg>
+);
+
+export const IconList = ({ size = 20, class: className }: IconProps) => (
+  <svg {...base(size)} class={className}>
+    <path d="M8 3h13M8 10h13M8 17h13" stroke-linecap="square" />
+    <circle cx="3" cy="3" r="1" fill="none" stroke="currentColor" stroke-width="2" />
+    <circle cx="3" cy="10" r="1" fill="none" stroke="currentColor" stroke-width="2" />
+    <circle cx="3" cy="17" r="1" fill="none" stroke="currentColor" stroke-width="2" />
+  </svg>
+);
+
+export const IconGrid = ({ size = 20, class: className }: IconProps) => (
+  <svg {...base(size)} class={className}>
+    <rect x="3" y="3" width="7" height="7" />
+    <rect x="14" y="3" width="7" height="7" />
+    <rect x="3" y="14" width="7" height="7" />
+    <rect x="14" y="14" width="7" height="7" />
+  </svg>
+);
+
+export const IconTable = ({ size = 20, class: className }: IconProps) => (
+  <svg {...base(size)} class={className}>
+    <rect x="3" y="3" width="18" height="18" rx="2" />
+    <path d="M3 9h18M3 15h18M9 3v18" stroke-linecap="square" />
+  </svg>
+);
+
 export const IconPanel = ({ size = 16, class: className }: IconProps) => (
   <svg {...base(size)} class={className}>
     <rect x="3" y="4" width="18" height="16" rx="2" />

@@ -340,3 +340,96 @@ html.agx-text-scale-130 { font-size: 20.8px; }
     animation: none !important;
   }
 }
+
+/* Focus ring utilities */
+.agx-focus-ring {
+  outline: 2px solid var(--agx-focusRing);
+  outline-offset: 2px;
+}
+
+/* Sidebar menu button */
+.agx-shell__menu {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border: 0;
+  background: transparent;
+  color: var(--agx-text);
+  cursor: pointer;
+  border-radius: var(--fx-radius-sm);
+}
+.agx-shell__menu:hover {
+  background: var(--agx-surface-hover);
+}
+.agx-shell__menu:focus-visible {
+  outline: 2px solid var(--agx-focusRing);
+  outline-offset: 2px;
+}
+
+/* Top bar nav items */
+.agx-topbar__nav {
+  display: flex;
+  gap: 4px;
+}
+.agx-topbar__item {
+  padding: 6px 10px;
+  font-size: var(--fx-text-secondary);
+  color: var(--agx-muted);
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+  border-radius: var(--fx-radius-sm);
+}
+.agx-topbar__item:hover {
+  background: var(--agx-surface-hover);
+  color: var(--agx-text);
+}
+.agx-topbar__item[aria-current="page"] {
+  background: var(--agx-accent-soft);
+  color: var(--agx-accent);
+  font-weight: 600;
+}
+
+/* Search overlay */
+.agx-search-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(18, 16, 24, 0.6);
+  backdrop-filter: blur(4px);
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.agx-search-panel {
+  width: min(720px, 92vw);
+  max-height: 80vh;
+  background: var(--agx-surface-raised);
+  border: 1px solid var(--agx-border);
+  border-radius: var(--fx-radius);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  box-shadow: var(--agx-shadow);
+}
+.agx-search__head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--agx-border);
+}
+.agx-search__list {
+  overflow-y: auto;
+  max-height: 40vh;
+}
+.agx-search__empty {
+  padding: 24px 16px;
+  text-align: center;
+}
+.agx-search__foot {
+  padding: 8px 14px;
+  border-top: 1px solid var(--agx-border);
+}

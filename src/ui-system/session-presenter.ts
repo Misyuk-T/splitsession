@@ -265,3 +265,24 @@ export function paginate<T>(items: ReadonlyArray<T>, page: number, pageSize: num
 
 /** Default page size for large session collections. */
 export const SESSION_PAGE_SIZE = 50;
+
+/** Returns the color token to use for a session state dot. */
+export function stateColorToken(state: SessionState): string {
+  return {
+    active: "var(--agx-ok)",
+    paused: "var(--agx-warning)",
+    expired: "var(--agx-danger)",
+    archived: "var(--agx-muted)",
+    closed: "var(--agx-muted)",
+  }[state];
+}
+
+/** Returns whether a session can be opened given its state. */
+export function canOpen(session: Session): boolean {
+  return session.state !== "closed" && session.state !== "expired";
+}
+
+/** Returns whether a session can be deleted given its state. */
+export function canDelete(session: Session): boolean {
+  return session.state !== "closed";
+}

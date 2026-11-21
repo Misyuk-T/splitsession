@@ -65,6 +65,26 @@ export interface DashboardOverview {
   isEmpty: boolean;
 }
 
+/** Returns true when the dashboard has nothing to show (empty state). */
+export function isDashboardEmpty(overview: DashboardOverview): boolean {
+  return overview.isEmpty;
+}
+
+/** Returns the total number of items (profiles + sessions) in the overview. */
+export function totalItemCount(overview: DashboardOverview): number {
+  return overview.sessions.total + overview.profiles.total;
+}
+
+/** Returns the number of active sessions across all profiles. */
+export function activeSessionCount(sessions: SessionTotals): number {
+  return sessions.active;
+}
+
+/** Returns the number of sessions needing attention (expired). */
+export function attentionCount(sessions: SessionTotals): number {
+  return sessions.expired;
+}
+
 /** Counts sessions by their real lifecycle state. */
 export function sessionTotals(sessions: ReadonlyArray<Session>): SessionTotals {
   const totals: SessionTotals = {

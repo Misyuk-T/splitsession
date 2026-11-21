@@ -28,9 +28,21 @@ export interface ThemeTokens {
   ok: string;
   okSoft: string;
   focus: string;
+  /** Ring drawn around focused interactive elements. */
+  focusRing: string;
   shadow: string;
   gridLine: string;
+  /** Height of the top navigation bar. */
+  headerHeight: string;
+  /** Width of the sidebar navigation panel. */
+  sidebarWidth: string;
 }
+
+/** Layout constants exposed as CSS custom properties. */
+export const LAYOUT_TOKENS: Readonly<Record<string, string>> = {
+  headerHeight: "56px",
+  sidebarWidth: "260px",
+};
 
 /** Restrained dark + violet is the brand direction; light is equally complete. */
 export const THEME_TOKENS: Readonly<Record<EffectiveTheme, ThemeTokens>> = {
@@ -56,6 +68,9 @@ export const THEME_TOKENS: Readonly<Record<EffectiveTheme, ThemeTokens>> = {
     focus: "#5b3fd6",
     shadow: "0 10px 30px rgba(35, 22, 70, 0.12), 0 1px 3px rgba(35, 22, 70, 0.08)",
     gridLine: "#e9e4f2",
+    focusRing: "rgba(91, 63, 214, 0.35)",
+    headerHeight: "56px",
+    sidebarWidth: "260px",
   },
   dark: {
     bg: "#121018",
@@ -79,6 +94,9 @@ export const THEME_TOKENS: Readonly<Record<EffectiveTheme, ThemeTokens>> = {
     focus: "#b9a8ff",
     shadow: "0 14px 34px rgba(0, 0, 0, 0.55), 0 1px 3px rgba(0, 0, 0, 0.4)",
     gridLine: "#292335",
+    focusRing: "rgba(185, 168, 255, 0.4)",
+    headerHeight: "56px",
+    sidebarWidth: "260px",
   },
 };
 

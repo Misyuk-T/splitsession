@@ -256,3 +256,23 @@ export function widgetSpan(item: WidgetLayoutItem): 1 | 2 | 3 {
   if (item.size === "medium") return 2;
   return 1;
 }
+
+/** Returns true if the widget is locked (cannot be removed/hidden). */
+export function isWidgetLocked(id: WidgetId): boolean {
+  return WIDGET_CATALOG[id].locked;
+}
+
+/** Returns the human-readable title for a widget id. */
+export function widgetTitle(id: WidgetId): string {
+  return WIDGET_CATALOG[id].title;
+}
+
+/** Returns the human-readable description for a widget id. */
+export function widgetDescription(id: WidgetId): string {
+  return WIDGET_CATALOG[id].description;
+}
+
+/** Returns the default size for a widget id. */
+export function widgetDefaultSize(id: WidgetId): WidgetSize {
+  return WIDGET_CATALOG[id].defaultSize;
+}

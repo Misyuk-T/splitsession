@@ -66,7 +66,7 @@ export const Modal = ({ title, description, onClose, children, footer, wide }: M
     <div class="agx-overlay" onMouseDown={(event) => event.target === event.currentTarget && onClose()}>
       <div
         ref={panelRef}
-        class={`agx-modal${wide ? " agx-modal--wide" : ""}`}
+        class={`agx-modal${wide ? " agx-modal--wide" : ""} agx-focus-ring`}
         role="dialog"
         aria-modal="true"
         aria-labelledby={headingId.current}

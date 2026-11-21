@@ -202,3 +202,18 @@ export class NotificationThrottle {
     this.seen.clear();
   }
 }
+
+/** Returns a short, human-readable label for a notification category. */
+export function categoryLabel(category: NotificationCategory): string {
+  return {
+    sessions: "Sesiones",
+    profiles: "Perfiles",
+    security: "Seguridad",
+    system: "Sistema",
+  }[category];
+}
+
+/** Returns the default enabled state for a category. */
+export function defaultCategoryEnabled(category: NotificationCategory): boolean {
+  return category !== "system";
+}

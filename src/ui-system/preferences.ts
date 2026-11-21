@@ -237,3 +237,31 @@ export function toggleFavorite(ids: readonly string[], id: string): string[] {
 export function toggleCollapsed(keys: readonly string[], key: string): string[] {
   return keys.includes(key) ? keys.filter((existing) => existing !== key) : [...keys, key];
 }
+
+/** Returns the human-readable label for a theme preference. */
+export function themeLabel(preference: ThemePreference): string {
+  return { light: "Claro", dark: "Oscuro", system: "Sistema" }[preference];
+}
+
+/** Returns the human-readable label for a navigation mode. */
+export function navigationLabel(mode: NavigationMode): string {
+  return {
+    sidebar: "Barra lateral",
+    top: "Barra superior",
+    combined: "Ambas",
+  }[mode];
+}
+
+/** Returns the human-readable label for a session view mode. */
+export function sessionViewLabel(mode: SessionViewMode): string {
+  return {
+    compact: "Lista compacta",
+    cards: "Tarjetas",
+    table: "Tabla",
+  }[mode];
+}
+
+/** Returns the human-readable label for an animation preference. */
+export function animationsLabel(value: AnimationPreference): string {
+  return { full: "Completas", reduced: "Reducidas", none: "Sin animaciones" }[value];
+}

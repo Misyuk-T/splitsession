@@ -169,3 +169,23 @@ export function clampIndex(index: number, total: number): number {
   if (total <= 0) return -1;
   return Math.min(total - 1, Math.max(0, index));
 }
+
+/** Searches only profiles, returning matched results sorted by score. */
+export function searchProfiles(
+  query: string,
+  profiles: ReadonlyArray<Profile>,
+  limit = SEARCH_LIMIT,
+): SearchResult[] {
+  const results = searchAll(query, profiles, [], limit);
+  return results.profiles;
+}
+
+/** Searches only sessions, returning matched results sorted by score. */
+export function searchSessions(
+  query: string,
+  sessions: ReadonlyArray<Session>,
+  limit = SEARCH_LIMIT,
+): SearchResult[] {
+  const results = searchAll(query, [], sessions, limit);
+  return results.sessions;
+}

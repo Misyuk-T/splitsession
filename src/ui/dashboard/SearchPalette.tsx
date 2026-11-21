@@ -115,6 +115,9 @@ export const SearchPalette = ({
             <p style={{ color: "var(--agx-muted)", fontSize: "12px", marginTop: 4 }}>
               No se consultan contraseñas, cookies, tokens ni credenciales.
             </p>
+            <p style={{ color: "var(--agx-muted)", fontSize: "12px", marginTop: 8 }}>
+              Atajos: Alt+1 Dashboard · Alt+2 Sesiones · Alt+3 Perfiles · Alt+4 Ajustes
+            </p>
           </div>
         )}
 

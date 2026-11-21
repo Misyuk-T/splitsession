@@ -11,6 +11,7 @@ import {
   SESSION_PAGE_SIZE,
   type SessionFilter,
   type SessionRow,
+  stateColorToken,
 } from "../../ui-system/session-presenter";
 import { statePresentation } from "../../ui-system/session-presenter";
 import type { Session } from "../../core/session-manager/session";
@@ -24,13 +25,6 @@ interface SessionCardProps {
 
 const SessionCard = ({ row, onToggleFavorite, onAction, favoriteIds }: SessionCardProps) => {
   const session = row.session;
-  const dotColor = {
-    active: "var(--agx-ok)",
-    paused: "var(--agx-warning)",
-    expired: "var(--agx-danger)",
-    archived: "var(--agx-muted)",
-    closed: "var(--agx-muted)",
-  }[row.state.tone];
 
   return (
     <article class="agx-card">
@@ -38,7 +32,7 @@ const SessionCard = ({ row, onToggleFavorite, onAction, favoriteIds }: SessionCa
         <div class="agx-card__title" title={session.metadata.name}>
           {session.metadata.name}
         </div>
-        <span class="agx-card__state" style={{ background: "var(--agx-surface-hover)", color: dotColor }}>
+        <span class="agx-card__state" style={{ background: "var(--agx-surface-hover)", color: stateColorToken(session.state) }}>
           {row.state.label}
         </span>
       </div>
@@ -232,7 +226,7 @@ export const SessionsView = ({
               <li key={session.id} class="agx-compact__row">
                 <span
                   class="agx-compact__dot"
-                  style={{ background: { active: "var(--agx-ok)", paused: "var(--agx-warning)", expired: "var(--agx-danger)", archived: "var(--agx-muted)", closed: "var(--agx-muted)" }[row.state.tone] }}
+                  style={{ background: stateColorToken(session.state) }}
                   aria-hidden="true"
                 />
                 <span class="agx-compact__name" title={session.metadata.name}>
@@ -307,7 +301,7 @@ export const SessionsView = ({
                           width: 8,
                           height: 8,
                           borderRadius: "50%",
-                          background: { active: "var(--agx-ok)", paused: "var(--agx-warning)", expired: "var(--agx-danger)", archived: "var(--agx-muted)", closed: "var(--agx-muted)" }[row.state.tone],
+                          background: stateColorToken(session.state),
                           marginRight: "6px",
                           verticalAlign: "middle",
                         }}
