@@ -49,3 +49,16 @@ export function senderHost(sender: MessageSender): string | null {
   const origin = senderOrigin(sender);
   return origin ? hostnameOf(new URL(origin).hostname) : null;
 }
+
+/**
+ * Top-level site for a message from a content script: a top frame IS the top-level site (its origin, full PSL), while
+ * the tab record still holds the previous page's until `onCommitted`. Frames use the tab's.
+ */
+export function senderTopLevelSite(
+  sender: MessageSender,
+  recorded: string | null,
+): string | null {
+  if (sender.frameId !== 0) return recorded;
+  const origin = senderOrigin(sender);
+  return (origin ? siteOfHttp(origin) : null) ?? recorded;
+}

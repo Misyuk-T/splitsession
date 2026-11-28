@@ -28,7 +28,7 @@ import {
 } from "../../engine/capture/stale-response";
 import type { SessionRuleManager } from "../../engine/dnr/session-rules";
 import type { EngineCore, WebRequestDetails } from "./types";
-import { senderOrigin, siteOfHttp } from "./urls";
+import { senderOrigin, senderTopLevelSite, siteOfHttp } from "./urls";
 
 type MessageSender = Browser.runtime.MessageSender;
 
@@ -43,6 +43,11 @@ interface SendRecord {
   sentAt: number;
   /** Cookie header actually sent (after DNR), null when none. */
   cookie: string | null;
+  /**
+   * Whether every pair of `cookie` was a container cookie when the request was sent (the jar rotates while the
+   * response is on its way). Undefined while unknown (engine not ready, tab not registered yet): judged on harvest.
+   */
+  fromJar?: boolean;
 }
 
 const CHANGED: ReadonlySet<UpsertOutcome> = new Set([
@@ -113,10 +118,17 @@ export class CookieCapture {
   noteSend(details: WebRequestDetails): void {
     if (details.tabId < 0) return;
     const cookie = cookieHeaderOf(details.requestHeaders);
-    this.sends.set(details.requestId, {
+    const record: SendRecord = {
       tabId: details.tabId,
       sentAt: details.timeStamp,
       cookie,
+    };
+    this.sends.set(details.requestId, record);
+    // The verdict belongs to the moment of sending. Registered before `noteResponse`'s own wait on `ready()`, so it
+    // runs first.
+    void this.d.ready().then(() => {
+      const rec = this.d.tabs.get(details.tabId);
+      if (rec) record.fromJar = this.headerFromJar(rec.containerId, cookie);
     });
     if (this.sends.size > 5_000) {
       // Requests that never reported completion: forget the old ones.
@@ -200,7 +212,7 @@ export class CookieCapture {
       sentAt < rec.activeSince ||
       (send !== undefined &&
         sentAt < rec.activeSince + ASSIGNMENT_LAG_MS &&
-        !this.headerFromJar(containerId, send.cookie));
+        !(send.fromJar ?? this.headerFromJar(containerId, send.cookie)));
     if (foreign) {
       this.d.log(
         "warn",
@@ -377,13 +389,14 @@ export class CookieCapture {
     const origin = senderOrigin(sender);
     if (!rec || rec.activeSince === null || !origin) return { ok: false };
     const host = hostnameOf(new URL(origin).hostname);
+    const topLevelSite = senderTopLevelSite(sender, rec.topLevelSite);
     const jar = this.d.containers.jar(rec.containerId);
     const now = Date.now();
     const before = jar.all(); // a deletion's previous value (the write parses the identity itself)
     const { parsed, outcome } = jar.applyDocumentCookieWrite(host, value, {
       secure: isSecureUrl(`${origin}/`),
       path: path.startsWith("/") ? path : "/",
-      topLevelSite: rec.topLevelSite,
+      topLevelSite,
       now,
     });
     if (parsed.ok && CHANGED.has(outcome)) {
@@ -403,7 +416,7 @@ export class CookieCapture {
     }
     return {
       ok: true,
-      cookies: this.siteSnapshot(rec.containerId, host, rec.topLevelSite),
+      cookies: this.siteSnapshot(rec.containerId, host, topLevelSite),
     };
   }
 

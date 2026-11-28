@@ -10,7 +10,12 @@ import type { ContainerRules } from "./container-rules";
 import type { CookieCapture } from "./cookie-capture";
 import type { PopupChildren } from "./popup-children";
 import type { EngineCore } from "./types";
-import { senderHost, senderOrigin, siteOfFrameUrl } from "./urls";
+import {
+  senderHost,
+  senderOrigin,
+  senderTopLevelSite,
+  siteOfFrameUrl,
+} from "./urls";
 
 type MessageSender = Browser.runtime.MessageSender;
 
@@ -60,7 +65,11 @@ const HANDLERS: Record<string, Handler> = {
     if (!rec || !host) return { ok: false } satisfies CookieSnapshotReply;
     return {
       ok: true,
-      cookies: d.capture.siteSnapshot(rec.containerId, host, rec.topLevelSite),
+      cookies: d.capture.siteSnapshot(
+        rec.containerId,
+        host,
+        senderTopLevelSite(sender, rec.topLevelSite),
+      ),
     } satisfies CookieSnapshotReply;
   },
 

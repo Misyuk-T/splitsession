@@ -25,6 +25,11 @@ import {
 import { startGroupMark } from "./group-mark";
 import { sealFrame } from "./seal.isolated";
 import { startPageName } from "./title-prefix";
+import {
+  isCrossSite,
+  resolveTopLevelSite,
+  visibleToScript,
+} from "./top-level-site";
 
 const KEEPALIVE_MS = 25_000;
 /** How long a frame whose site has no beacon answer yet waits (blocking, at document_start) for the background. */
@@ -159,17 +164,23 @@ function startContainer(answer: BeaconPayload, bridge: HTMLElement): void {
   const origin = frameOrigin();
   const host = origin ? hostnameOf(new URL(origin).hostname) : null;
   const secure = origin ? isSecureUrl(`${origin}/`) : false;
-  // The beacon's group site is exact (full PSL in the background); our own estimate is the fallback.
-  const tls = answer.s ?? topLevelSite();
+  // The beacon's group site is exact (full PSL in the background); our own estimate is the fallback. A top-level
+  // document never takes it: during a cross-site navigation it can still be the previous page's site.
+  const isTop = window === window.top;
+  const { site: tls, stale: staleSite } = resolveTopLevelSite({
+    isTopDocument: isTop,
+    origin,
+    beaconSite: answer.s,
+    estimate: topLevelSite(),
+  });
   const docPath = () =>
     location.protocol === "http:" || location.protocol === "https:"
       ? location.pathname
       : "/";
   // A frame of another site than the top document sees only SameSite=None cookies, like the requests it makes
   // (the rules split cookies by SameSite) and like Chrome's third-party document.cookie.
-  const crossSite = origin !== null && tls !== null && siteOf(origin) !== tls;
-  const visible = (c: Cookie) =>
-    !c.httpOnly && (!crossSite || c.sameSite === "none");
+  const crossSite = isCrossSite(origin, tls, isTop);
+  const visible = (c: Cookie) => visibleToScript(c, crossSite);
 
   let base: Cookie[] = answer.k ?? [];
   let jar = new CookieJar(base);
@@ -198,7 +209,8 @@ function startContainer(answer: BeaconPayload, bridge: HTMLElement): void {
   const send = <T>(message: object): Promise<T | undefined> =>
     (browser.runtime.sendMessage(message) as Promise<T>).catch(() => undefined);
 
-  if (answer.o === 1 || answer.k === undefined) {
+  // `k` was cut for another top-level site (partitioned cookies are keyed by it): ask again for ours.
+  if (answer.o === 1 || answer.k === undefined || staleSite) {
     if (host)
       void send<CookieSnapshotReply>({ type: "facet/cookie-snapshot" }).then(
         (r) => replaceSnapshot(r?.cookies),

@@ -4,13 +4,14 @@ import { CookieJar } from "../../core";
 import { StaleNavigationDetector } from "../../engine/capture/stale-detector";
 import { CookieCapture } from "./cookie-capture";
 import type { WebRequestDetails } from "./types";
+import { senderTopLevelSite } from "./urls";
 
 const TAB = 7;
 const CID = "c1";
 const HOST = "https://shop.example.com";
 
 /** CookieCapture with a real jar and detector; rules, tabs and browser calls are stubs. */
-function setup() {
+function setup({ activeAgoMs = 60_000 } = {}) {
   const jar = new CookieJar();
   const navigations: string[] = [];
   const tabs = {
@@ -18,7 +19,7 @@ function setup() {
       tabId === TAB
         ? {
             containerId: CID,
-            activeSince: Date.now() - 60_000,
+            activeSince: Date.now() - activeAgoMs,
             topLevelSite: "https://example.com",
           }
         : undefined,
@@ -81,7 +82,23 @@ function setup() {
       .all()
       .filter((c) => c.name === name)
       .map((c) => `${c.hostOnly ? "host" : "domain"}:${c.value}`);
-  return { capture, jar, hop, values, navigations };
+  return {
+    capture,
+    jar,
+    hop,
+    values,
+    navigations,
+    base: (path: string, requestId: string) =>
+      ({
+        requestId,
+        url: `${HOST}${path}`,
+        method: "GET",
+        tabId: TAB,
+        type: "main_frame",
+        frameId: 0,
+        timeStamp: Date.now(),
+      }) as WebRequestDetails,
+  };
 }
 
 describe("CookieCapture: a stale hop's answer and the cookie it missed", () => {
@@ -126,5 +143,95 @@ describe("CookieCapture: a stale hop's answer and the cookie it missed", () => {
     expect(values("sid")).toEqual(["domain:d1"]);
     await hop("/c", "sid=d1", ["sid=h2; Path=/"]);
     expect(values("sid").sort()).toEqual(["domain:d1", "host:h2"]);
+  });
+});
+
+describe("CookieCapture: right after the tab's assignment", () => {
+  const MS = "esctx=1; Path=/";
+
+  it("a Set-Cookie is imported when the jar rotated the sent values while the response was on its way", async () => {
+    const { capture, jar, base, values } = setup({ activeAgoMs: 200 });
+    await jar.setFromHeader("buid=A; Path=/", {
+      url: `${HOST}/`,
+      now: Date.now(),
+    });
+    const details = base("/a", "ms1");
+    capture.noteSend({
+      ...details,
+      requestHeaders: [{ name: "Cookie", value: "buid=A" }],
+    });
+    await new Promise((r) => setTimeout(r, 0));
+    // Another response of the same page rotates buid before this one arrives.
+    jar.setFromHeader("buid=B; Path=/", { url: `${HOST}/`, now: Date.now() });
+    capture.noteResponse({
+      ...details,
+      timeStamp: Date.now(),
+      statusCode: 200,
+      responseHeaders: [{ name: "Set-Cookie", value: MS }],
+    });
+    await new Promise((r) => setTimeout(r, 0));
+    expect(values("esctx")).toEqual(["host:1"]);
+  });
+
+  it("a request that carried a pair the container never had is still ignored", async () => {
+    const { capture, base, values } = setup({ activeAgoMs: 200 });
+    const details = base("/a", "ms2");
+    capture.noteSend({
+      ...details,
+      requestHeaders: [{ name: "Cookie", value: "profile=secret" }],
+    });
+    await new Promise((r) => setTimeout(r, 0));
+    capture.noteResponse({
+      ...details,
+      timeStamp: Date.now(),
+      statusCode: 200,
+      responseHeaders: [{ name: "Set-Cookie", value: MS }],
+    });
+    await new Promise((r) => setTimeout(r, 0));
+    expect(values("esctx")).toEqual([]);
+  });
+});
+
+describe("CookieCapture: top-level site of a content script's message right after a cross-site navigation", () => {
+  // The tab record still says example.com (onCommitted has not moved it); the page is on shop.example.org.
+  const origin = "https://shop.example.org";
+  const top = { frameId: 0, origin } as never;
+  const frame = { frameId: 3, origin } as never;
+  const partitioned = "pk=1; Path=/; Secure; Partitioned";
+
+  it("a top frame's write and snapshot use its own site; a frame's use the tab record", async () => {
+    const { capture, jar } = setup();
+    const a = await capture.cookieWrite(TAB, top, partitioned, "/", Date.now());
+    expect(jar.all().map((c) => c.partitionKey)).toEqual([
+      "https://example.org",
+    ]);
+    expect(a.ok && a.cookies?.map((c) => c.name)).toEqual(["pk"]);
+
+    const b = await capture.cookieWrite(
+      TAB,
+      frame,
+      "fk=1; Path=/; Secure; Partitioned",
+      "/",
+      Date.now(),
+    );
+    expect(b.ok).toBe(true);
+    expect(jar.all().find((c) => c.name === "fk")?.partitionKey).toBe(
+      "https://example.com",
+    );
+    // The snapshot of the frame sees the partitioned cookie of the tab's recorded site only.
+    expect(
+      capture
+        .siteSnapshot(CID, "shop.example.org", "https://example.com")
+        .map((c) => c.name),
+    ).toEqual(["fk"]);
+  });
+
+  it("senderTopLevelSite: top frame -> own site (full PSL), frame or unknown origin -> the recorded one", () => {
+    const rec = "https://example.com";
+    expect(senderTopLevelSite({ frameId: 0, origin } as never, rec)).toBe(
+      "https://example.org",
+    );
+    expect(senderTopLevelSite({ frameId: 3, origin } as never, rec)).toBe(rec);
+    expect(senderTopLevelSite({ frameId: 0 } as never, rec)).toBe(rec);
   });
 });
